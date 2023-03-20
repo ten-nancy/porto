@@ -1,0 +1,2 @@
+*.proto text
+* !text !filter !merge !diff

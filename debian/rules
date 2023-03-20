@@ -1,0 +1,44 @@
+#!/usr/bin/make -f
+
+PKGPREFIX?=
+DESTDIR=$(CURDIR)/debian/$(PKGPREFIX)porto
+SBINDIR=$(DESTDIR)/usr/sbin
+BUILD_TYPE?=Release
+OPENSSL_TGZ_URL?=https://github.com/openssl/openssl/archive/refs/tags/OpenSSL_1_1_1o.tar.gz
+LIBBPF_TGZ_URL?=https://github.com/libbpf/libbpf/archive/refs/tags/v0.7.0.tar.gz
+
+sedpkgprefix:=sed -e "s/PKGPREFIX/$(PKGPREFIX)/gI"
+
+export DH_VERBOSE=1
+
+override_dh_auto_configure:
+	rm -f debian/control
+	$(sedpkgprefix) debian/control.in               > debian/control
+	$(sedpkgprefix) debian/porto.bash-completion.in > debian/$(PKGPREFIX)porto.bash-completion
+	$(sedpkgprefix) debian/porto.cron.d.in          > debian/$(PKGPREFIX)porto.cron.d
+	$(sedpkgprefix) debian/porto.dirs.in            > debian/$(PKGPREFIX)porto.dirs
+	$(sedpkgprefix) debian/porto.docs.in            > debian/$(PKGPREFIX)porto.docs
+	$(sedpkgprefix) debian/porto.init.in            > debian/$(PKGPREFIX)porto.init
+	$(sedpkgprefix) debian/porto.install.in         > debian/$(PKGPREFIX)porto.install
+	$(sedpkgprefix) debian/porto.logrotate.in       > debian/$(PKGPREFIX)porto.logrotate
+	$(sedpkgprefix) debian/porto.postinst.in        > debian/$(PKGPREFIX)porto.postinst
+	$(sedpkgprefix) debian/porto.service.in         > debian/$(PKGPREFIX)porto.service
+	$(sedpkgprefix) debian/porto.upstart.in         > debian/$(PKGPREFIX)porto.upstart
+
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DOPENSSL_TGZ_URL=$(OPENSSL_TGZ_URL) -DLIBBPF_TGZ_URL=$(LIBBPF_TGZ_URL) -DUSE_SYSTEM_LIBBPF=OFF
+
+override_dh_installinit:
+	dh_installinit --no-restart-on-upgrade
+
+override_dh_shlibdeps:
+	dh_shlibdeps --dpkg-shlibdeps-params=--ignore-missing-info
+
+override_dh_install:
+	dh_install
+	dh_bash-completion
+	$(SBINDIR)/portoctl --help
+
+override_dh_auto_test:
+
+%:
+	dh $@ --with python2,python3 --without python-support --parallel

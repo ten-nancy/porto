@@ -1,0 +1,40 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides:          PKGPREFIXporto
+# Required-Start:    $local_fs $network
+# Required-Stop:     $local_fs $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Porto container management system
+### END INIT INFO
+
+set -e
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+NAME=portod
+DAEMON=/usr/sbin/portod
+PIDFILE=/run/portoloop.pid
+
+test -x $DAEMON || exit 0
+
+. /lib/lsb/init-functions
+
+case "$1" in
+start|stop|restart|reload)
+    grep -zqs '^container=' /proc/1/environ && exit 0
+    log_daemon_msg "$1 porto daemon" "portod"
+    status="0"
+    $DAEMON $1 || status="$?"
+    log_end_msg $status
+    ;;
+status)
+    $DAEMON $1 || exit $?
+    ;;
+*)
+    log_action_msg "Usage: $0 {start|stop|status|restart|reload}"
+    exit 2
+    ;;
+esac
+
+exit 0

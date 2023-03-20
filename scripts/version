@@ -1,0 +1,5 @@
+#!/bin/sh
+FMT='const char PORTO_VERSION[] = "%s";\nconst char PORTO_REVISION[] = "%s";\n'
+VER=`sed -nE 's#.*\((.*)\).*#\1#p;q' debian/changelog`
+REV=`git describe --tags --dirty=-dirty`
+printf "$FMT" "$VER" "$REV"

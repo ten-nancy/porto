@@ -1,0 +1,357 @@
+syntax = "proto2";
+
+package cfg;
+
+message TConfig {
+    message TNetworkCfg {
+
+        optional uint32 watchdog_ms = 32;
+
+        optional uint32 resolv_conf_watchdog_ms = 43;
+        optional uint32 sock_diag_update_interval_ms = 62;
+        optional uint32 sock_diag_max_fds = 63;
+
+        optional uint32 bpf_progs_update_interval_ms = 75;
+
+        optional uint32 cache_statistics_ms = 35;
+
+        optional bool enable_host_net_classes = 59;
+
+        /* L3 network */
+        optional bool proxy_ndp = 30;               // add proxy entries
+        optional uint32 proxy_ndp_max_range = 52;   // limit subnet size
+        optional uint32 proxy_ndp_watchdog_ms = 39;
+
+        optional bool l3_migration_hack = 36;       // share netns with same ip
+
+        optional uint32 l3_default_mtu = 42;        // L3 link mtu
+        optional uint32 l3_default_ipv4_mtu = 50;   // default route mtu
+        optional uint32 l3_default_ipv6_mtu = 51;   // default route mtu
+
+        /* NAT */
+        optional string nat_first_ipv4 = 10;
+        optional string nat_first_ipv6 = 11;
+        optional uint32 nat_count = 12;
+
+        /* ipip6 tunnel */
+        optional uint32 ipip6_encap_limit = 37;
+        optional uint32 ipip6_ttl = 38;
+        optional uint32 ipip6_tx_queues = 58;
+        optional bool enable_ip6tnl0 = 40;
+
+        /* SLAAC for macvlan */
+        optional uint32 autoconf_timeout_s = 13;
+
+        /* TC scheduler */
+        repeated string unmanaged_device = 14;
+        repeated string unmanaged_group = 15;
+        repeated string managed_device = 54;
+        optional bool managed_ip6tnl = 55;
+        optional bool managed_vlan = 56;
+        optional bool enforce_unmanaged_defaults = 57;
+
+        /* Uplink tc qdisc */
+        optional string device_qdisc = 16;
+        optional string device_rate = 17;
+        optional string device_ceil = 27;       // device speed limit
+        optional string device_quantum = 18;
+        optional string device_rate_burst = 22;
+        optional string device_ceil_burst = 23;
+
+        // Host and default tc class
+        optional string default_rate = 19;
+        optional string default_ceil = 20;
+        optional string default_qdisc = 24;
+        optional string default_qdisc_limit = 25;
+        optional string default_qdisc_quantum = 26;
+
+        // Container tc class
+        optional string container_rate = 21;
+        optional string container_qdisc = 28;
+        optional string container_qdisc_limit = 29;
+        optional string container_qdisc_quantum = 33;
+
+        // ToS tc class
+        message TDscpClass {
+            required string name = 1;                   // CS0..CS7
+            required uint32 weight = 2;
+            optional uint64 limit = 3;
+            optional double max_percent = 4 [default = 100];
+        }
+        repeated TDscpClass dscp_class = 44;
+
+        optional string default_tos = 45;               // CS0..CS7
+
+        // Automaic: container + tos -> priority -> tc class
+        optional bool enable_netcls_priority = 46;
+        optional bool enable_netcls_classid = 69;
+
+        // Leaf qdisc codel or fq-codel
+        optional uint32 codel_target = 47;
+        optional uint32 codel_interval = 48;
+        optional bool codel_ecn = 49;
+
+        // Leaf qdisc codel, fq-codel or fq
+        optional uint32 codel_ce_threshold = 53;
+
+        // Leaf qdisc fq-codel
+        optional uint32 fq_codel_memory_limit = 60;
+        optional uint32 fq_codel_flows = 61;
+
+        // Leaf qdisc fq
+        optional uint32 fq_initial_quantum = 70;
+        optional uint32 fq_flow_limit = 71;
+        optional uint32 fq_buckets = 72;
+        optional uint32 fq_horizon = 73;
+        optional bool fq_horizon_drop = 74;
+
+        // RX tc police
+        optional string ingress_burst = 34;
+
+        /* see man ip-addrlabel */
+        message TAddrLabel {
+            required string prefix = 1;
+            required uint32 label = 2;
+        }
+        repeated TAddrLabel addrlabel = 31;
+
+        message TExtraRoute {
+            required string dst = 1;
+            required uint32 mtu = 2;
+            optional uint32 advmss = 3;
+        }
+        repeated TExtraRoute extra_routes = 64;
+        optional uint64 default_uplink_speed_gb = 65;
+
+        optional uint32 l3stat_watchdog_ms = 66;
+        optional uint32 l3stat_watchdog_lost_ms = 67;
+
+        optional string network_ifup_script = 68;
+
+        /* Deprecated */
+        optional bool enable_iproute = 41;
+        optional bool enabled = 1 [deprecated=true];
+        optional bool debug = 2 [deprecated=true];
+        repeated string devices = 3 [deprecated=true];
+        optional uint32 default_prio = 4 [deprecated=true];
+        optional uint32 default_max_guarantee = 5 [deprecated=true];
+        optional uint32 default_guarantee = 6 [deprecated=true];
+        optional uint32 default_limit = 7 [deprecated=true];
+        message TNetworkAlias {
+            required string iface = 1;
+            required string name = 2;
+        }
+        repeated TNetworkAlias alias = 8 [deprecated=true];
+        optional bool dynamic_ifaces = 9 [deprecated=true];
+    }
+
+    message TFileCfg {
+        optional string path = 1;
+        optional uint32 perm = 2;
+    }
+
+    message TRpcSockCfg {
+        optional TFileCfg file = 1;
+        optional string group = 2;
+    }
+
+    message TLogCfg {
+        optional bool verbose = 1;
+        optional bool debug = 2;
+    }
+
+    message TKeyvalCfg {
+        optional TFileCfg file = 1 [deprecated=true];
+        optional string size = 2 [deprecated=true];
+    }
+
+    message TDaemonCfg {
+        optional uint32 max_clients = 1;
+        optional uint32 cgroup_remove_timeout_s = 2;
+        optional uint32 freezer_wait_timeout_s = 3;
+        optional uint64 memory_guarantee_reserve = 4;
+        optional uint64 log_rotate_ms = 5;
+        optional string sysfs_root = 6 [deprecated=true];
+        optional uint64 memory_limit = 7;
+        optional uint32 workers = 8 [deprecated=true];
+        optional uint64 max_msg_len = 9;
+        optional bool blocking_read = 10 [deprecated=true];
+        optional bool blocking_write = 11 [deprecated=true];
+        optional uint32 event_workers = 12 [deprecated=true];
+        optional bool debug = 13 [deprecated=true];
+        optional uint64 helpers_memory_limit = 14;
+        optional uint32 portod_stop_timeout = 15;
+        optional uint32 portod_start_timeout = 16;
+        optional int32 max_clients_in_container = 17;
+        optional bool merge_memory_blkio_controllers = 18;
+        optional uint64 client_idle_timeout = 19;
+        optional uint64 helpers_dirty_limit = 20;
+        optional uint32 portod_shutdown_timeout = 21;
+        optional uint32 rw_threads = 22;
+        optional uint32 ro_threads = 23;
+        optional uint32 io_threads = 24;
+        optional bool ptrace_protection = 25;
+        optional uint32 vl_threads = 26;
+        optional string tar_path = 27;
+        optional uint32 debug_hung_tasks_count = 28;
+        optional uint32 request_handling_delay_ms = 29;  // for retriability test
+        optional bool docker_images_support = 30;
+    }
+
+    message TContainerCfg {
+        optional uint32 max_log_size = 1 [deprecated=true];
+        optional string tmp_dir = 2 [deprecated=true];
+        optional uint32 default_aging_time_s = 3;
+        optional uint32 respawn_delay_ms = 4;
+        optional uint64 stdout_limit = 5;
+        optional uint32 private_max = 6 [deprecated=true];
+        optional uint32 kill_timeout_ms = 8;
+        optional uint32 stop_timeout_ms = 9;
+        optional bool use_hierarchy = 10 [deprecated=true];
+        optional uint32 max_total = 11;
+        optional uint32 batch_io_weight = 12 [deprecated=true];
+        optional uint32 empty_wait_timeout_ms = 13;
+        optional string chroot_porto_dir = 14 [deprecated=true];
+        optional bool scoped_unlock = 15 [deprecated=true];
+        optional uint32 start_timeout_ms = 16;
+        optional bool enable_smart = 17 [deprecated=true];
+        optional bool default_porto_namespace = 18; /* [deprecated=true] */
+        optional bool enable_tracefs = 19;
+        optional uint32 normal_io_weight = 20 [deprecated=true];
+        optional uint64 stdout_limit_max = 21;
+        optional uint32 devpts_max = 22;
+        optional uint64 dev_size = 23;
+        optional bool all_controllers = 24 [deprecated=true];
+        optional bool enable_hugetlb = 26;
+        optional int32 rt_priority = 27;
+        optional bool enable_cpu_reserve = 28;
+        optional int32 rt_nice = 29;
+        optional int32 high_nice = 30;
+        optional uint64 min_memory_limit = 31;
+        optional string default_ulimit = 32;
+        optional int64 default_thread_limit = 35;
+        optional string default_resolv_conf = 36;
+        optional bool default_bind_dns = 37 [deprecated=true];
+        optional uint64 cpu_period = 38;
+        optional double cpu_limit_scale = 63;
+        optional bool proportional_cpu_shares = 64;
+        optional bool enable_systemd = 39;
+        optional bool detect_systemd = 40;
+        optional string extra_devices = 41;
+        optional bool propagate_cpu_guarantee = 42;
+        optional int64 dead_memory_soft_limit = 43;
+        optional bool pressurize_on_death = 44;
+        optional bool enable_blkio = 45;
+        optional bool ptrace_on_start = 54;
+        optional uint64 std_stream_read_limit = 55;
+        optional bool enable_cgroup2 = 56;
+        optional bool use_os_mode_cgroupns = 57; //[deprecated=true] use cgroupfs container option
+        optional bool enable_rw_cgroupfs = 59;
+        optional bool enable_docker_mode = 58;
+
+        message TSysctl {
+            required string key = 1;
+            required string val = 2;
+        }
+        repeated TSysctl net_sysctl = 34;
+        repeated TSysctl ipc_sysctl = 33;
+
+        repeated string rec_bind_hack = 46; /* FIXME remove */
+
+        message TDeviceSysfs {
+            required string device = 1;
+            repeated string sysfs = 2;
+        }
+        repeated TDeviceSysfs device_sysfs = 47;
+
+        message TDevicePreset {
+            required string preset = 1;
+            repeated string device = 2;
+        }
+        repeated TDevicePreset device_preset = 52;
+
+        optional uint64 anon_limit_margin = 48;
+        optional uint64 memlock_minimal = 49;
+        optional uint64 memlock_margin = 50;
+        optional uint64 memory_limit_margin = 51;
+
+        optional double memory_high_limit_proportion = 65;
+
+        message TContainerExtraEnv {
+            required string name = 1;
+            required string value = 2;
+        }
+        repeated TContainerExtraEnv extra_env = 53;
+
+        message TExtraProperty {
+            required string filter = 1;
+
+            message TProperty {
+                required string name = 1;
+                required string value = 2;
+            }
+            repeated TProperty properties = 2;
+        }
+        repeated TExtraProperty extra_properties = 60;
+
+        optional bool enable_numa_migration = 61;
+
+        optional bool enable_rw_net_cgroups = 62;
+    }
+
+    message TPrivilegesCfg {
+        repeated string root_user = 1 [deprecated=true];
+        repeated string root_group = 2 [deprecated=true];
+        repeated string restricted_root_user = 3 [deprecated=true];
+        repeated string restricted_root_group = 4 [deprecated=true];
+        optional bool enforce_bind_permissions = 5 [deprecated=true];
+    }
+
+    message TVolumesCfg {
+        optional TKeyvalCfg keyval = 1 [deprecated=true];
+        optional string volume_dir = 2 [deprecated=true];
+        optional bool enabled = 5 [deprecated=true];
+        optional string layers_dir = 6 [deprecated=true];
+        optional bool enable_quota = 7;
+        optional string default_place = 8 [deprecated=true];
+        optional uint64 max_total = 9;
+        optional string place_load_limit = 10;
+        optional bool direct_io_loop = 11;
+        optional string default_lvm_group = 12;
+        optional string squashfs_compression = 13;
+        optional bool parallel_compression = 15;
+        optional bool keep_project_quota_id = 16;
+        optional string insecure_user_paths = 17;
+        optional string aux_default_places = 18;
+        optional uint64 fs_stat_update_interval_ms = 19;
+    }
+
+    message TCoreCfg {
+        optional bool enable = 1;
+        optional uint64 timeout_s = 2;
+        optional string default_pattern = 3;
+        optional uint64 space_limit_mb = 5;
+        optional uint64 slot_space_limit_mb = 6;
+        optional uint64 sync_size = 7;
+    }
+
+    optional TNetworkCfg network = 1;
+    optional TFileCfg master_pid = 2 [deprecated=true];
+    optional TFileCfg slave_pid = 3 [deprecated=true];
+    optional TFileCfg master_log = 4 [deprecated=true];
+    optional TFileCfg slave_log = 5 [deprecated=true];
+    optional TRpcSockCfg rpc_sock = 6 [deprecated=true];
+    optional TLogCfg log = 7;
+    optional TKeyvalCfg keyval = 8 [deprecated=true];
+    optional TDaemonCfg daemon = 9;
+    optional TContainerCfg container = 10;
+    optional TPrivilegesCfg privileges = 11;
+    optional TVolumesCfg volumes = 12;
+    optional TFileCfg version = 13 [deprecated=true];
+    optional TFileCfg journal_dir = 14 [deprecated=true];
+    optional uint64 journal_ttl_ms = 15 [deprecated=true];
+    optional uint64 keyvalue_limit = 16;
+    optional uint64 keyvalue_size = 17;
+    optional TCoreCfg core = 18;
+    optional string linux_version = 19;
+}

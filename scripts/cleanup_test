@@ -1,0 +1,5 @@
+#!/bin/sh
+
+for u in porto-alice porto-bob porto-charlie porto-david ; do
+	id $u 1>/dev/null 2>&1 && userdel $u 1>/dev/null 2>&1
+done

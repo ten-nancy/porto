@@ -1,0 +1,21 @@
+#!/bin/sh
+# postinst script
+
+##DEBHELPER##
+
+case "$1" in
+    configure)
+    getent group porto > /dev/null || groupadd --gid 1333 porto
+    # Do not reload porto if running under hostmanager
+    if [ "$HOSTMAN" != "1" ]; then
+      if [ -x "/bin/systemctl" ] ; then
+      	/bin/systemctl enable PKGPREFIXporto.service || true
+      	/bin/systemctl reload-or-restart PKGPREFIXporto.service || true
+      else
+      	invoke-rc.d PKGPREFIXporto reload || true
+      fi
+    fi
+    ;;
+esac
+
+exit 0

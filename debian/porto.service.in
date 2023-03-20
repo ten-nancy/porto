@@ -1,0 +1,21 @@
+[Unit]
+Description=Porto container management system
+After=network-online.target
+Requires=network-online.target
+ConditionVirtualization=!container
+Documentation=https://github.com/ten-nancy/porto
+
+[Service]
+ExecStart=/usr/sbin/portod
+ExecReload=/usr/sbin/portod reload
+ExecStop=/usr/sbin/portod stop
+PIDFile=/run/portoloop.pid
+Restart=on-failure
+KillSignal=SIGINT
+KillMode=process
+TimeoutStopSec=360
+TimeoutStartSec=360
+Delegate=true
+
+[Install]
+WantedBy=multi-user.target

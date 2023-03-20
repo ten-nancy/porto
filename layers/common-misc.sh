@@ -1,0 +1,35 @@
+export DEBIAN_FRONTEND="noninteractive"
+apt-get --yes --no-install-recommends install \
+bc \
+binutils \
+bzip2 \
+cron \
+curl \
+daemon \
+dnsutils \
+ethtool \
+file \
+htop \
+'^(iproute2|iproute)$' \
+iptables \
+iputils-ping \
+less \
+lockfile-progs \
+logrotate \
+lsb-release \
+lsof \
+ltrace \
+netbase \
+netcat-openbsd \
+net-tools \
+ntpdate \
+procps \
+psmisc \
+python \
+rsync \
+rsyslog \
+strace \
+sudo \
+vim \
+wget \
+xz-utils

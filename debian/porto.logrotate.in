@@ -1,0 +1,15 @@
+/var/log/portod.log {
+	size 2000M
+	missingok
+	rotate 10
+	compress
+	notifempty
+	nocreate
+	su root syslog
+
+	postrotate
+		[ -f /run/portod.pid ] && kill -USR1 `cat /run/portod.pid`
+		[ -f /run/portoloop.pid ] && kill -USR1 `cat /run/portoloop.pid`
+	endscript
+
+}
