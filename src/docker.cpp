@@ -631,24 +631,22 @@ TError TDockerImage::Load(const TPath &place) {
 TError TDockerImage::InitStorage(const TPath &place, unsigned perms) {
     TError error;
     TPath dockerPath = place / PORTO_DOCKER;
+    struct stat st;
 
-    error = dockerPath.MkdirAll(perms);
+    // Here dockerPath has been created in Cleanup() or by user
+    error = dockerPath.StatStrict(st);
     if (error)
         return error;
 
-    error = TPath(place / PORTO_DOCKER_TAGS).MkdirAll(perms);
-    if (error)
-        return error;
+    // Create internal directories
+    for (const auto& path: {PORTO_DOCKER_TAGS, PORTO_DOCKER_IMAGES, PORTO_DOCKER_LAYERS}) {
+        error = TPath(place / path).MkdirAll(perms);
+        if (error)
+            return error;
+    }
 
-    error = TPath(place / PORTO_DOCKER_IMAGES).MkdirAll(perms);
-    if (error)
-        return error;
-
-    error = TPath(place / PORTO_DOCKER_LAYERS).MkdirAll(perms);
-    if (error)
-        return error;
-
-    error = dockerPath.ChownRecursive(RootUser, PortoGroup);
+    // dockerPath has uid and gid either from Cleanup() or from user
+    error = dockerPath.ChownRecursive(st.st_uid, st.st_gid);
     if (error)
         return error;
 

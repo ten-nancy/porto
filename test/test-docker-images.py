@@ -11,6 +11,8 @@ K8S_IMAGE_TAG = "k8s.gcr.io/pause:3.7"
 K8S_IMAGE_DIGEST = "221177c6082a88ea4f6240ab2450d540955ac6f4d5454f0e15751b653ebda165"
 K8S_IMAGE_ALT_TAG = "registry-1.docker.io/kndrvt/pause:latest"
 
+PLACE = ""
+
 conn = porto.Connection(timeout=30)
 
 ConfigurePortod('docker-images', """
@@ -29,46 +31,47 @@ def check_image(image, digest, tags):
 # api
 print("Check python api")
 
-image = conn.PullDockerImage(IMAGE_NAME)
+image = conn.PullDockerImage(IMAGE_NAME, place=PLACE)
 check_image(image, IMAGE_DIGEST, [IMAGE_TAG])
 
 for mask in (None, IMAGE_TAG[:-1]+"***", IMAGE_TAG):
-    images = conn.ListDockerImages(mask=mask)
+    images = conn.ListDockerImages(mask=mask, place=PLACE)
     Expect(image.id in list(map(lambda x: x.id, images)))
     if mask:
         ExpectEq(len(images), 1)
         check_image(images[0], IMAGE_DIGEST, [IMAGE_TAG])
 
 for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
-    image = conn.DockerImageStatus(IMAGE_DIGEST[:12])
+    image = conn.DockerImageStatus(IMAGE_DIGEST[:12], place=PLACE)
     check_image(image, IMAGE_DIGEST, [IMAGE_TAG])
 
 for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
-    image = conn.PullDockerImage(IMAGE_NAME)
-    conn.RemoveDockerImage(name)
-    ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, name)
+    image = conn.PullDockerImage(IMAGE_NAME, place=PLACE)
+    conn.RemoveDockerImage(name, place=PLACE)
+    ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, name, place=PLACE)
 
 
 # volume
 print("Check volumes")
 
-image = conn.PullDockerImage(IMAGE_NAME)
-volume = conn.CreateVolume(None, image=IMAGE_NAME, layers=[LAYER_NAME])
+image = conn.PullDockerImage(IMAGE_NAME, place=PLACE)
+volume = conn.CreateVolume(image=IMAGE_NAME, layers=[LAYER_NAME], place=PLACE)
 ExpectEq(volume.GetProperty("image"), IMAGE_NAME)
 Expect(LAYER_NAME not in volume.GetProperty("layers").split(";"))
 
-conn.RemoveDockerImage(image.id)
-ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, image.id)
+conn.RemoveDockerImage(image.id, place=PLACE)
+ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, image.id, place=PLACE)
+volume.Destroy()
 
 
 # portoctl
 print("Check portoctl commands")
 
-image = subprocess.check_output([portoctl, "docker-pull", IMAGE_NAME]).decode("utf-8")[:-1]
+image = subprocess.check_output([portoctl, "docker-pull", "-P", PLACE, IMAGE_NAME]).decode("utf-8")[:-1]
 ExpectEq(image, IMAGE_DIGEST)
 
 for mask in ("", IMAGE_TAG[:-1]+"***", IMAGE_TAG):
-    images = subprocess.check_output([portoctl, "docker-images", mask]).decode("utf-8").split()
+    images = subprocess.check_output([portoctl, "docker-images", "-P", PLACE, mask]).decode("utf-8").split()
     Expect(image[:12] in images)
     Expect(IMAGE_TAG in images)
     if mask:
@@ -78,44 +81,44 @@ for mask in ("", IMAGE_TAG[:-1]+"***", IMAGE_TAG):
         ExpectEq(IMAGE_TAG, images[3])
 
 for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
-    image = subprocess.check_output([portoctl, "docker-pull", IMAGE_NAME]).decode("utf-8")[:-1]
-    stdout = subprocess.check_output([portoctl, "docker-rmi", name]).decode("utf-8")
+    image = subprocess.check_output([portoctl, "docker-pull", "-P", PLACE, IMAGE_NAME]).decode("utf-8")[:-1]
+    stdout = subprocess.check_output([portoctl, "docker-rmi", "-P", PLACE, name]).decode("utf-8")
     ExpectEq(stdout, "")
-    ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, image)
+    ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, image, place=PLACE)
 
 
 # k8s image
 print("Check k8s pause image")
 
-image = conn.PullDockerImage(K8S_IMAGE_TAG)
+image = conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG])
 
 for name in (K8S_IMAGE_TAG, K8S_IMAGE_DIGEST, K8S_IMAGE_DIGEST[:12]):
-    image = conn.DockerImageStatus(name)
+    image = conn.DockerImageStatus(name, place=PLACE)
     check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG])
 
 for name in (K8S_IMAGE_TAG, K8S_IMAGE_DIGEST, K8S_IMAGE_DIGEST[:12]):
-    image = conn.PullDockerImage(K8S_IMAGE_TAG)
-    conn.RemoveDockerImage(name)
-    ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, name)
+    image = conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
+    conn.RemoveDockerImage(name, place=PLACE)
+    ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, name, place=PLACE)
 
 
 # tag adding
 print("Check tag adding")
 
-conn.PullDockerImage(K8S_IMAGE_TAG)
-image = conn.PullDockerImage(K8S_IMAGE_ALT_TAG)
+conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
+image = conn.PullDockerImage(K8S_IMAGE_ALT_TAG, place=PLACE)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG, K8S_IMAGE_ALT_TAG])
 
-conn.RemoveDockerImage(K8S_IMAGE_TAG)
-image = conn.DockerImageStatus(K8S_IMAGE_ALT_TAG)
+conn.RemoveDockerImage(K8S_IMAGE_TAG, place=PLACE)
+image = conn.DockerImageStatus(K8S_IMAGE_ALT_TAG, place=PLACE)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_ALT_TAG])
 
-conn.PullDockerImage(K8S_IMAGE_TAG)
-image = conn.DockerImageStatus(K8S_IMAGE_TAG)
+conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
+image = conn.DockerImageStatus(K8S_IMAGE_TAG, place=PLACE)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG, K8S_IMAGE_ALT_TAG])
 
-conn.RemoveDockerImage(K8S_IMAGE_DIGEST)
-ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_TAG)
-ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_ALT_TAG)
-ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_DIGEST)
+conn.RemoveDockerImage(K8S_IMAGE_DIGEST, place=PLACE)
+ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_TAG, place=PLACE)
+ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_ALT_TAG, place=PLACE)
+ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_DIGEST, place=PLACE)

@@ -3,14 +3,13 @@
 import os
 import shutil
 import tarfile
-import time
 import traceback
 import porto
 from test_common import *
 
 AsRoot()
 
-c = porto.Connection(timeout=300)
+c = porto.Connection(timeout=30)
 
 DIR = "/tmp/test-volumes"
 PLACE_DIR = DIR + "-place"
@@ -29,9 +28,6 @@ os.mkdir(DIR)
 os.mkdir(PLACE_DIR)
 
 def Test():
-    #Prepare dirs and check non-compliant dirs
-    assert Catch(c.CreateVolume, path=None, place=PLACE_DIR) == porto.exceptions.InvalidValue
-
     #Prepare dummy layer also
     f = open(DIR + "/file.txt", "w")
     f.write("1234567890")
@@ -42,10 +38,6 @@ def Test():
 
 
     os.mkdir(PLACE_DIR + "/porto_volumes")
-    assert Catch(c.ImportLayer, "file_layer",
-             DIR + "/file_layer.tar", place=PLACE_DIR) == porto.exceptions.InvalidValue
-    assert Catch(c.CreateVolume, path=None,
-                 place=PLACE_DIR) == porto.exceptions.InvalidValue
     os.mkdir(PLACE_DIR + "/porto_layers")
     os.mkdir(PLACE_DIR + "/porto_storage")
     os.mkdir(DIR + "/a")
@@ -152,7 +144,7 @@ def Test():
 
         def Test(self):
            for parent_place in self.parent_places:
-               cont = c.Create("parent") 
+               cont = c.Create("parent")
                cont.SetProperty("place", parent_place)
                cont.SetProperty("command", ' sleep 5')
                cont.SetProperty("env", "PYTHONPATH=/porto/src/api/python")
@@ -226,7 +218,7 @@ ret = 0
 try:
     Test()
 except BaseException as e:
-    print traceback.format_exc()
+    print(traceback.format_exc())
     ret = 1
 
 for r in c.ListContainers():

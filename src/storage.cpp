@@ -199,6 +199,7 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
     TPath base;
     struct stat st;
     TError error;
+    bool default_place = false;
 
     switch (type) {
     case EStorageType::Volume:
@@ -208,7 +209,7 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
         base = place / PORTO_LAYERS;
         break;
     case EStorageType::DockerLayer:
-        base = place / PORTO_DOCKER_LAYERS;
+        base = place / PORTO_DOCKER;
         break;
     case EStorageType::Storage:
         base = place / PORTO_STORAGE;
@@ -220,21 +221,14 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
         break;
     }
 
+    if (place == PORTO_PLACE)
+        default_place = true;
+    else
+        default_place = std::find(AuxPlacesPaths.begin(), AuxPlacesPaths.end(), place) != AuxPlacesPaths.end();
+
     error = base.StatStrict(st);
     if (error && error.Errno == ENOENT) {
-        /* In non-default place user must create base structure */
-        bool default_place = false;
-        if (place == PORTO_PLACE)
-            default_place = true;
-        else {
-            for (const auto &path : AuxPlacesPaths) {
-                if (place == path)
-                    default_place = true;
-            }
-        }
-
-        if (!default_place && (type == EStorageType::Volume || type == EStorageType::Layer))
-            return TError(EError::InvalidValue, base.ToString() + " must be directory");
+        /* If base does not exist, we attempt to create base directory */
         error = base.MkdirAll(perms);
         if (!error)
             error = base.StatStrict(st);
@@ -245,8 +239,22 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
     if (!S_ISDIR(st.st_mode))
         return TError(EError::InvalidValue, base.ToString() + " must be directory");
 
-    if (st.st_uid != RootUser || st.st_gid != PortoGroup) {
-        error = base.Chown(RootUser, PortoGroup);
+    if (default_place) {
+        /* In default place root controls base structure */
+        if (st.st_uid != RootUser || st.st_gid != PortoGroup) {
+            error = base.Chown(RootUser, PortoGroup);
+            if (error)
+                return error;
+        }
+    } else {
+        /* In non-default place user can control base structure */
+        struct stat pst;
+
+        error = base.DirName().StatStrict(pst);
+        if (error)
+            return error;
+
+        error = base.Chown(pst.st_uid, pst.st_gid);
         if (error)
             return error;
     }
