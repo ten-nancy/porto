@@ -224,6 +224,7 @@ func TestDestroy(t *testing.T) {
 	FailOnError(t, c, c.Destroy(testContainer))
 }
 
+// SpecAPI
 func TestCreateFromSpec(t *testing.T) {
 	c := ConnectToPorto(t)
 	defer c.Close()
