@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/yandex/porto/src/api/go/porto/pkg/rpc"
+	"github.com/ten-nancy/porto/src/api/go/porto/pkg/rpc"
 )
 
 const (
@@ -21,13 +21,13 @@ const (
 	testPlace     = testTmpDir + "golang_place"
 )
 
-func FailOnError(t *testing.T, c API, err error) {
+func FailOnError(t *testing.T, c PortoAPI, err error) {
 	if err != nil {
 		t.Error(err)
 	}
 }
 
-func ExpectProperty(t *testing.T, c API, ct string, prop string, value string) {
+func ExpectProperty(t *testing.T, c PortoAPI, ct string, prop string, value string) {
 	v, err := c.GetProperty(ct, prop)
 	FailOnError(t, c, err)
 	if v != value {
@@ -36,8 +36,8 @@ func ExpectProperty(t *testing.T, c API, ct string, prop string, value string) {
 	}
 }
 
-func ConnectToPorto(t *testing.T) API {
-	c, err := Connect()
+func ConnectToPorto(t *testing.T) PortoAPI {
+	c, err := Dial()
 	if c == nil {
 		t.Error(err)
 		t.FailNow()
@@ -189,13 +189,13 @@ func TestGet(t *testing.T) {
 	defer c.Close()
 	containers := []string{testContainer}
 	variables := []string{"state", "exit_status"}
-	resp, err := c.Get(containers, variables)
+	resp, err := c.GetProperties(containers, variables)
 	FailOnError(t, c, err)
-	if resp[testContainer]["state"].Value != "dead" {
+	if resp[testContainer]["state"] != "dead" {
 		t.Error("Got a wrong state value")
 		t.FailNow()
 	}
-	if resp[testContainer]["exit_status"].Value != "15" {
+	if resp[testContainer]["exit_status"] != "15" {
 		t.Error("Got a wrong exit_status value")
 		t.FailNow()
 	}
@@ -300,7 +300,7 @@ func TestListVolumes(t *testing.T) {
 	volumes, err := c.ListVolumes("", "")
 	FailOnError(t, c, err)
 	for i := range volumes {
-		if volumes[i].Path == testVolume {
+		if *volumes[i].Path == testVolume {
 			return
 		}
 	}
@@ -312,7 +312,7 @@ func TestLinkVolume(t *testing.T) {
 	c := ConnectToPorto(t)
 	defer c.Close()
 	FailOnError(t, c, c.Create(testContainer))
-	FailOnError(t, c, c.LinkVolume(testVolume, testContainer, "", false, false))
+	FailOnError(t, c, c.LinkVolume(testVolume, testContainer))
 }
 
 func TestLinkVolumeTarget(t *testing.T) {
@@ -337,9 +337,9 @@ func TestLinkVolumeTarget(t *testing.T) {
 		"storage": cntMountDir,
 	})
 	FailOnError(t, c, err)
-	FailOnError(t, c, c.LinkVolume(cntMountDir, cntName, "/dst", false, true))
-	FailOnError(t, c, c.UnlinkVolume(cntMountDir, "/", ""))
-	FailOnError(t, c, c.UnlinkVolume(cntMountDir, cntName, "/dst"))
+	FailOnError(t, c, c.LinkVolumeTarget(cntMountDir, cntName, "/dst", false, true))
+	FailOnError(t, c, c.UnlinkVolumeTarget(cntMountDir, "/", ""))
+	FailOnError(t, c, c.UnlinkVolumeTarget(cntMountDir, cntName, "/dst"))
 }
 
 func TestExportLayer(t *testing.T) {
@@ -352,8 +352,8 @@ func TestExportLayer(t *testing.T) {
 func TestUnlinkVolume(t *testing.T) {
 	c := ConnectToPorto(t)
 	defer c.Close()
-	FailOnError(t, c, c.UnlinkVolume(testVolume, testContainer, ""))
-	FailOnError(t, c, c.UnlinkVolume(testVolume, "/", ""))
+	FailOnError(t, c, c.UnlinkVolume(testVolume, testContainer))
+	FailOnError(t, c, c.UnlinkVolume(testVolume, "/"))
 	FailOnError(t, c, c.Destroy(testContainer))
 	os.Remove(testVolume)
 }
@@ -448,7 +448,7 @@ func TestCreateStorage(t *testing.T) {
 
 	volume, err := c.CreateVolume("", config)
 	FailOnError(t, c, err)
-	FailOnError(t, c, c.UnlinkVolume3(volume.Path, "", "", false))
+	FailOnError(t, c, c.UnlinkVolumeStrict(*volume.Path, "", "", false))
 }
 
 func TestListStorage(t *testing.T) {
@@ -493,12 +493,12 @@ func TestPlace(t *testing.T) {
 
 	volume, err := c.CreateVolume("", config)
 	FailOnError(t, c, err)
-	if !strings.Contains(volume.Path, testPlace) {
+	if !strings.Contains(*volume.Path, testPlace) {
 		t.Error("Volume does not use desired place")
 		t.FailNow()
 	}
 
-	_, err = os.Stat(volume.Path)
+	_, err = os.Stat(*volume.Path)
 	FailOnError(t, c, err)
 
 	storages, err := c.ListStorage(testPlace, "")
@@ -509,7 +509,7 @@ func TestPlace(t *testing.T) {
 		t.FailNow()
 	}
 
-	FailOnError(t, c, c.UnlinkVolume3(volume.Path, "", "", false))
+	FailOnError(t, c, c.UnlinkVolumeStrict(*volume.Path, "", "", false))
 	FailOnError(t, c, c.RemoveStorage("abcd", testPlace))
 	FailOnError(t, c, os.Remove(testPlace+"/porto_volumes"))
 	FailOnError(t, c, os.Remove(testPlace+"/porto_layers"))

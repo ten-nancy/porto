@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yandex/porto/src/api/go/porto/pkg/rpc"
+	"github.com/ten-nancy/porto/src/api/go/porto/pkg/rpc"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -28,7 +28,7 @@ type TData struct {
 }
 
 type TVolumeDescription struct {
-	Path       string
+	Path       *string
 	Properties map[string]string
 	Containers []string
 }
@@ -55,16 +55,16 @@ type TPortoGetResponse struct {
 	ErrorMsg string
 }
 
-type Error struct {
+type PortoError struct {
 	Code    rpc.EError
 	Message string
 }
 
-func (err *Error) Error() string {
+func (err *PortoError) Error() string {
 	return fmt.Sprintf("%s: %s", rpc.EError_name[int32(err.Code)], err.Message)
 }
 
-type API interface {
+type PortoAPI interface {
 	Close() error
 
 	GetVersion() (string, string, error)
@@ -84,13 +84,12 @@ type API interface {
 	Wait(containers []string, timeout time.Duration) (string, error)
 
 	List() ([]string, error)
-	List1(mask string) ([]string, error)
+	ListContainers(mask string) ([]string, error)
 	Plist() ([]TProperty, error)
 	Dlist() ([]TData, error)
 
-	Get(containers []string, variables []string) (map[string]map[string]TPortoGetResponse, error)
-	Get3(containers []string, variables []string, nonblock bool) (
-		map[string]map[string]TPortoGetResponse, error)
+	Get(names []string, properties []string) (*rpc.TContainerGetResponse, error)
+	GetProperties(names []string, properties []string) (map[string]map[string]string, error)
 
 	GetProperty(name string, property string) (string, error)
 	SetProperty(name string, property string, value string) error
@@ -102,13 +101,16 @@ type API interface {
 	UpdateFromSpec(spec *rpc.TContainerSpec, start bool) error
 
 	// VolumeAPI
+	ListVolumes(path string, container string) ([]*TVolumeDescription, error)
 	ListVolumeProperties() ([]TProperty, error)
-	CreateVolume(path string, config map[string]string) (TVolumeDescription, error)
+	CreateVolume(path string, config map[string]string) (*TVolumeDescription, error)
 	TuneVolume(path string, config map[string]string) error
-	LinkVolume(path string, container string, target string, required bool, readOnly bool) error
-	UnlinkVolume(path string, container string, target string) error
-	UnlinkVolume3(path string, container string, target string, strict bool) error
-	ListVolumes(path string, container string) ([]TVolumeDescription, error)
+
+	LinkVolume(path string, container string) error
+	UnlinkVolume(path string, container string) error
+	LinkVolumeTarget(path string, container string, target string, required bool, readOnly bool) error
+	UnlinkVolumeTarget(path string, container string, target string) error
+	UnlinkVolumeStrict(path string, container string, target string, strict bool) error
 
 	// LayerAPI
 	ImportLayer(layer string, tarball string, merge bool) error
@@ -142,7 +144,7 @@ type client struct {
 
 // Connect establishes connection to a Porto daemon via unix socket.
 // Close must be called when the API is not needed anymore.
-func Connect() (API, error) {
+func Dial() (PortoAPI, error) {
 	conn, err := net.Dial("unix", portoSocket)
 	if err != nil {
 		return nil, err
@@ -183,6 +185,13 @@ func (c *client) Call(req *rpc.TContainerRequest) (*rpc.TContainerResponse, erro
 	}
 
 	return rsp, nil
+}
+
+func optString(val string) *string {
+	if val == "" {
+		return nil
+	}
+	return &val
 }
 
 func (c *client) WriteRequest(req *rpc.TContainerRequest) error {
@@ -232,7 +241,7 @@ func (c *client) ReadResponse() (*rpc.TContainerResponse, error) {
 	}
 
 	if rsp.GetError() != rpc.EError_Success {
-		return rsp, &Error{
+		return rsp, &PortoError{
 			Code:    rsp.GetError(),
 			Message: rsp.GetErrorMsg(),
 		}
@@ -364,10 +373,10 @@ func (c *client) Wait(containers []string, timeout time.Duration) (string, error
 }
 
 func (c *client) List() ([]string, error) {
-	return c.List1("")
+	return c.ListContainers("")
 }
 
-func (c *client) List1(mask string) ([]string, error) {
+func (c *client) ListContainers(mask string) ([]string, error) {
 	req := &rpc.TContainerRequest{
 		List: &rpc.TContainerListRequest{},
 	}
@@ -419,41 +428,35 @@ func (c *client) Dlist() (ret []TData, err error) {
 	return ret, nil
 }
 
-func (c *client) Get(containers []string, variables []string) (ret map[string]map[string]TPortoGetResponse, err error) {
-	return c.Get3(containers, variables, false)
-}
-
-func (c *client) Get3(containers []string, variables []string, nonblock bool) (ret map[string]map[string]TPortoGetResponse, err error) {
-	ret = make(map[string]map[string]TPortoGetResponse)
+func (c *client) Get(containers []string, properties []string) (ret *rpc.TContainerGetResponse, err error) {
 	req := &rpc.TContainerRequest{
 		Get: &rpc.TContainerGetRequest{
 			Name:     containers,
-			Variable: variables,
-			Nonblock: &nonblock,
+			Variable: properties,
 		},
 	}
 
-	resp, err := c.Call(req)
+	rsp, err := c.Call(req)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, item := range resp.GetGet().GetList() {
+	return rsp.GetGet(), nil
+}
+
+func (c *client) GetProperties(containers []string, properties []string) (ret map[string]map[string]string, _ error) {
+	ret = make(map[string]map[string]string)
+	res, err := c.Get(containers, properties)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range res.GetList() {
+		ret[item.GetName()] = make(map[string]string)
 		for _, value := range item.GetKeyval() {
-			var v = TPortoGetResponse{
-				Value:    value.GetValue(),
-				Error:    int(value.GetError()),
-				ErrorMsg: value.GetErrorMsg(),
-			}
-
-			if _, ok := ret[item.GetName()]; !ok {
-				ret[item.GetName()] = make(map[string]TPortoGetResponse)
-			}
-
-			ret[item.GetName()][value.GetVariable()] = v
+			ret[item.GetName()][value.GetVariable()] = value.GetValue()
 		}
 	}
-	return ret, err
+	return ret, nil
 }
 
 func (c *client) GetProperty(name string, property string) (string, error) {
@@ -525,6 +528,35 @@ func (c *client) UpdateFromSpec(spec *rpc.TContainerSpec, start bool) error {
 }
 
 // VolumeAPI
+func (c *client) ListVolumes(path string, container string) (ret []*TVolumeDescription, err error) {
+	req := &rpc.TContainerRequest{
+		ListVolumes: &rpc.TVolumeListRequest{
+			Path:      optString(path),
+			Container: optString(container),
+		},
+	}
+
+	resp, err := c.Call(req)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, volume := range resp.GetVolumeList().GetVolumes() {
+		desc := new(TVolumeDescription)
+		desc.Path = volume.Path
+		desc.Containers = append(desc.Containers, volume.GetContainers()...)
+		desc.Properties = make(map[string]string)
+
+		for _, property := range volume.GetProperties() {
+			k := property.GetName()
+			v := property.GetValue()
+			desc.Properties[k] = v
+		}
+		ret = append(ret, desc)
+	}
+	return ret, err
+}
+
 func (c *client) ListVolumeProperties() (ret []TProperty, err error) {
 	req := &rpc.TContainerRequest{
 		ListVolumeProperties: &rpc.TVolumePropertyListRequest{},
@@ -545,8 +577,10 @@ func (c *client) ListVolumeProperties() (ret []TProperty, err error) {
 	return ret, err
 }
 
-func (c *client) CreateVolume(path string, config map[string]string) (desc TVolumeDescription, err error) {
+func (c *client) CreateVolume(path string, config map[string]string) (desc *TVolumeDescription, err error) {
 	var properties []*rpc.TVolumeProperty
+	desc = new(TVolumeDescription)
+
 	for k, v := range config {
 		// NOTE: `k`, `v` save their addresses during `range`.
 		// If we append pointers to them into an array,
@@ -573,7 +607,7 @@ func (c *client) CreateVolume(path string, config map[string]string) (desc TVolu
 	}
 
 	volume := resp.GetVolumeDescription()
-	desc.Path = volume.GetPath()
+	desc.Path = volume.Path
 	desc.Containers = append(desc.Containers, volume.GetContainers()...)
 	desc.Properties = make(map[string]string, len(volume.GetProperties()))
 
@@ -603,12 +637,23 @@ func (c *client) TuneVolume(path string, config map[string]string) error {
 	return err
 }
 
-func (c *client) LinkVolume(path string, container string, target string, required bool, readOnly bool) error {
+func (c *client) LinkVolume(path string, container string) error {
 	req := &rpc.TContainerRequest{
 		LinkVolume: &rpc.TVolumeLinkRequest{
 			Path:      &path,
 			Container: &container,
-			Target:    &target,
+		},
+	}
+	_, err := c.Call(req)
+	return err
+}
+
+func (c *client) LinkVolumeTarget(path string, container string, target string, required bool, readOnly bool) error {
+	req := &rpc.TContainerRequest{
+		LinkVolume: &rpc.TVolumeLinkRequest{
+			Path:      &path,
+			Container: &container,
+			Target:    optString(target),
 			Required:  &required,
 			ReadOnly:  &readOnly,
 		},
@@ -617,60 +662,40 @@ func (c *client) LinkVolume(path string, container string, target string, requir
 	return err
 }
 
-func (c *client) UnlinkVolume(path string, container string, target string) error {
-	return c.UnlinkVolume3(path, container, target, false)
-}
-
-func (c *client) UnlinkVolume3(path string, container string, target string, strict bool) error {
+func (c *client) UnlinkVolume(path string, container string) error {
 	req := &rpc.TContainerRequest{
 		UnlinkVolume: &rpc.TVolumeUnlinkRequest{
 			Path:      &path,
-			Container: &container,
-			Strict:    &strict,
-			Target:    &target,
+			Container: optString(container),
 		},
-	}
-	if container == "" {
-		req.UnlinkVolume.Container = nil
 	}
 	_, err := c.Call(req)
 	return err
 }
 
-func (c *client) ListVolumes(path string, container string) (ret []TVolumeDescription, err error) {
+func (c *client) UnlinkVolumeTarget(path string, container string, target string) error {
 	req := &rpc.TContainerRequest{
-		ListVolumes: &rpc.TVolumeListRequest{
+		UnlinkVolumeTarget: &rpc.TVolumeUnlinkRequest{
 			Path:      &path,
-			Container: &container,
+			Container: optString(container),
+			Target:    optString(target),
 		},
 	}
+	_, err := c.Call(req)
+	return err
+}
 
-	if path == "" {
-		req.ListVolumes.Path = nil
+func (c *client) UnlinkVolumeStrict(path string, container string, target string, strict bool) error {
+	req := &rpc.TContainerRequest{
+		UnlinkVolume: &rpc.TVolumeUnlinkRequest{
+			Path:      &path,
+			Container: optString(container),
+			Target:    optString(target),
+			Strict:    &strict,
+		},
 	}
-	if container == "" {
-		req.ListVolumes.Container = nil
-	}
-
-	resp, err := c.Call(req)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, volume := range resp.GetVolumeList().GetVolumes() {
-		var desc TVolumeDescription
-		desc.Path = volume.GetPath()
-		desc.Containers = append(desc.Containers, volume.GetContainers()...)
-		desc.Properties = make(map[string]string)
-
-		for _, property := range volume.GetProperties() {
-			k := property.GetName()
-			v := property.GetValue()
-			desc.Properties[k] = v
-		}
-		ret = append(ret, desc)
-	}
-	return ret, err
+	_, err := c.Call(req)
+	return err
 }
 
 // LayerAPI
