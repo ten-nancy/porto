@@ -7,7 +7,7 @@ IMAGE_TAG = "registry-1.docker.io/library/alpine:3.16.2"
 IMAGE_DIGEST = "9c6f0724472873bb50a2ae67a9e7adcb57673a183cea8b06eb778dca859181b5"
 LAYER_NAME = "alpine"
 
-K8S_IMAGE_TAG = "k8s.gcr.io/pause:3.7"
+K8S_IMAGE_TAG = "registry.k8s.io/pause:3.7"
 K8S_IMAGE_DIGEST = "221177c6082a88ea4f6240ab2450d540955ac6f4d5454f0e15751b653ebda165"
 K8S_IMAGE_ALT_TAG = "registry-1.docker.io/kndrvt/pause:latest"
 
