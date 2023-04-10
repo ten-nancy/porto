@@ -391,7 +391,7 @@ TError TClient::CanControl(const TContainer &ct, bool child) {
                 if (StringSubpath(clientName, allowedClient))
                     return OK;
             }
-            return TError(EError::Permission, "Write access denied: client not allowed in owner_containers property");
+            return TError(EError::Permission, "Write access denied: client {} is not allowed by owner_containers property", clientName);
         }
 
         return OK;
