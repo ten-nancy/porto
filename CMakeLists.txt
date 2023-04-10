@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 
 if(NOT DEFINED ENV{CXX})
 	execute_process(COMMAND g++ -dumpversion OUTPUT_VARIABLE GXX_VERSION)
@@ -182,7 +182,9 @@ if(ENABLE_GO)
 endif()
 
 if(ENABLE_PYTHON)
-	include(FindPythonInterp)
+	# should be find_package(Python*...) since cmake 3.12
+	find_program(Python2_EXECUTABLE python2)
+	find_program(Python3_EXECUTABLE python3)
 	add_subdirectory(src/api/python)
 endif()
 

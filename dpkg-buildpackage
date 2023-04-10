@@ -1,0 +1,7 @@
+#!/bin/sh
+
+rm -f debian/control
+cd debian
+ln -s control.in control
+cd ..
+dpkg-buildpackage "$@"

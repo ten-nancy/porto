@@ -21,7 +21,7 @@ Porto provides a protobuf interface via an unix socket /run/portod.socket.
 
 Command line tool **portoctl** and C++, Python and Go APIs are included.
 
-Porto requires Linux kernel 3.18 and optionally some offstream patches.
+Porto requires Linux kernel 4.5 and optionally some offstream patches.
 
 ## Dependencies
 
@@ -37,8 +37,8 @@ sudo apt install -y \
     libncurses5-dev \
     libelf-dev \
     zlib1g-dev \
-    libbpf-dev \
-    pandoc
+    pandoc \
+    libbpf-dev # for focal or newer
 
 # dependencies for deb package building
 sudo apt install -y \
@@ -58,7 +58,9 @@ sudo apt install -y \
 
 ```bash
 mkdir build && cd build
-cmake ..
+
+# use DUSE_SYSTEM_LIBBPF for xenial and bionic
+cmake .. # -DUSE_SYSTEM_LIBBPF=OFF
 
 # use make -j for parallel build
 make
@@ -69,7 +71,7 @@ sudo make install
 or
 ```bash
 # should install additional dependencies for deb package building
-dpkg-buildpackage -b
+./dpkg-buildpackage -b
 sudo dpkg -i ../porto_*.deb
 ```
 
