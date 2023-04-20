@@ -4891,13 +4891,13 @@ static void TestDockerImageParsing(Porto::Connection &) {
     test("registry.yandex.net/kndrvt/kek/ubuntu",                                           { "registry.yandex.net", "kndrvt/kek", "ubuntu", "latest", "" });
 
     // tag
-    test("ubuntu:xenial",                                                                   { "registry-1.docker.io", "library", "ubuntu", "xenial", "" });
-    test("kndrvt/ubuntu:xenial",                                                            { "registry-1.docker.io", "kndrvt", "ubuntu", "xenial", "" });
-    test("kndrvt/kek/ubuntu:xenial",                                                        { "registry-1.docker.io", "kndrvt/kek", "ubuntu", "xenial", "" });
+    test("ubuntu:focal",                                                                   { "registry-1.docker.io", "library", "ubuntu", "focal", "" });
+    test("kndrvt/ubuntu:focal",                                                            { "registry-1.docker.io", "kndrvt", "ubuntu", "focal", "" });
+    test("kndrvt/kek/ubuntu:focal",                                                        { "registry-1.docker.io", "kndrvt/kek", "ubuntu", "focal", "" });
 
-    test("registry.yandex.net/ubuntu:xenial",                                               { "registry.yandex.net", "library", "ubuntu", "xenial", "" });
-    test("registry.yandex.net/kndrvt/ubuntu:xenial",                                        { "registry.yandex.net", "kndrvt", "ubuntu", "xenial", "" });
-    test("registry.yandex.net/kndrvt/kek/ubuntu:xenial",                                    { "registry.yandex.net", "kndrvt/kek", "ubuntu", "xenial", "" });
+    test("registry.yandex.net/ubuntu:focal",                                               { "registry.yandex.net", "library", "ubuntu", "focal", "" });
+    test("registry.yandex.net/kndrvt/ubuntu:focal",                                        { "registry.yandex.net", "kndrvt", "ubuntu", "focal", "" });
+    test("registry.yandex.net/kndrvt/kek/ubuntu:focal",                                    { "registry.yandex.net", "kndrvt/kek", "ubuntu", "focal", "" });
 
     // digest
     test("ubuntu@796f752061726520736f2063757465",                                           { "registry-1.docker.io", "library", "ubuntu", "latest", "796f752061726520736f2063757465" });
@@ -4909,13 +4909,13 @@ static void TestDockerImageParsing(Porto::Connection &) {
     test("registry.yandex.net/kndrvt/kek/ubuntu@796f752061726520736f2063757465",            { "registry.yandex.net", "kndrvt/kek", "ubuntu", "latest", "796f752061726520736f2063757465" });
 
     // tag and digest
-    test("ubuntu:xenial@796f752061726520736f2063757465",                                    { "registry-1.docker.io", "library", "ubuntu", "xenial", "796f752061726520736f2063757465" });
-    test("kndrvt/ubuntu:xenial@796f752061726520736f2063757465",                             { "registry-1.docker.io", "kndrvt", "ubuntu", "xenial", "796f752061726520736f2063757465" });
-    test("kndrvt/kek/ubuntu:xenial@796f752061726520736f2063757465",                         { "registry-1.docker.io", "kndrvt/kek", "ubuntu", "xenial", "796f752061726520736f2063757465" });
+    test("ubuntu:focal@796f752061726520736f2063757465",                                    { "registry-1.docker.io", "library", "ubuntu", "focal", "796f752061726520736f2063757465" });
+    test("kndrvt/ubuntu:focal@796f752061726520736f2063757465",                             { "registry-1.docker.io", "kndrvt", "ubuntu", "focal", "796f752061726520736f2063757465" });
+    test("kndrvt/kek/ubuntu:focal@796f752061726520736f2063757465",                         { "registry-1.docker.io", "kndrvt/kek", "ubuntu", "focal", "796f752061726520736f2063757465" });
 
-    test("registry.yandex.net/ubuntu:xenial@796f752061726520736f2063757465",                { "registry.yandex.net", "library", "ubuntu", "xenial", "796f752061726520736f2063757465" });
-    test("registry.yandex.net/kndrvt/ubuntu:xenial@796f752061726520736f2063757465",         { "registry.yandex.net", "kndrvt", "ubuntu", "xenial", "796f752061726520736f2063757465" });
-    test("registry.yandex.net/kndrvt/kek/ubuntu:xenial@796f752061726520736f2063757465",     { "registry.yandex.net", "kndrvt/kek", "ubuntu", "xenial", "796f752061726520736f2063757465" });
+    test("registry.yandex.net/ubuntu:focal@796f752061726520736f2063757465",                { "registry.yandex.net", "library", "ubuntu", "focal", "796f752061726520736f2063757465" });
+    test("registry.yandex.net/kndrvt/ubuntu:focal@796f752061726520736f2063757465",         { "registry.yandex.net", "kndrvt", "ubuntu", "focal", "796f752061726520736f2063757465" });
+    test("registry.yandex.net/kndrvt/kek/ubuntu:focal@796f752061726520736f2063757465",     { "registry.yandex.net", "kndrvt/kek", "ubuntu", "focal", "796f752061726520736f2063757465" });
 }
 
 int SelfTest(std::vector<std::string> args) {

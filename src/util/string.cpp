@@ -672,7 +672,7 @@ std::string TBitMap::Format() const {
 
 TError TBitMap::Read(const TPath &path) {
     std::string text;
-    TError error = path.ReadAll(text, 4096);
+    TError error = path.ReadAll(text);
     if (error)
         return error;
     return Parse(text);

@@ -1,10 +1,15 @@
 #include "bpf.hpp"
 
+#include <linux/version.h>
+
 // FIXME: required linux-headers from 5.8
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
 enum bpf_stats_type {
         /* enabled run_time_ns and run_cnt */
         BPF_STATS_RUN_TIME = 0,
 };
+#endif
+
 #include <bpf.h>
 
 TError TBpfMap::Open(uint32_t id)

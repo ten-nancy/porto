@@ -396,7 +396,7 @@ public:
 class TUlimitProperty : public TProperty {
 public:
     TUlimitProperty() : TProperty(P_ULIMIT, EProperty::ULIMIT,
-            "Process limits: as|core|data|locks|memlock|nofile|nproc|stack: [soft]|unlimited [hard];... (see man prlimit)") 
+            "Process limits: as|core|data|locks|memlock|nofile|nproc|stack: [soft]|unlimited [hard];... (see man prlimit)")
     {
         IsDynamic = true;
     }
@@ -2520,7 +2520,7 @@ public:
 
     TError Set(TMultiTuple &cfg) {
         TError error;
- 
+
         if (cfg.empty())
             CT->IpPolicy = "any";
 
@@ -5394,7 +5394,7 @@ public:
     }
 
     TError Get(std::string &value) const override {
-            uint64_t val;
+            uint64_t val = 0;
             TError error = Get(val);
             if (error)
                 return error;
