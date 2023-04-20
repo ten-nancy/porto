@@ -267,6 +267,8 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
     std::string manifests;
     error = client.MakeRequest(ManifestsUrl(Tag), manifests, headers);
     if (error) {
+        L_WRN("Failed to download manifests (1): {}", error);
+
         if (Repository == "library" && error.Errno == 404) {
             // retry if repository is default and we received code 404
             Repository = "";
@@ -287,8 +289,11 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
             }
 
             error = client.MakeRequest(ManifestsUrl(Tag), manifests, headers);
-            if (error)
+            if (error) {
+                L_WRN("Failed to download manifests (2): {}", error);
                 return error;
+            }
+
         } else
             return error;
     }
@@ -318,8 +323,10 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
                     found = true;
                     auto digest = m["digest"].get<std::string>();
                     error = client.MakeRequest(ManifestsUrl(digest), Manifest, headers);
-                    if (error)
+                    if (error) {
+                        L_WRN("Failed to download manifest: {}", error);
                         return error;
+                    }
                 }
             }
             if (!found)
@@ -387,7 +394,13 @@ TError TDockerImage::DownloadConfig(const THttpClient &client) {
     if (!AuthToken.empty())
         headers.emplace_back("Authorization", AuthToken);
 
-    return client.MakeRequest(BlobsUrl(Digest), Config, headers);
+    error = client.MakeRequest(BlobsUrl(Digest), Config, headers);
+    if (error) {
+        L_WRN("Failed to download config: {}", error);
+        return error;
+    }
+
+    return OK;
 }
 
 TError TDockerImage::ParseConfig() {
