@@ -1,0 +1,45 @@
+name: CMake
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  BUILD_TYPE: Release
+  BUILD_DEPENDENCIES: |
+        g++ \
+        cmake \
+        protobuf-compiler \
+        libprotobuf-dev \
+        libnl-3-dev \
+        libnl-route-3-dev \
+        libnl-idiag-3-dev \
+        libncurses5-dev \
+        libelf-dev \
+        zlib1g-dev \
+        pandoc \
+        libbpf-dev
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04]
+  
+    runs-on: ${{matrix.os}}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Dependencies installation
+      run: |
+        sudo apt update
+        sudo apt install -y ${{env.BUILD_DEPENDENCIES}}
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} -j$(nproc)
