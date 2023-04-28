@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'debian/changelog'
+
+env:
+  BUILD_TYPE: Release
+  BUILD_DEPENDENCIES: |
+        g++ \
+        cmake \
+        protobuf-compiler \
+        libprotobuf-dev \
+        libnl-3-dev \
+        libnl-route-3-dev \
+        libnl-idiag-3-dev \
+        libncurses5-dev \
+        libelf-dev \
+        zlib1g-dev \
+        pandoc \
+        libbpf-dev
+  BUILD_DEB_DEPENDENCIES: |
+        dpkg-dev \
+        debhelper \
+        pkg-config \
+        autoconf \
+        libtool \
+        dh-python \
+        python-all \
+        python-setuptools \
+        python3-setuptools \
+        bash-completion
+
+jobs:      
+  build_deb:
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04]
+        arch: [amd64]
+  
+    runs-on: ${{matrix.os}}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Dependencies installation
+      run: |
+        sudo apt update
+        sudo apt install -y ${{env.BUILD_DEPENDENCIES}}
+        sudo apt install -y ${{env.BUILD_DEB_DEPENDENCIES}}
+
+    - name: Set environment variables
+      run: |
+        echo "VERSION=$(sed -nE 's#.*\((.*)\).*#\1#p;q' debian/changelog)" >> $GITHUB_ENV
+        case ${{matrix.os}} in
+          ubuntu-20.04)
+            echo "UBUNTU_NAME=focal" >> $GITHUB_ENV
+            ;;
+          ubuntu-22.04)
+            echo "UBUNTU_NAME=jammy" >> $GITHUB_ENV
+            ;;
+        esac
+        
+    - name: Build Debian package
+      run: |
+        echo Porto version: ${{env.VERSION}}
+        echo Ubuntu name: ${{env.UBUNTU_NAME}}
+        ./dpkg-buildpackage -b --target-arch ${{matrix.arch}}
+        mv ../porto_${{env.VERSION}}_${{matrix.arch}}.deb porto_${{env.UBUNTU_NAME}}_${{env.VERSION}}_${{matrix.arch}}.deb
+
+    - name: Upload Debian package
+      uses: actions/upload-artifact@v2
+      with:
+        name: packages
+        path: porto_${{env.UBUNTU_NAME}}_${{env.VERSION}}_${{matrix.arch}}.deb
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build_deb
+    permissions: write-all
+    steps:
+    - name: Download Debian package
+      uses: actions/download-artifact@v2
+      with:
+        name: packages
+
+    - name: Get version
+      run: |
+        filename=$(ls porto_* | head -n 1)
+        filename=${filename#porto_*_}
+        VERSION=${filename%%_*}
+        echo Version: $VERSION
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+    - name: Create release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      with:
+        tag_name: v${{env.VERSION}}
+        release_name: Release v${{env.VERSION}}
+        draft: false
+        prerelease: false
+
+    - name: Upload release asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      with:
+        upload_url: ${{steps.create_release.outputs.upload_url}}
+        asset_path: ./porto_focal_${{env.VERSION}}_amd64.deb
+        asset_name: porto_focal_${{env.VERSION}}_amd64.deb
+        asset_content_type: application/vnd.debian.binary-package
+
+    - name: Upload release asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      with:
+        upload_url: ${{steps.create_release.outputs.upload_url}}
+        asset_path: ./porto_jammy_${{env.VERSION}}_amd64.deb
+        asset_name: porto_jammy_${{env.VERSION}}_amd64.deb
+        asset_content_type: application/vnd.debian.binary-package
