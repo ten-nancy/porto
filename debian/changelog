@@ -1,3 +1,17 @@
+porto (5.3.20) unstable; urgency=low
+  [ kndrvt ]
+      porto: adapt Porto to build and run on Ubuntu 22
+      docker: add additional warnings for requests
+      client: add client name to permission error
+      cmake: fix python package installation
+      k8s: replace pause image from k8s.gcr.io/pause:3.7 to registry.k8s.io/pause:3.7
+      update README.md
+      api: more sync Go APIs for Portoshim building using go build
+      storage: relax owner restrictions for non-default places
+  last commit: caff332c69b095dfe5d28fadae19f504f1fb0cf4
+
+ -- Porto Team <porto@yandex-team.ru>  Wed, 03 May 2023 12:09:14 -0000
+
 porto (5.3.19) unstable; urgency=low
   [ zeil ]
       Revert "stream: use O_NONBLOCK for write streams too"
