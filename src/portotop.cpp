@@ -1263,9 +1263,9 @@ TPortoTop::TPortoTop(Porto::Connection *api, const std::vector<std::string> &arg
 
     /* Network */
     if (ShowAll || ShowNet) {
-        AddColumn("RX Lim", "net_rx_limit[default] b", "Default network RX limit");
-        AddColumn("TX g-e", "net_guarantee[default] b", "Default network TX guarantee");
-        AddColumn("TX lim", "net_limit[default] b", "Default network TX limit");
+        AddColumn("RX Lim", "net_rx_limit[veth] b", "Veth network RX limit");
+        AddColumn("TX g-e", "net_guarantee[veth] b", "Veth network TX guarantee");
+        AddColumn("TX lim", "net_limit[veth] b", "Veth network TX limit");
 
         AddColumn("Net RX", "net_rx_bytes[Uplink]' b", "Uplink bytes received");
         AddColumn("Net TX", "net_bytes[Uplink]' b", "Uplink bytes transmitted");
