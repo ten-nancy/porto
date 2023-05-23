@@ -1281,6 +1281,8 @@ Option slot\_space\_limit\_mb limits total size for each first-level container.
 
 Limits are counted only for already dumped cores and do not include dumping core size, therefore these limits may be exceeded.
 
+Container option **coredump_filter** can be used to control which memory segments are written to the core dump. The bits in the mask are set according to *core(5)*, the filter is written in hex format.
+
 Total and dumped cores are counted in labels CORE.total, CORE.dumped at container and parents.
 
 Porto never deletes old core dumps.

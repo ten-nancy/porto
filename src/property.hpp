@@ -188,6 +188,8 @@ constexpr const char *P_OWNED_VOLUMES = "volumes_owned";
 constexpr const char *P_LINKED_VOLUMES = "volumes_linked";
 constexpr const char *P_REQUIRED_VOLUMES = "volumes_required";
 
+constexpr const char *P_COREDUMP_FILTER = "coredump_filter";
+
 enum class EProperty {
     NONE,
     ROOT_PID,
@@ -282,6 +284,7 @@ enum class EProperty {
     NET_RX_LIMIT,
     CORE_COMMAND,
     REQUIRED_VOLUMES,
+    COREDUMP_FILTER,
     NR_PROPERTIES,
 };
 

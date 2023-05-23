@@ -542,6 +542,11 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
             break;
         }
     }
+
+    if (config().container().has_default_coredump_filter()) {
+        CoredumpFilter = config().container().default_coredump_filter();
+        SetProp(EProperty::COREDUMP_FILTER);
+    }
 }
 
 TContainer::~TContainer() {

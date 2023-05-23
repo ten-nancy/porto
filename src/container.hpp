@@ -337,6 +337,8 @@ public:
     TNetStat SockStat;
     std::unordered_map<ino_t, TSockStat> SocketsStats;
 
+    uint32_t CoredumpFilter;
+
     TPath GetCwd() const;
     int GetExitCode() const;
 

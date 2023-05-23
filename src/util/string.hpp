@@ -21,7 +21,9 @@ typedef std::vector<TTuple> TMultiTuple;
 TError StringToUint64(const std::string &string, uint64_t &value);
 TError StringToInt64(const std::string &str, int64_t &value);
 TError StringToInt(const std::string &string, int &value);
+TError StringToBaseUint(const std::string &str, unsigned &value, int base);
 TError StringToOct(const std::string &str, unsigned &value);
+TError StringToHex(const std::string &str, unsigned &value);
 
 TError StringToBool(const std::string &str, bool &value);
 std::string BoolToString(bool value);

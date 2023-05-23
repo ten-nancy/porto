@@ -9,6 +9,9 @@ core {
     enable: true
     default_pattern: "/tmp/core"
 }
+container {
+    default_coredump_filter: 0x3a
+}
 """)
 
 if os.path.exists('/tmp/core'):
@@ -21,6 +24,12 @@ conn = porto.Connection()
 
 a = conn.Run('a', command='sleep 100', ulimit='core: 0')
 
+ExpectProp(a, 'coredump_filter', '0x3a')
+ExpectException(a.SetProperty, porto.exceptions.InvalidState, 'coredump_filter', '0x3b')
+path = '/proc/' + a.GetProperty('root_pid') + '/coredump_filter'
+Expect(os.path.exists(path))
+ExpectEq(int(open(path).read(), 16), 58)
+
 a.Kill(3)
 a.Wait()
 ExpectProp(a, 'exit_code', '-3')
@@ -30,9 +39,19 @@ ExpectEq(Catch(a.GetProperty, 'CORE.dumped'), porto.exceptions.LabelNotFound)
 Expect(not os.path.exists('/tmp/core'))
 a.Stop()
 
+ExpectProp(a, 'coredump_filter', '0x3a')
+a.SetProperty('coredump_filter', '0x003b')
+ExpectProp(a, 'coredump_filter', '0x3b')
+ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'coredump_filter', '0x200')
+ExpectProp(a, 'coredump_filter', '0x3b')
 
 a['ulimit[core]'] = 'unlimited'
 a.Start()
+
+path = '/proc/' + a.GetProperty('root_pid') + '/coredump_filter'
+Expect(os.path.exists(path))
+ExpectEq(int(open(path).read(), 16), 59)
+
 a.Kill(3)
 a.Wait()
 ExpectProp(a, 'exit_code', '-3')
@@ -68,6 +87,13 @@ a.Destroy()
 a = conn.Run("a")
 b = conn.Run("a/b")
 c = conn.Run('a/b/c', command='sleep 100', ulimit='core: 0')
+
+ExpectProp(c, 'coredump_filter', '0x3a')
+ExpectException(c.SetProperty, porto.exceptions.InvalidState, 'coredump_filter', '0x33')
+path = '/proc/' + c.GetProperty('root_pid') + '/coredump_filter'
+Expect(os.path.exists(path))
+ExpectEq(int(open(path).read(), 16), 58)
+
 c.Kill(3)
 c.Wait()
 ExpectProp(c, 'exit_code', '-3')
@@ -151,7 +177,7 @@ os.unlink('/tmp/core-b')
 
 AsRoot()
 open('/proc/sys/fs/suid_dumpable', 'w').write('2')
-AsAlice();
+AsAlice()
 
 
 a.Stop()
@@ -181,8 +207,8 @@ ExpectProp(a, 'core_dumped', True)
 ExpectProp(a, 'CORE.total', '2')
 ExpectProp(a, 'CORE.dumped', '2')
 
-a.Destroy();
-b.Destroy();
+a.Destroy()
+b.Destroy()
 
 
 w = conn.Create('w')
@@ -275,6 +301,7 @@ AsAlice()
 command="bash -c 'mkdir /sys/fs/cgroup/freezer/test && echo $$ | tee /sys/fs/cgroup/freezer/test/cgroup.procs && suid_sleep 100'"
 
 a = conn.Run('a', root=v.path, command=command, ulimit='core: unlimited', cgroupfs='rw', core_command='cp --sparse=always /dev/stdin core')
+ExpectProp(a, 'coredump_filter', '')
 time.sleep(3)
 a.Kill(6)
 a.Wait()

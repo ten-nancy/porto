@@ -707,9 +707,15 @@ TError TTaskEnv::Start() {
                 Abort(error);
         }
 
-        error = TPath("/proc/self/oom_score_adj").WriteAll(std::to_string(CT->OomScoreAdj));
+        error = SetOomScoreAdj(CT->OomScoreAdj);
         if (error && CT->OomScoreAdj)
             Abort(error);
+
+        if (CT->HasProp(EProperty::COREDUMP_FILTER)) {
+            error = SetCoredumpFilter(CT->CoredumpFilter);
+            if (error)
+                Abort(error);
+        }
 
         L("setpriority");
         if (setpriority(PRIO_PROCESS, 0, CT->SchedNice))

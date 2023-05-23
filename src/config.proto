@@ -297,6 +297,8 @@ message TConfig {
         optional bool enable_numa_migration = 61;
 
         optional bool enable_rw_net_cgroups = 62;
+
+        optional uint32 default_coredump_filter = 66;
     }
 
     message TPrivilegesCfg {

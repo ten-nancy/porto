@@ -246,6 +246,10 @@ TError SetOomScoreAdj(int value) {
     return TPath("/proc/self/oom_score_adj").WriteAll(std::to_string(value));
 }
 
+TError SetCoredumpFilter(uint32_t value) {
+    return TPath("/proc/self/coredump_filter").WriteAll(std::to_string(value));
+}
+
 std::string FormatExitStatus(int status) {
     if (WIFSIGNALED(status))
         return StringFormat("exit signal: %d (%s)%s", WTERMSIG(status),

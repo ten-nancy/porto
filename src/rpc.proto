@@ -661,6 +661,8 @@ message TContainerSpec {
     optional TUintMap net_rx_limit = 73;       // bytes per second
 
     optional TContainerVolumes volumes_required = 75;
+
+    optional uint32 coredump_filter = 83;
 }
 
 message TContainer {

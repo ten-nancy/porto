@@ -49,20 +49,28 @@ TError StringToInt(const std::string &str, int &value) {
     return OK;
 }
 
-TError StringToOct(const std::string &str, unsigned &value) {
+TError StringToBaseUint(const std::string &str, unsigned &value, int base) {
     const char *ptr = str.c_str();
     char *end;
 
     errno = 0;
-    uint64_t val = strtoull(ptr, &end, 8);
+    uint64_t val = strtoull(ptr, &end, base);
     if (errno || end == ptr || val > UINT32_MAX)
-        return TError(EError::InvalidValue, errno, "Bad oct value: " + str);
+        return TError(EError::InvalidValue, errno, "Bad base-" + std::to_string(base) + " value: " + str);
     while (isspace(*end))
         end++;
     if (*end)
-        return TError(EError::InvalidValue, "Bad oct value: " + str);
+        return TError(EError::InvalidValue, "Bad base-" + std::to_string(base) + " value: " + str);
     value = val;
     return OK;
+}
+
+TError StringToOct(const std::string &str, unsigned &value) {
+    return StringToBaseUint(str, value, 8);
+}
+
+TError StringToHex(const std::string &str, unsigned &value) {
+    return StringToBaseUint(str, value, 16);
 }
 
 TError StringToBool(const std::string &str, bool &value) {

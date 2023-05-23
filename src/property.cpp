@@ -4921,6 +4921,52 @@ public:
     }
 } static CoreDumped;
 
+class TCoredumpFilter : public TProperty {
+public:
+    TCoredumpFilter() : TProperty(P_COREDUMP_FILTER, EProperty::COREDUMP_FILTER,
+            "Coredump filter (hex)") {}
+
+    void Init(void) override {
+        IsSupported = config().core().enable() && TPath("/proc/self/coredump_filter").Exists();
+    }
+
+    TError Get(std::string &value) const override {
+        if (CT->HasProp(EProperty::COREDUMP_FILTER))
+            value = fmt::format("0x{:x}", CT->CoredumpFilter);
+        return OK;
+    }
+
+    TError Set(uint32_t val) {
+        if (val > 0x1ff)
+            return TError(EError::InvalidValue, "out of range");
+        if (CT->CoredumpFilter != val) {
+            CT->CoredumpFilter = val;
+            CT->SetProp(EProperty::COREDUMP_FILTER);
+        }
+        return OK;
+    }
+
+    TError Set(const std::string &value) override {
+        unsigned val;
+        TError error = StringToHex(value, val);
+        if (error)
+            return error;
+        return Set(val);
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        spec.set_coredump_filter(CT->CoredumpFilter);
+    }
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_coredump_filter();
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        return Set(spec.coredump_filter());
+    }
+} static CoredumpFilter;
+
 class TOomIsFatal : public TProperty {
 public:
     TOomIsFatal() : TProperty(P_OOM_IS_FATAL, EProperty::OOM_IS_FATAL,

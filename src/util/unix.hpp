@@ -71,6 +71,7 @@ TError SetSysctl(const std::string &name, const std::string &value);
 TError SetSysctlAt(const TFile &proc_sys, const std::string &name, const std::string &value);
 
 TError SetOomScoreAdj(int value);
+TError SetCoredumpFilter(uint32_t value);
 
 std::string FormatExitStatus(int status);
 int GetNumCores();
