@@ -168,6 +168,7 @@ ADD_PYTHON_TEST(volume_queue)
 ADD_PYTHON_TEST(volume_sync)
 ADD_PYTHON_TEST(portod_cli)
 ADD_PYTHON_TEST(recovery)
+ADD_PYTHON3_TEST(volume-remove-race)
 
 add_test(NAME leaks
          COMMAND sudo ${CMAKE_BINARY_DIR}/portotest leaks

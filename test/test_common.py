@@ -190,6 +190,10 @@ def StopPortod():
     global portod
     subprocess.check_call([portod, 'stop'])
 
+def RestartPortodWithStdlog(out):
+    global portod
+    subprocess.check_call([portod, '--stdlog', 'restart'], stdout=out)
+
 def RestartPortod():
     # Note that is restart, not reload!
     # Thus we intentionally want to drop state

@@ -280,7 +280,7 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
                 StringStartsWith(name, META_PREFIX)) {
             error = Cleanup(path, EStorageType::Meta, 0700);
             if (error)
-                L_WRN("Cannot cleaup metastorage {} {}", path, error);
+                L_WRN("Cannot cleanup metastorage {} {}", path, error);
             continue;
         }
 
@@ -311,6 +311,9 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
             /* Remove random files if any */
             path.Unlink();
             continue;
+        } else if (!path.Exists()) {
+            L_ACT("Skip removing of non-existing path {}", path);
+            continue;
         }
 
         lock.unlock();
@@ -320,7 +323,7 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
             L_VERBOSE("Cannot remove junk {}: {}", path, error);
             error = path.RemoveAll();
             if (error)
-                L_WRN("cannot remove junk {}: {}", path, error);
+                L_WRN("Cannot remove junk {}: {}", path, error);
         }
     }
 
@@ -1095,12 +1098,12 @@ TError TStorage::Remove(bool weak, bool async) {
 
     if (!async) {
         error = RemoveRecursive(temp);
-            if (error) {
-                L_VERBOSE("Cannot remove storage {}: {}", temp, error);
-                error = temp.RemoveAll();
-                if (error)
-                    L_WRN("Cannot remove storage {}: {}", temp, error);
-            }
+        if (error) {
+            L_VERBOSE("Cannot remove storage {}: {}", temp, error);
+            error = temp.RemoveAll();
+            if (error)
+                L_WRN("Cannot remove storage {}: {}", temp, error);
+        }
     }
 
     DecPlaceLoad(Place);
