@@ -37,6 +37,10 @@ static std::vector<TPath> SystemPaths = {
     "/var",
 };
 
+static std::vector<TPath> ExcludedSystemPaths = {
+    "/var/lib",
+};
+
 bool IsSystemPath(const TPath &path) {
     TPath normal = path.NormalPath();
 
@@ -45,6 +49,10 @@ bool IsSystemPath(const TPath &path) {
 
     if (normal == "/home")
         return true;
+
+    for (auto &excluded: ExcludedSystemPaths)
+        if (normal.IsInside(excluded))
+            return false;
 
     for (auto &sys: SystemPaths)
         if (normal.IsInside(sys))
