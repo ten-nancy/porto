@@ -227,7 +227,7 @@ public:
         if (Volume->HaveLayers())
             return TError(EError::InvalidProperty, "bind backend doesn't support layers");
 
-        if (Volume->StoragePath.IsRegularFollow()) {
+        if (Volume->BindFileStorage()) {
             if (Volume->InternalPath == Volume->Path)
                 Volume->Path /= Volume->StoragePath.BaseName();
             Volume->InternalPath /= Volume->StoragePath.BaseName();
@@ -2372,10 +2372,7 @@ TError TVolume::Build() {
                                  (IsReadOnly ? O_RDONLY : O_RDWR) |
                                  O_CLOEXEC | O_NOCTTY | O_NOFOLLOW);
     } else if (!RemoteStorage()) {
-        if (!BindFileStorage())
-            error = StorageFd.OpenDir(StoragePath);
-        else
-            error = StorageFd.OpenRead(StoragePath);
+        error = StorageFd.OpenPath(StoragePath);
     }
 
     if (error)
@@ -3810,10 +3807,7 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec,
             return TError(EError::VolumeAlreadyExists, "Volume already exists");
 
         TFile path_dir;
-        if (!volume->BindFileStorage())
-            error = path_dir.OpenDir(path);
-        else
-            error = path_dir.OpenRead(path);
+        error = path_dir.OpenPath(path);
         if (error)
             return TError(EError::InvalidPath, "Cannot open volume path: {}", error);
 

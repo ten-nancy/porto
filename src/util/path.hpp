@@ -136,6 +136,10 @@ public:
     bool IsDirectoryStrict() const;
     bool IsDirectoryFollow() const;
 
+    bool IsSocketFollow() const;
+    bool IsCharFollow() const;
+    bool IsBlockFollow() const;
+
     bool IsSameInode(const TPath &other) const;
 
     dev_t GetDev() const;

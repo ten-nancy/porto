@@ -277,7 +277,10 @@ public:
     }
 
     bool BindFileStorage(void) const {
-        return BackendType == "bind" && StoragePath.IsRegularFollow();
+        return BackendType == "bind" && (StoragePath.IsRegularFollow() ||
+                StoragePath.IsSocketFollow() ||
+                StoragePath.IsCharFollow() ||
+                StoragePath.IsBlockFollow());
     }
 
     bool HaveLayers(void) const {
