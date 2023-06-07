@@ -5789,6 +5789,109 @@ public:
     }
 } static CpuUnconstrainedWait;
 
+class TPressure : public TProperty {
+public:
+    TPressure(std::string name, std::string desc, std::string knobName)
+        : TProperty(name, EProperty::NONE, desc) {
+            IsReadOnly = true;
+            IsRuntimeOnly = true;
+            KnobName = knobName;
+    }
+
+    void Init(void) override {
+        IsSupported = Cgroup2Subsystem.RootCgroup().Has(KnobName);
+    }
+
+    TError GetMap(TUintMap &map) const {
+        std::string data, name;
+        auto cg = CT->GetCgroup(Cgroup2Subsystem);
+
+        auto error = cg.Get(KnobName, data);
+        if (error)
+            return error;
+
+        const char *s = data.c_str();
+        while (s && *s) {
+            /*
+             * format:
+             * some|total avg10=%f avg60=%f avg300=%f total=%llu
+             */
+            unsigned long long value;
+            const char *t = strchr(s, ' ');
+            if (!t)
+                return TError(EError::InvalidValue, "Invalid value " + data);
+            name.clear();
+            name.insert(name.begin(), s, t);
+
+            s = strstr(t, "total=");
+            if (!s || sscanf(s, "total=%llu", &value) != 1)
+                return TError(EError::InvalidValue, "Invalid value " + data);
+            map[name] = value;
+            s = strchr(s, '\n');
+            if (s)
+                ++s;
+        }
+
+        return OK;
+    }
+
+    TError Get(std::string &value) const override {
+        TUintMap map;
+        TError error = GetMap(map);
+        if (error)
+            return error;
+        return UintMapToString(map, value);
+    }
+
+private:
+    std::string KnobName;
+};
+
+class TCpuPressure : public TPressure {
+public:
+    TCpuPressure() : TPressure(P_CPU_PRESSURE, "CPU pressure metrics", "cpu.pressure")
+    {
+            RequireControllers = CGROUP_CPU|CGROUP2;
+    }
+
+    void Dump(rpc::TContainerStatus &spec) const override {
+        TUintMap map;
+        auto error = GetMap(map);
+        if (!error)
+            DumpMap(map, *spec.mutable_cpu_pressure());
+    }
+} static CpuPressure;
+
+class TMemPressure : public TPressure {
+public:
+    TMemPressure() : TPressure(P_MEM_PRESSURE, "memory pressure metrics", "memory.pressure")
+    {
+            RequireControllers = CGROUP_MEMORY|CGROUP2;
+    }
+
+    void Dump(rpc::TContainerStatus &spec) const override {
+        TUintMap map;
+        auto error = GetMap(map);
+        if (!error)
+            DumpMap(map, *spec.mutable_memory_pressure());
+    }
+} static MemPressure;
+
+class TIoPressure : public TPressure {
+public:
+    TIoPressure() : TPressure(P_IO_PRESSURE, "io pressure metrics", "io.pressure")
+    {
+            RequireControllers = CGROUP_BLKIO|CGROUP2;
+    }
+
+    void Dump(rpc::TContainerStatus &spec) const override {
+        TUintMap map;
+        auto error = GetMap(map);
+        if (!error)
+            DumpMap(map, *spec.mutable_io_pressure());
+    }
+} static IoPressure;
+
 class TNetClassId : public TProperty {
 public:
     TNetClassId() : TProperty(P_NET_CLASS_ID, EProperty::NONE,

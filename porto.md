@@ -750,6 +750,11 @@ write permissions to the target or owning related volume.
     * *executable* - 2: only files which may be executed
     * *xattr* - 3: only files which has "user.yndx.mlock" xattr
 
+* **memory\_pressure** - memory pressure stall total in us
+
+    Total amount of time (in microseconds) during which processes were waiting for memory.
+    [More](https://docs.kernel.org/accounting/psi.html)
+
 ## CPU
 
 * **cpu\_usage** - CPU time used in nanoseconds (1 / 1000\_000\_000s)
@@ -763,6 +768,11 @@ write permissions to the target or owning related volume.
 * **cpu\_burst\_usage** - total burst usage time in nanoseconds
 
 * **cpu\_unconstrained\_wait** - total unconstrained wait time in nanoseconds
+
+* **cpu\_pressure** - cpu pressure stall total in us
+
+    Total amount of time (in microseconds) during which processes were waiting for cpu.
+    [More](https://docs.kernel.org/accounting/psi.html)
 
 * **cpu\_weight** - CPU weight, syntax: 0.01..100, default: 1
 
@@ -874,6 +884,11 @@ Absolute paths are resolved in host, paths starting with dot in chroot:
 * **io\_weight** IO weight, syntax: 0.01..100, default: 1
 
     Additional multiplier for blkio.weight.
+
+* **io\_pressure** - io pressure stall total in us
+
+    Total amount of time (in microseconds) during which processes were waiting for io.
+    [More](https://docs.kernel.org/accounting/psi.html)
 
 ## Network
 

@@ -482,12 +482,13 @@ message TContainerStatus {
     optional TContainerCgroups cgroups = 24;     // out
     optional TContainerCpuSet cpu_set_affinity = 25;     // out
 
-    optional uint64 cpu_usage = 26;            // out
-    optional uint64 cpu_usage_system = 27;     // out
-    optional uint64 cpu_wait = 28;             // out
-    optional uint64 cpu_throttled = 29;        // out
-    optional uint64 cpu_burst_usage = 74;        // out
-    optional uint64 cpu_unconstrained_wait = 75;        // out
+    optional uint64   cpu_usage = 26;              // out
+    optional uint64   cpu_usage_system = 27;       // out
+    optional uint64   cpu_wait = 28;               // out
+    optional uint64   cpu_throttled = 29;          // out
+    optional uint64   cpu_burst_usage = 74;        // out
+    optional uint64   cpu_unconstrained_wait = 75; // out
+    optional TUintMap cpu_pressure = 76;           // out
 
     optional uint64 process_count = 30;        // out
     optional uint64 thread_count = 31;         // out
@@ -497,14 +498,16 @@ message TContainerStatus {
     optional TUintMap io_read_ops = 341;   // out, ops
     optional TUintMap io_write_ops = 342;  // out, ops
     optional TUintMap io_time = 35;        // out, ns
+    optional TUintMap io_pressure = 351;   // out
 
     optional TUintMap place_usage = 36;
     optional uint64 memory_usage = 37;         // out, bytes
 
     optional uint64 memory_guarantee_total = 38;   // out
 
-    optional uint64 memory_limit_total = 39;   // out
+    optional uint64 memory_limit_total = 39;  // out
     optional string memory_lock_policy = 82;
+    optional TUintMap memory_pressure  = 83;  // out
 
     optional uint64 anon_limit_total = 40;
     optional uint64 anon_usage = 41;           // out, bytes

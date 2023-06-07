@@ -62,6 +62,7 @@ constexpr const char *P_MEM_LIMIT_TOTAL = "memory_limit_total";
 constexpr const char *P_MEM_GUARANTEE_TOTAL = "memory_guarantee_total";
 constexpr const char *P_MEM_LOCK_POLICY = "memory_lock_policy";
 constexpr const char *P_ANON_LIMIT_TOTAL = "anon_limit_total";
+constexpr const char *P_MEM_PRESSURE = "memory_pressure";
 
 constexpr const char *P_CPU_POLICY = "cpu_policy";
 constexpr const char *P_CPU_GUARANTEE = "cpu_guarantee";
@@ -80,11 +81,20 @@ constexpr const char *P_CPU_WAIT = "cpu_wait";
 constexpr const char *P_CPU_THROTTLED = "cpu_throttled";
 constexpr const char *P_CPU_BURST_USAGE = "cpu_burst_usage";
 constexpr const char *P_CPU_UNCONSTRAINED_WAIT = "cpu_unconstrained_wait";
+constexpr const char *P_CPU_PRESSURE = "cpu_pressure";
 
 constexpr const char *P_IO_POLICY = "io_policy";
 constexpr const char *P_IO_WEIGHT = "io_weight";
 constexpr const char *P_IO_LIMIT = "io_limit";
 constexpr const char *P_IO_OPS_LIMIT = "io_ops_limit";
+constexpr const char *P_IO_READ = "io_read";
+constexpr const char *P_IO_WRITE = "io_write";
+constexpr const char *P_IO_OPS = "io_ops";
+constexpr const char *P_IO_READ_OPS = "io_read_ops";
+constexpr const char *P_IO_WRITE_OPS = "io_write_ops";
+constexpr const char *P_IO_TIME = "io_time";
+constexpr const char *P_IO_PRESSURE = "io_pressure";
+
 constexpr const char *P_NET_GUARANTEE = "net_guarantee";
 constexpr const char *P_NET_LIMIT = "net_limit";
 constexpr const char *P_NET_RX_LIMIT = "net_rx_limit";
@@ -166,12 +176,7 @@ constexpr const char *P_NET_TX_DROPS = "net_tx_drops";
 constexpr const char *P_NET_NETSTAT = "net_netstat";
 constexpr const char *P_NET_SNMP = "net_snmp";
 constexpr const char *P_NET_SNMP6 = "net_snmp6";
-constexpr const char *P_IO_READ = "io_read";
-constexpr const char *P_IO_WRITE = "io_write";
-constexpr const char *P_IO_OPS = "io_ops";
-constexpr const char *P_IO_READ_OPS = "io_read_ops";
-constexpr const char *P_IO_WRITE_OPS = "io_write_ops";
-constexpr const char *P_IO_TIME = "io_time";
+
 constexpr const char *P_TIME = "time";
 constexpr const char *P_CREATION_TIME = "creation_time";
 constexpr const char *P_START_TIME = "start_time";
