@@ -1193,7 +1193,6 @@ public:
     }
 
     TError Set(const std::string &value) override {
-
         if (value != "app" &&
                 value != "os" &&
                 value != "job" &&

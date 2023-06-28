@@ -156,8 +156,6 @@ private:
     TError DetectTagPath(const TPath &place);
     TError DetectDigestPath(const TPath &place);
 
-    static std::string AuthServiceFromPath(const std::string &authPath, size_t schemaLen = 0);
-    std::string AuthUrl() const;
     std::string ManifestsUrl(const std::string &digest) const;
     std::string BlobsUrl(const std::string &digest) const;
 

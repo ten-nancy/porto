@@ -72,9 +72,36 @@ TError TDockerImage::GetAuthToken() {
     if (Registry != DOCKER_REGISTRY_HOST && AuthPath.empty() && AuthService.empty())
         return OK;
 
-    error = THttpClient::SingleRequest(AuthUrl(), response);
-    if (error)
+    std::string authService(DOCKER_AUTH_SERVICE);
+    std::string authPath(DOCKER_AUTH_PATH);
+    TUri uri;
+
+    if (!AuthService.empty())
+        authService = AuthService;
+
+    if (!AuthPath.empty())
+        authPath = AuthPath;
+
+    if (authPath.find("://") == std::string::npos)
+        authPath = "https://" + authPath;
+
+    uri.Parse(authPath);
+
+    if (!AuthPath.empty() && AuthService.empty())
+        authService = uri.Host;
+
+    THttpClient::THeaders headers;
+    if (!uri.Credentials.empty())
+        headers.emplace_back("Authorization", "Basic " + THttpClient::EncodeBase64(uri.Credentials));
+
+    uri.Options.emplace_back("service", authService);
+    uri.Options.emplace_back("scope", fmt::format("repository:{}:pull", RepositoryAndName()));
+
+    error = THttpClient::SingleRequest(uri, response, headers);
+    if (error) {
+        L_WRN("Failed to get token from auth service: {}", error);
         return error;
+    }
 
     auto responseJson = json::parse(response);
     AuthToken = "Bearer " + responseJson["token"].get<std::string>();
@@ -171,40 +198,6 @@ TError TDockerImage::DetectDigestPath(const TPath &place) {
         return TError(EError::DockerImageNotFound, Digest);
 
     return OK;
-}
-
-std::string TDockerImage::AuthServiceFromPath(const std::string &authPath, size_t schemaLen) {
-    auto authService = authPath.substr(schemaLen);
-    auto slashPos = authService.find('/');
-    if (slashPos != std::string::npos)
-        authService = authService.substr(0, slashPos);
-    return authService;
-}
-
-std::string TDockerImage::AuthUrl() const {
-    std::string authPath(DOCKER_AUTH_PATH);
-    std::string authService(AuthService.empty() ? DOCKER_AUTH_SERVICE : AuthService);
-
-    if (!AuthPath.empty()) {
-        if (StringStartsWith(AuthPath, "https://")) {
-            authPath = AuthPath;
-            if (AuthService.empty())
-                authService = AuthServiceFromPath(AuthPath, sizeof("https://") - 1);
-        } else if (StringStartsWith(AuthPath, "http://")) {
-            authPath = AuthPath;
-            if (AuthService.empty())
-                authService = AuthServiceFromPath(AuthPath, sizeof("http://") - 1);
-        } else {
-            authPath = "https://" + AuthPath;
-            if (AuthService.empty())
-                authService = AuthServiceFromPath(AuthPath);
-        }
-    }
-
-    return fmt::format("{}?service={}&scope=repository:{}:pull",
-                       authPath,
-                       authService,
-                       RepositoryAndName());
 }
 
 std::string TDockerImage::ManifestsUrl(const std::string &digest) const {
@@ -450,11 +443,11 @@ TError TDockerImage::DownloadLayers(const TPath &place) const {
             (void)layer.Remove(place);
         }
 
-        const std::string url = fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest));
-        error = DownloadFile(url, archivePath);
+        const std::string uri = fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest));
+        error = DownloadFile(uri, archivePath);
         if (error && !AuthToken.empty()) {
             // retry if registry api expects to receive token and we received code 401
-            error = DownloadFile(url, archivePath, { "Authorization: " + AuthToken });
+            error = DownloadFile(uri, archivePath, { "Authorization: " + AuthToken });
             if (error)
                 return error;
         }

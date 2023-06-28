@@ -17,6 +17,7 @@
 #include "util/proc.hpp"
 #include "util/hgram.hpp"
 #include "docker.hpp"
+#include "http.hpp"
 #include "test.hpp"
 #include "rpc.hpp"
 
@@ -4918,6 +4919,41 @@ static void TestDockerImageParsing(Porto::Connection &) {
     test("registry.yandex.net/kndrvt/kek/ubuntu:focal@796f752061726520736f2063757465",     { "registry.yandex.net", "kndrvt/kek", "ubuntu", "focal", "796f752061726520736f2063757465" });
 }
 
+static void TestUriParsing(Porto::Connection &) {
+    auto test = [](const std::string &rawUri, const std::vector<std::string> &target) {
+        std::cerr << rawUri << std::endl;
+        TUri uri(rawUri);
+        ExpectEq(uri.Scheme,                target[0]);
+        ExpectEq(uri.Host,                  target[1]);
+        ExpectEq(std::to_string(uri.Port),  target[2]);
+        ExpectEq(uri.Path,                  target[3]);
+        ExpectEq(uri.Credentials,           target[4]);
+        ExpectEq(uri.FormatOptions(),       target[5]);
+        ExpectEq(uri.Fragment,              target[6]);
+    };
+
+    // path and after it
+    test("http://kndrvt:password@host.com:80/path/to/something?lol=kek&cheburek#frag",   { "http", "host.com", "80", "/path/to/something", "kndrvt:password", "lol=kek&cheburek", "frag" });
+    test("http://kndrvt:password@host.com:80/path/to/something?lol=kek&cheburek",        { "http", "host.com", "80", "/path/to/something", "kndrvt:password", "lol=kek&cheburek", "" });
+    test("http://kndrvt:password@host.com:80/path/to/something#frag",                    { "http", "host.com", "80", "/path/to/something", "kndrvt:password", "", "frag" });
+
+    // authority
+    test("http://host.com:80/path/to/something?lol=kek&cheburek#frag",                   { "http", "host.com", "80", "/path/to/something", "", "lol=kek&cheburek", "frag" });
+    test("http://kndrvt:password@host.com/path/to/something?lol=kek&cheburek#frag",      { "http", "host.com", "-1", "/path/to/something", "kndrvt:password", "lol=kek&cheburek", "frag" });
+    test("http://host.com/path/to/something?lol=kek&cheburek#frag",                      { "http", "host.com", "-1", "/path/to/something", "", "lol=kek&cheburek", "frag" });
+
+    // authority without path and after it
+    test("http://kndrvt:password@host.com:80",              { "http", "host.com", "80", "", "kndrvt:password", "", "" });
+    test("http://host.com:80",                              { "http", "host.com", "80", "", "", "", "" });
+    test("http://kndrvt:password@host.com",                 { "http", "host.com", "-1", "", "kndrvt:password", "", "" });
+    test("http://host.com",                                 { "http", "host.com", "-1", "", "", "", "" });
+
+    // not http
+    test("file:/path/to/something",                         { "file", "", "-1", "/path/to/something", "", "", "" });
+    test("unix+tcp:/path/to/something?cheburek&lol=kek",    { "unix+tcp", "", "-1", "/path/to/something", "", "cheburek&lol=kek", "" });
+    test("unix:///path/to/something",                       { "unix", "", "-1", "/path/to/something", "", "", "" });
+}
+
 int SelfTest(std::vector<std::string> args) {
     pair<string, std::function<void(Porto::Connection &)>> tests[] = {
         { "path", TestPath },
@@ -4968,6 +5004,7 @@ int SelfTest(std::vector<std::string> args) {
         { "leaks", TestLeaks },
         { "spec", TestContainerSpec },
         { "docker_images_parsing", TestDockerImageParsing },
+        { "uri_parsing", TestUriParsing },
 
         // the following tests will restart porto several times
         { "bad_client", TestBadClient },
