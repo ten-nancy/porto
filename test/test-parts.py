@@ -17,7 +17,7 @@ for line in tests.split('\n'):
 
 
 part1 = {'uid_handling':2,
-         'oom':25,
+         'python3-oom':25,
          'tc-classes':10,
          'tc-rebuild':2,
          'locate-process':2,

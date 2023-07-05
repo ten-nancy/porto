@@ -303,7 +303,6 @@ public:
     std::atomic<uint64_t> OomEvents;
     bool OomKilled = false;
     uint64_t OomKills = 0;
-    uint64_t OomKillsRaw = 0;
     uint64_t OomKillsTotal = 0;
     int ExitStatus = 0;
 
@@ -435,7 +434,7 @@ public:
     TError GetThreadCount(uint64_t &count) const;
     TError GetProcessCount(uint64_t &count) const;
     TError GetVmStat(TVmStat &stat) const;
-    void CollectOomKills(bool event = false);
+    void CollectOomKills();
 
     TError StartTask();
     TError StartParents();

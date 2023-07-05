@@ -1265,78 +1265,40 @@ TError TContainer::GetVmStat(TVmStat &stat) const {
     return OK;
 }
 
-void TContainer::CollectOomKills(bool event) {
+void TContainer::CollectOomKills() {
+    if (!HasResources() || !(Controllers & CGROUP_MEMORY))
+        return;
 
-    /*
-     * Kernel sends OOM events before actual OOM kill into each cgroup in subtree.
-     * We turn these events into speculative OOM kill.
-     */
+    uint64_t kills = 0;
+    auto cg = GetCgroup(MemorySubsystem);
+    if (MemorySubsystem.GetOomKills(cg, kills))
+        return;
 
-    auto plan = Subtree();
-    for (auto p = Parent; event && p; p = p->Parent)
-        plan.push_front(p);
+    if (kills <= OomKills)
+        return;
 
-    auto total = OomKillsTotal;
+    auto lock = LockContainers();
 
-    for (auto &ct: plan) {
-        if (!HasResources() || !(ct->Controllers & CGROUP_MEMORY))
-            continue;
-
-        auto cg = ct->GetCgroup(MemorySubsystem);
-        uint64_t kills = 0;
-
-        if (MemorySubsystem.GetOomKills(cg, kills))
-            continue;
-
-        auto lock = LockContainers();
-
-        /* Collect this kill later from child event. */
-        if (event && kills > ct->OomKillsRaw && ct->Level > Level)
-            break;
-
-        /* Already have speculative kill at parent, ignore this event. */
-        if (event && ct->OomKills > ct->OomKillsRaw && ct->Level < Level)
-            event = false;
-
-        if (kills > ct->OomKillsRaw)
-            L_EVT("OOM Kill in CT{}:{}", ct->Id, ct->Name);
-
-        ct->OomKillsRaw = kills;
-
-        if (event && ct.get() == this &&
-                OomKills == OomKillsRaw &&
-                OomKillsTotal == total) {
-            L_EVT("Speculative OOM Kill in CT{}:{}", Id, Name);
-            kills++;
-        }
-
-        /* Nothing new happened. */
-        if (ct->OomKills >= kills)
-            continue;
-
-        kills -= ct->OomKills;
-
-        ct->OomKills += kills;
-        ct->SetProp(EProperty::OOM_KILLS);
-
-        ct->OomKillsTotal += kills;
-        ct->SetProp(EProperty::OOM_KILLS_TOTAL);
-
-        for (auto p = ct->Parent; kills && p ; p = p->Parent) {
-            if (p->OomKills > p->OomKillsRaw) {
-                L_EVT("Move speculative OOM Kill from CT{}:{} into CT{}:{}", p->Id, p->Name, ct->Id, ct->Name);
-                p->OomKills--;
-                kills--;
-            }
-            p->OomKillsTotal += kills;
-            p->SetProp(EProperty::OOM_KILLS_TOTAL);
-        }
-
+    // OomKills could be changed during waiting
+    if (kills <= OomKills) {
         lock.unlock();
-
-        for (auto p = ct; p ; p = p->Parent)
-            p->Save();
+        return;
     }
+
+    uint64_t delta = kills - OomKills;
+
+    OomKills = kills;
+    SetProp(EProperty::OOM_KILLS);
+
+    for (auto p = shared_from_this(); p ; p = p->Parent) {
+        p->OomKillsTotal += delta;
+        p->SetProp(EProperty::OOM_KILLS_TOTAL);
+    }
+
+    lock.unlock();
+
+    for (auto p = shared_from_this(); p; p = p->Parent)
+        p->Save();
 }
 
 TError TContainer::CheckMemGuarantee() const {
@@ -3654,7 +3616,6 @@ TError TContainer::FreeResources(bool ignore) {
         return OK;
 
     OomKills = 0;
-    OomKillsRaw = 0;
     ClearProp(EProperty::OOM_KILLS);
 
     /* Dispose freezer at last because of recovery */
@@ -4136,12 +4097,14 @@ void TContainer::SyncProperty(const std::string &name) {
     if (StringStartsWith(name, "net_") && Net)
         Net->SyncStat();
     if (StringStartsWith(name, "oom_kills"))
-        CollectOomKills();
+        for (auto &ct: Subtree())
+            ct->CollectOomKills();
 }
 
 void TContainer::SyncPropertiesAll() {
     TNetwork::SyncAllStat();
-    RootContainer->CollectOomKills();
+    for (auto &ct: RootContainer->Subtree())
+        ct->CollectOomKills();
 }
 
 TError TContainer::HasProperty(const std::string &property) const {
@@ -4789,7 +4752,7 @@ bool TContainer::RecvOomEvents() {
         OomEvents += val;
         Statistics->ContainersOOM += val;
         L_EVT("OOM Event in CT{}:{}", Id, Name);
-        CollectOomKills(true);
+        CollectOomKills();
         return true;
     }
 
