@@ -1536,7 +1536,7 @@ noinline TError RemoveLayer(const rpc::TLayerRemoveRequest &req) {
     if (error)
         return error;
 
-    return layer.Remove(false, async);
+    return layer.Remove(false, true, async);
 }
 
 noinline TError ListLayers(const rpc::TLayerListRequest &req,

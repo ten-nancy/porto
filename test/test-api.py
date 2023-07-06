@@ -470,7 +470,9 @@ assert str(p.stderr).find('Resource temporarily unavailable') >= 0
 time.sleep(5)
 assert str(os.listdir('/place/porto_layers')).find('ubuntu-api-test') == -1
 
+
 # test async RemoveLayer
+print("test async RemoveLayer")
 
 c.ImportLayer('test-api-layer-1', os.getcwd() + '/layer.tar.gz')
 c.ImportLayer('test-api-layer-2', os.getcwd() + '/layer.tar.gz')
@@ -479,14 +481,24 @@ start = time.time()
 c.RemoveLayer('test-api-layer-1')
 remove_duration = time.time() - start
 
-start = time.time()
-c.RemoveLayer('test-api-layer-2', asynchronous=True)
+ConfigurePortod('test-api', """
+daemon {
+    portod_stop_timeout: 1,
+    portod_shutdown_timeout: 2,
+}
+volumes {
+    async_remove_storage: true
+}""")
 
+start = time.time()
+# flag asynchronous of RemoveLayer is deprecated
+c.RemoveLayer('test-api-layer-2')
 async_remove_duration = time.time() - start
+
 assert str(os.listdir('/place/porto_layers')).find('test-api-layer') != -1
 assert remove_duration > async_remove_duration
 
-# 5 ms - AsyncRemoverWatchdog interval
+# 5s is default AsyncRemoverWatchdog interval
 time.sleep(10)
 assert str(os.listdir('/place/porto_layers')).find('test-api-layer') == -1
 

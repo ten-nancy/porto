@@ -53,7 +53,8 @@ TError TDockerImage::TLayer::Remove(const TPath &place) const {
     if (!portoLayer.Exists())
         return TError(EError::Docker, "Path {} doesn't exist", portoLayer.Path);
 
-    error = portoLayer.Remove();
+    // we must not remove layers for image asynchronously
+    error = portoLayer.Remove(false, false);
     if (error)
         return error;
 
@@ -639,7 +640,7 @@ TError TDockerImage::InitStorage(const TPath &place, unsigned perms) {
     TPath dockerPath = place / PORTO_DOCKER;
     struct stat st;
 
-    // Here dockerPath has been created in Cleanup() or by user
+    // Here dockerPath has been created in CheckBaseDirectory() or by user
     error = dockerPath.StatStrict(st);
     if (error)
         return error;
@@ -651,7 +652,7 @@ TError TDockerImage::InitStorage(const TPath &place, unsigned perms) {
             return error;
     }
 
-    // dockerPath has uid and gid either from Cleanup() or from user
+    // dockerPath has uid and gid either from CheckBaseDirectory() or from user
     error = dockerPath.ChownRecursive(st.st_uid, st.st_gid);
     if (error)
         return error;

@@ -157,6 +157,9 @@ static void DefaultConfig() {
 
     config().mutable_volumes()->set_fs_stat_update_interval_ms(60000);
 
+    config().mutable_volumes()->set_async_remove_watchdog_ms(5000);
+    config().mutable_volumes()->set_async_remove_storage(false);
+
     config().mutable_network()->set_enable_host_net_classes(false);
 
     config().mutable_network()->set_device_qdisc("default: htb");

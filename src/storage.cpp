@@ -30,6 +30,8 @@ static const char PRIVATE_PREFIX[] = "_private_";
 static const char META_PREFIX[] = "_meta_";
 static const char META_LAYER[] = "_layer_";
 
+static uint64_t AsyncRemoveWatchDogPeriod;
+
 /* Protected with VolumesMutex */
 
 static unsigned RemoveCounter = 0;
@@ -65,6 +67,7 @@ static inline std::unique_lock<std::mutex> LockPlaces() {
 
 
 void AsyncRemoveWatchDog() {
+    static const char *storage_types[] = {PORTO_LAYERS, PORTO_STORAGE, PORTO_VOLUMES};
     TError error;
 
     while (!NeedStopHelpers) {
@@ -73,34 +76,37 @@ void AsyncRemoveWatchDog() {
         placesLock.unlock();
 
         for (const auto &place : places) {
-            TPath base = place / PORTO_LAYERS;
+            for (const auto &storage_type : storage_types) {
+                TPath base = place / storage_type;
 
-            std::vector<std::string> list;
+                std::vector<std::string> list;
 
-            auto asyncRemoverLock = LockAsyncRemover();
-            error = base.ReadDirectory(list);
-            asyncRemoverLock.unlock();
-
-            if (error)
-                continue;
-
-            for (auto &name: list) {
-                if (!StringStartsWith(name, ASYNC_REMOVE_PREFIX))
+                error = base.ReadDirectory(list);
+                if (error)
                     continue;
 
-                TPath path = base / name;
+                for (auto &name: list) {
+                    if (!StringStartsWith(name, ASYNC_REMOVE_PREFIX))
+                        continue;
 
-                error = RemoveRecursive(path, true);
-                if (error)
-                    L_ERR("Can not async remove layer: {}", error);
+                    TPath path = base / name;
 
-                if (NeedStopHelpers)
-                    return;
+                    TFile dirent;
+                    if (!dirent.OpenDir(path))
+                        path = dirent.RealPath();
+
+                    error = RemoveRecursive(path, true);
+                    if (error)
+                        L_ERR("Can not async remove {}: {}", storage_type, error);
+
+                    if (NeedStopHelpers)
+                        return;
+                }
             }
         }
 
         auto asyncRemoverLock = LockAsyncRemover();
-        AsyncRemoverCv.wait_for(asyncRemoverLock, std::chrono::milliseconds(5000));
+        AsyncRemoverCv.wait_for(asyncRemoverLock, std::chrono::milliseconds(AsyncRemoveWatchDogPeriod));
     }
 }
 
@@ -163,6 +169,7 @@ void TStorage::Init() {
         PlaceLoadLimit = {{"default", 1}};
 
     Places.insert("/place");
+    AsyncRemoveWatchDogPeriod = config().volumes().async_remove_watchdog_ms();
     AsyncRemoveThread = std::unique_ptr<std::thread>(NewThread(&AsyncRemoveWatchDog));
 }
 
@@ -194,32 +201,10 @@ void TStorage::DecPlaceLoad(const TPath &place) {
     StorageCv.notify_all();
 }
 
-/* FIXME racy. rewrite with openat... etc */
-TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) {
-    TPath base;
-    struct stat st;
+TError TStorage::CheckBaseDirectory(const TPath &place, const TPath &base, unsigned perms) {
     TError error;
     bool default_place = false;
-
-    switch (type) {
-    case EStorageType::Volume:
-        base = place / PORTO_VOLUMES;
-        break;
-    case EStorageType::Layer:
-        base = place / PORTO_LAYERS;
-        break;
-    case EStorageType::DockerLayer:
-        base = place / PORTO_DOCKER;
-        break;
-    case EStorageType::Storage:
-        base = place / PORTO_STORAGE;
-        break;
-    case EStorageType::Meta:
-        base = place;
-        break;
-    case EStorageType::Place:
-        break;
-    }
+    struct stat st;
 
     if (place == PORTO_PLACE)
         default_place = true;
@@ -265,6 +250,43 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
             return error;
     }
 
+    return OK;
+}
+
+/* FIXME racy. rewrite with openat... etc */
+TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) {
+    TPath base;
+    struct stat st;
+    TError error;
+
+    switch (type) {
+    case EStorageType::Volume:
+        base = place / PORTO_VOLUMES;
+        break;
+    case EStorageType::Layer:
+        base = place / PORTO_LAYERS;
+        break;
+    case EStorageType::DockerLayer:
+        return OK;
+    case EStorageType::Storage:
+        base = place / PORTO_STORAGE;
+        break;
+    case EStorageType::Meta:
+        base = place;
+        break;
+    case EStorageType::Place:
+        break;
+    }
+
+    error = CheckBaseDirectory(place, base, perms);
+    if (error)
+        return error;
+
+    // Here base has been created in CheckBaseDirectory() or by user
+    error = base.StatStrict(st);
+    if (error)
+        return error;
+
     std::vector<std::string> list;
     error = base.ReadDirectory(list);
     if (error)
@@ -291,6 +313,9 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
                 continue;
         }
 
+        if (!path.PathExists())
+            continue;
+
         auto lock = LockVolumes();
 
         TFile dirent;
@@ -311,13 +336,29 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
             /* Remove random files if any */
             path.Unlink();
             continue;
-        } else if (!path.Exists()) {
+        } else if (!path.PathExists()) {
             L_ACT("Skip removing of non-existing path {}", path);
             continue;
         }
 
+        std::string async_kind;
+        bool is_async_type = (type != EStorageType::Meta && type != EStorageType::Place);
+        if (is_async_type)
+            async_kind = ASYNC_REMOVE_PREFIX + std::to_string(RemoveCounter++);
+
         lock.unlock();
-        L_ACT("Remove junk: {}", path);
+
+        if (is_async_type) {
+            /* Rename original path (not real path in case of symlinks) to remove it later in AsyncRemoveWatchDog */
+            TPath original_path = base / name;
+            TPath async_path = base / async_kind + name;
+
+            error = original_path.Rename(async_path);
+            if (!error)
+                continue;
+        }
+
+        L_ACT("Sync remove junk: {}", path);
         error = RemoveRecursive(path);
         if (error) {
             L_VERBOSE("Cannot remove junk {}: {}", path, error);
@@ -355,7 +396,7 @@ TError TStorage::CheckPlace(const TPath &place) {
         return error;
 
     if (config().daemon().docker_images_support()) {
-        error = Cleanup(place, EStorageType::DockerLayer, 0700);
+        error = CheckBaseDirectory(place, place / PORTO_DOCKER, 0700);
         if (error)
             return error;
 
@@ -1030,9 +1071,10 @@ TError TStorage::ExportArchive(const TPath &archive, const std::string &compress
     return error;
 }
 
-TError TStorage::Remove(bool weak, bool async) {
+TError TStorage::Remove(bool weak, bool enable_async, bool async_layer) {
     TPath temp;
     TError error;
+    bool async = enable_async ? async_layer || config().volumes().async_remove_storage() : false;
 
     error = CheckName(Name);
     if (error)
@@ -1066,12 +1108,9 @@ TError TStorage::Remove(bool weak, bool async) {
     TFile temp_dir;
     temp = TempPath((async ? ASYNC_REMOVE_PREFIX : REMOVE_PREFIX) + std::to_string(RemoveCounter++));
 
-    std::unique_lock<std::mutex> asyncRemoverLock;
-    if (async)
-        asyncRemoverLock = LockAsyncRemover();
-
+    // We don't have to use active paths, because async temp files are skipped by Cleanup
     error = Path.Rename(temp);
-    if (!error) {
+    if (!error && !async) {
         error = temp_dir.OpenDir(temp);
         if (!error) {
             temp = temp_dir.RealPath();
@@ -1079,8 +1118,6 @@ TError TStorage::Remove(bool weak, bool async) {
         }
     }
 
-    if (async)
-        asyncRemoverLock.unlock();
     lock.unlock();
 
     if (error)
@@ -1108,9 +1145,11 @@ TError TStorage::Remove(bool weak, bool async) {
 
     DecPlaceLoad(Place);
 
-    lock.lock();
-    ActivePaths.remove(temp);
-    lock.unlock();
+    if (!async) {
+        lock.lock();
+        ActivePaths.remove(temp);
+        lock.unlock();
+    }
 
     return error;
 }

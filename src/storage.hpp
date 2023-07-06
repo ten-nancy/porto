@@ -41,8 +41,7 @@ public:
     bool Weak() const;
     uint64_t LastUsage() const;
     TError Load();
-    TError RemoveAsync();
-    TError Remove(bool weak = false, bool async=false);
+    TError Remove(bool weak = false, bool enable_async = true, bool async_layer = false); // async_layer will be deleted soon
     TError Touch();
     TError SaveOwner(const TCred &owner);
     TError SetPrivate(const std::string &text);
@@ -59,6 +58,7 @@ public:
     static void DecPlaceLoad(const TPath &place);
 
 private:
+    static TError CheckBaseDirectory(const TPath &place, const TPath &base, unsigned perms);
     static TError Cleanup(const TPath &place, EStorageType type, unsigned perms);
     TPath TempPath(const std::string &kind);
     TError CheckUsage();
