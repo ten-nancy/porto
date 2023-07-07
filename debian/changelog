@@ -1,3 +1,23 @@
+porto (5.3.22) unstable; urgency=low
+  [ tobo ]
+      storage: add basic tar.bz2 compression support
+  [ kndrvt ]
+      storage: add async removing of storages and it can be set via config excluding docker layers
+      container: simplify OOM kills counting
+      docker: add URI parsing and basic authentication support for auth service
+  [ ovov ]
+      property: add cpu, memory and io pressure stall information
+  [ mskhristenko ]
+      volume: allow bind socket and  char/block device as volume
+      filesystem: add excluded path for var/lib
+      Coredump_filter
+  [ alperevyshin ]
+      Add check in Cleanup to don't run remove on non-existed folders
+      Change default value of net_limit in porto top
+  last commit: e93d4db3df43cc450a3b2f4639d381a36c60d280
+
+ -- Porto Team <porto@yandex-team.ru>  Fri, 07 Jul 2023 14:18:23 -0000
+
 porto (5.3.21) unstable; urgency=low
   [ kndrvt ]
       add YAML files for Github CI
