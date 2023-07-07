@@ -676,6 +676,8 @@ static TError Compression(const TPath &archive, const TFile &arc,
             goto gz;
         if (compress == "tzst" || compress == "tar.zst")
             goto zst;
+        if (compress == "tbz2" || compress == "tar.bz2")
+            goto bz2;
         if (compress == "tar")
             goto tar;
         if (StringEndsWith(compress, "squashfs"))
@@ -694,6 +696,8 @@ static TError Compression(const TPath &archive, const TFile &arc,
                 goto gz;
             if (!strncmp(magic, "\x28\xB5\x2F\xFD", 4))
                 goto zst;
+            if (!strncmp(magic, "BZh", 3))
+                goto bz2;
             if (!strncmp(magic, "hsqs", 4))
                 goto squash;
         }
@@ -715,6 +719,9 @@ static TError Compression(const TPath &archive, const TFile &arc,
 
     if (StringEndsWith(name, ".zst") || StringEndsWith(name, ".tzst"))
         goto zst;
+
+    if (StringEndsWith(name, ".bz2") || StringEndsWith(name, ".tbz2"))
+        goto bz2;
 
     if (StringEndsWith(name, ".squash") || StringEndsWith(name, ".squashfs"))
         goto squash;
@@ -758,6 +765,9 @@ zst:
         return OK;
     }
     return TError(EError::NotSupported, "Compression: Can not find /usr/bin/zstd binary" );
+bz2:
+    option = "--bzip2";
+    return OK;
 squash:
     format = "squashfs";
     auto sep = compress.find('.');
