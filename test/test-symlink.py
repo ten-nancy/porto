@@ -1,8 +1,8 @@
 #!/usr/bin/python
 
-import os
-import porto
 from test_common import *
+import porto
+import os
 
 AsAlice()
 
@@ -15,7 +15,7 @@ ExpectEq(os.readlink(a['cwd'] + "/tmp"), "../../../tmp")
 ExpectEq(os.readlink(a['cwd'] + "/a/b"), "../c/d")
 ExpectEq(os.stat(a['cwd'] + "/a").st_uid, alice_uid)
 ExpectEq(os.stat(a['cwd'] + "/a").st_gid, alice_gid)
-ExpectEq(os.stat(a['cwd'] + "/a").st_mode & 0777, 0775)
+ExpectEq(os.stat(a['cwd'] + "/a").st_mode & 0o777, 0o775)
 ExpectEq(os.lstat(a['cwd'] + "/a/b").st_uid, alice_uid)
 
 a["symlink[tmp]"] = "foo"
@@ -31,7 +31,7 @@ ExpectEq(a['symlink'], "a/b: c/d; tmp: /foo; ")
 
 ExpectException(a.SetProperty, porto.exceptions.Permission, "symlink[/test]", "foo")
 
-v = c.CreateVolume(layers=["ubuntu-precise"], containers="a")
+v = c.CreateVolume(layers=["ubuntu-xenial"], containers="a")
 a.Stop()
 a['symlink'] = "/foo/bar//../bar/baz: /xxx"
 a['symlink[a]'] = 'b'
@@ -53,8 +53,15 @@ ExpectEq(os.path.lexists(a['root'] + "/foo/bar/baz"), False)
 a.Destroy()
 
 m = c.Run("m")
-a = c.Run("m/a", root_volume={"layers": ["ubuntu-precise"]})
+a = c.Run("m/a", root_volume={"layers": ["ubuntu-xenial"]})
 a["symlink"] = "/a: /b"
 ExpectEq(os.path.lexists(a['root'] + "/a"), True)
 a.Destroy()
 m.Destroy()
+
+
+a = c.Run("a", root_volume={"layers": ["ubuntu-xenial"]}, symlink="/usr/lib/tmp: /tmp", user=alice_uid, group=alice_gid)
+a["symlink"] = "/usr/lib/tmp: /tmp"
+ExpectEq(a["symlink"], "/usr/lib/tmp: /tmp; ")
+
+a.Destroy()

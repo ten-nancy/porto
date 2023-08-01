@@ -976,9 +976,11 @@ TError TMountNamespace::CreateSymlink(const TPath &symlink, const TPath &target)
             continue;
         if (error.Errno != ENOENT)
             return error;
-        error = dir.WriteAccess(BindCred);
-        if (error && Root.IsRoot())
-            return error;
+        if (Root.IsRoot()) {
+            error = dir.WriteAccess(BindCred);
+            if (error)
+                return error;
+        }
         error = dir.MkdirAt(name, 0775);
         if (error)
             return error;
@@ -990,9 +992,11 @@ TError TMountNamespace::CreateSymlink(const TPath &symlink, const TPath &target)
             return error;
     }
 
-    error = dir.WriteAccess(BindCred);
-    if (error && Root.IsRoot())
-        return error;
+    if (Root.IsRoot()) {
+        error = dir.WriteAccess(BindCred);
+        if (error)
+            return error;
+    }
 
     TPath tgt = target.AbsolutePath(Cwd).NormalPath().RelativePath(sym_dir);
     TPath cur_tgt;
@@ -1003,6 +1007,8 @@ TError TMountNamespace::CreateSymlink(const TPath &symlink, const TPath &target)
             error = dir.UnlinkAt(sym_name);
         } else if (cur_tgt == tgt) {
             L_ACT("symlink {} already points to {}", sym, tgt);
+            // note there is no error variable using,
+            // so error from calls above could be propagated in return statement
         } else {
             L_ACT("symlink {} replace {} with {}", sym, cur_tgt, tgt);
             TPath sym_next = ".next_" + sym_name.ToString();
