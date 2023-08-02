@@ -2215,6 +2215,10 @@ TError TVolume::MakeShares(const TFile &base, bool cow) {
     TFile old_cwd, old_root, new_root;
     TError error, error2;
 
+    // MakeShares cannot process fd with O_PATH
+    if (Spec->shares().size() > 0 && (fcntl(base.Fd, F_GETFL) & O_PATH))
+        return TError::System("Cannot make shares: {} is opened with O_PATH", base.RealPath());
+
     error = old_cwd.OpenDir(".");
     if (error)
         return error;
@@ -2372,7 +2376,10 @@ TError TVolume::Build() {
                                  (IsReadOnly ? O_RDONLY : O_RDWR) |
                                  O_CLOEXEC | O_NOCTTY | O_NOFOLLOW);
     } else if (!RemoteStorage()) {
-        error = StorageFd.OpenPath(StoragePath);
+        if (StoragePath.IsDirectoryStrict())
+            error = StorageFd.OpenDir(StoragePath);
+        else
+            error = StorageFd.OpenPath(StoragePath);
     }
 
     if (error)

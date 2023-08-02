@@ -46,7 +46,7 @@ part3 = {'cleanup_portod':1,
          'labels':1,
          'ulimit':1,
          'python3-place':1,
-         'mount':1,
+         'python3-mount':1,
          'aufs':1,
          'python3-symlink':1,
          'systemd':1,
@@ -78,7 +78,8 @@ part6 = {'python3-volume_places':65,
          'python3-cpu-jail':20,
          'mem_limit':65,
          'volume_queue':100,
-         'volume_sync':20}
+         'volume_sync':20,
+         'python3-volume-spec':20}
 
 part7 = {'python3-volume_backends':55,
          'recovery':40,

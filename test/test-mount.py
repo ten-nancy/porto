@@ -30,7 +30,7 @@ def CheckBaseMounts(mnt, chroot=True):
 
 w = conn.Create("w", weak=True)
 
-root_volume = conn.CreateVolume(backend='overlay', layers=['ubuntu-precise'], containers='w')
+root_volume = conn.CreateVolume(backend='overlay', layers=['ubuntu-xenial'], containers='w')
 test_volume = conn.CreateVolume(backend='plain', containers='w')
 ro_volume = conn.CreateVolume(backend='plain', read_only='true', containers='w')
 
@@ -313,7 +313,7 @@ a.Destroy()
 for path in ("", "/tmp/kek"):
     root_a = conn.CreateVolume(containers='w')
     os.mkdir(root_a.path + "/root")
-    root_b = conn.CreateVolume(root_a.path + "/root", backend='overlay', layers=['ubuntu-precise'], containers='w')
+    root_b = conn.CreateVolume(root_a.path + "/root", backend='overlay', layers=['ubuntu-xenial'], containers='w')
 
     a = conn.Run("a", root=root_a.path, weak=True)
     b = conn.Run("a/b", root="/root", weak=True)

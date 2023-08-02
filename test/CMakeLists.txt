@@ -80,7 +80,7 @@ ADD_PYTHON_TEST(std-streams)
 ADD_PYTHON_TEST(labels)
 ADD_PYTHON_TEST(ulimit)
 ADD_PYTHON3_TEST(place)
-ADD_PYTHON_TEST(mount)
+ADD_PYTHON3_TEST(mount)
 ADD_PYTHON_TEST(aufs)
 ADD_PYTHON3_TEST(vcheck)
 ADD_PYTHON3_TEST(symlink)
@@ -171,6 +171,7 @@ ADD_PYTHON_TEST(volume_sync)
 ADD_PYTHON_TEST(portod_cli)
 ADD_PYTHON_TEST(recovery)
 ADD_PYTHON3_TEST(volume-remove-race)
+ADD_PYTHON3_TEST(volume-spec)
 
 add_test(NAME leaks
          COMMAND sudo ${CMAKE_BINARY_DIR}/portotest leaks
