@@ -1,3 +1,12 @@
+porto (5.3.23) unstable; urgency=low
+  [ kndrvt ]
+      volume: fix storage opening for volume shares
+      filesystem: fix symlink restore
+      license: add CONTRIBUTING.md and CODE_OF_CONDUCT.md
+  last commit: add06bb3272f20596ab6777247ac2321e165bd4f
+
+ -- Porto Team <porto@yandex-team.ru>  Wed, 02 Aug 2023 12:14:02 -0000
+
 porto (5.3.22) unstable; urgency=low
   [ tobo ]
       storage: add basic tar.bz2 compression support
