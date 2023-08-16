@@ -2311,7 +2311,7 @@ void TRequest::Handle() {
     rsp.set_timestamp(timestamp);
 
     if (!RoReq || Verbose) {
-        L_RSP("{} {} {} to {} time={}+{} ms", Cmd, Arg, ResponseAsString(rsp),
+        L_RSP("{} {} {} {} to {} time={}+{} ms", Cmd, Arg, Opt, ResponseAsString(rsp),
                 Client->Id, StartTime - QueueTime, FinishTime - StartTime);
     } else if (error || RequestTime >= 1000) {
         /* Log failed or slow silent requests without details */
