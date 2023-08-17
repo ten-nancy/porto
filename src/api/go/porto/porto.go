@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"os"
 	"syscall"
 	"time"
 
@@ -15,7 +16,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const portoSocket = "/run/portod.socket"
+const (
+	PortoSocket        = "/run/portod.socket"
+	DefaultTimeout     = 5 * time.Minute
+	DefaultStopTimeout = 5 * time.Minute
+)
 
 type TProperty struct {
 	Name        string
@@ -65,7 +70,21 @@ func (err *PortoError) Error() string {
 }
 
 type PortoAPI interface {
+	// Connection
+	Connect() error
 	Close() error
+	IsConnected() bool
+	SetAutoReconnect(bool)
+
+	// Timeout
+	GetTimeout() time.Duration
+	SetTimeout(timeout time.Duration)
+
+	// Transport
+	WriteRequest(*rpc.TContainerRequest) error
+	ReadResponse() (*rpc.TContainerResponse, error)
+	CallTimeout(*rpc.TContainerRequest, time.Duration) (*rpc.TContainerResponse, error)
+	Call(*rpc.TContainerRequest) (*rpc.TContainerResponse, error)
 
 	GetVersion() (string, string, error)
 
@@ -76,7 +95,7 @@ type PortoAPI interface {
 
 	Start(name string) error
 	Stop(name string) error
-	Stop2(name string, timeout time.Duration) error
+	StopTimeout(name string, timeout time.Duration) error
 	Kill(name string, sig syscall.Signal) error
 	Pause(name string) error
 	Resume(name string) error
@@ -138,53 +157,62 @@ type PortoAPI interface {
 }
 
 type client struct {
-	conn   net.Conn
-	reader *bufio.Reader
+	conn        net.Conn
+	reader      *bufio.Reader
+	noReconnect bool
+	timeout     time.Duration
 }
 
-// Connect establishes connection to a Porto daemon via unix socket.
-// Close must be called when the API is not needed anymore.
 func Dial() (PortoAPI, error) {
-	conn, err := net.Dial("unix", portoSocket)
-	if err != nil {
-		return nil, err
-	}
-
 	c := new(client)
-	c.conn = conn
-	c.reader = bufio.NewReader(conn)
-
+	c.SetTimeout(DefaultTimeout)
 	return c, nil
 }
 
+// Connect connects to the address of portod unix domain socket
+//
+// For testing purposes inside containers default path to Portod
+// socket could be replaced by environment variable PORTO_SOCKET.
+func (c *client) Connect() error {
+	_ = c.Close()
+
+	portoSocketPath := PortoSocket
+	rv, ok := os.LookupEnv("PORTO_SOCKET")
+	if ok {
+		portoSocketPath = rv
+	}
+	conn, err := net.DialTimeout("unix", portoSocketPath, c.GetTimeout())
+	if err == nil {
+		c.conn = conn
+		c.reader = bufio.NewReader(c.conn)
+	}
+	return err
+}
+
 func (c *client) Close() error {
-	return c.conn.Close()
+	if c.conn == nil {
+		return nil
+	}
+	err := c.conn.Close()
+	c.conn = nil
+	c.reader = nil
+	return err
 }
 
-func (c *client) GetVersion() (string, string, error) {
-	req := &rpc.TContainerRequest{
-		Version: new(rpc.TVersionRequest),
-	}
-	resp, err := c.Call(req)
-	if err != nil {
-		return "", "", err
-	}
-
-	return resp.GetVersion().GetTag(), resp.GetVersion().GetRevision(), nil
+func (c *client) IsConnected() bool {
+	return c.conn != nil
 }
 
-func (c *client) Call(req *rpc.TContainerRequest) (*rpc.TContainerResponse, error) {
-	err := c.WriteRequest(req)
-	if err != nil {
-		return nil, err
-	}
+func (c *client) SetAutoReconnect(reconnect bool) {
+	c.noReconnect = !reconnect
+}
 
-	rsp, err := c.ReadResponse()
-	if err != nil {
-		return nil, err
-	}
+func (c *client) GetTimeout() time.Duration {
+	return c.timeout
+}
 
-	return rsp, nil
+func (c *client) SetTimeout(timeout time.Duration) {
+	c.timeout = timeout
 }
 
 func optString(val string) *string {
@@ -250,6 +278,75 @@ func (c *client) ReadResponse() (*rpc.TContainerResponse, error) {
 	return rsp, nil
 }
 
+func (c *client) CallTimeout(req *rpc.TContainerRequest, timeout time.Duration) (*rpc.TContainerResponse, error) {
+	if !c.IsConnected() {
+		if c.noReconnect {
+			err := &PortoError{
+				Code:    rpc.EError_SocketError,
+				Message: "Socket not connected",
+			}
+			return nil, err
+		}
+		err := c.Connect()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	reqTimeout := c.GetTimeout()
+	if reqTimeout < 0 {
+		err := c.conn.SetDeadline(time.Time{})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		deadline := time.Now().Add(reqTimeout)
+		err := c.conn.SetWriteDeadline(deadline)
+		if err != nil {
+			return nil, err
+		}
+
+		if timeout < 0 {
+			deadline = time.Time{}
+		} else {
+			deadline = deadline.Add(timeout)
+		}
+
+		err = c.conn.SetReadDeadline(deadline)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err := c.WriteRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	rsp, err := c.ReadResponse()
+	if err != nil {
+		return nil, err
+	}
+
+	return rsp, nil
+}
+
+func (c *client) Call(req *rpc.TContainerRequest) (*rpc.TContainerResponse, error) {
+	return c.CallTimeout(req, 0)
+}
+
+func (c *client) GetVersion() (string, string, error) {
+	req := &rpc.TContainerRequest{
+		Version: new(rpc.TVersionRequest),
+	}
+	resp, err := c.Call(req)
+	if err != nil {
+		return "", "", err
+	}
+
+	return resp.GetVersion().GetTag(), resp.GetVersion().GetRevision(), nil
+}
+
 // ContainerAPI
 func (c *client) Create(name string) error {
 	req := &rpc.TContainerRequest{
@@ -288,14 +385,18 @@ func (c *client) Start(name string) error {
 		},
 	}
 	_, err := c.Call(req)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *client) Stop(name string) error {
-	return c.Stop2(name, -1)
+	return c.StopTimeout(name, DefaultStopTimeout)
 }
 
-func (c *client) Stop2(name string, timeout time.Duration) error {
+func (c *client) StopTimeout(name string, timeout time.Duration) error {
 	req := &rpc.TContainerRequest{
 		Stop: &rpc.TContainerStopRequest{
 			Name: &name,
@@ -311,8 +412,12 @@ func (c *client) Stop2(name string, timeout time.Duration) error {
 		req.Stop.TimeoutMs = &timeoutms
 	}
 
-	_, err := c.Call(req)
-	return err
+	_, err := c.CallTimeout(req, timeout)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *client) Kill(name string, sig syscall.Signal) error {
