@@ -22,6 +22,6 @@ TError RunCommand(const std::vector<std::string> &command,
 
 TError CopyRecursive(const TPath &src, const TPath &dst);
 TError ClearRecursive(const TPath &path);
-TError RemoveRecursive(const TPath &path, bool interruptible = false);
+TError RemoveRecursive(const TPath &path);
 
 TError DownloadFile(const std::string &url, const TPath &path, const std::vector<std::string> &headers = {});

@@ -95,7 +95,7 @@ void AsyncRemoveWatchDog() {
                     if (!dirent.OpenDir(path))
                         path = dirent.RealPath();
 
-                    error = RemoveRecursive(path, true);
+                    error = RemoveRecursive(path);
                     if (error)
                         L_ERR("Can not async remove {}: {}", storage_type, error);
 

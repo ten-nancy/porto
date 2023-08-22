@@ -7,7 +7,9 @@
 
 extern "C" {
 #include <unistd.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <linux/loop.h>
@@ -228,15 +230,15 @@ TError ClearRecursive(const TPath &path) {
     return RunCommand({ "find", ".", "-xdev", "-mindepth", "1", "-delete"}, dir);
 }
 
-TError RemoveRecursive(const TPath &path, bool interruptible) {
-    TError error;
-    TFile dir;
+static int nftw_remove_cb(const char *path, const struct stat *, int, struct FTW *) {
+    return remove(path);
+}
 
-    error = dir.OpenDir(path.NormalPath().DirName());
-    if (error)
-        return error;
-
-    return RunCommand({"rm", "-rf", "--one-file-system", "--", path.ToString()}, dir, TFile(), TFile(), HelperCapabilities, false, interruptible);
+TError RemoveRecursive(const TPath &path) {
+    int ret = nftw(path.c_str(), nftw_remove_cb, 1024, FTW_DEPTH|FTW_MOUNT|FTW_PHYS);
+    if (ret)
+        return TError(EError::Unknown, errno, "nftw failed");
+    return OK;
 }
 
 TError DownloadFile(const std::string &url, const TPath &path, const std::vector<std::string> &headers) {
