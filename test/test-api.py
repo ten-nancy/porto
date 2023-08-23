@@ -466,7 +466,7 @@ portodReload.join()
 subprocess.call(['vmtouch', '-e', 'layer.tar.gz'])
 p = subprocess.run([portoctl, '--disk-timeout', '1', '-t', '1', 'layer', '-I', 'ubuntu-api-test', 'layer.tar.gz'], stdout = subprocess.PIPE, stderr=subprocess.PIPE)
 assert p.returncode != 0
-assert str(p.stderr).find('Resource temporarily unavailable') >= 0
+assert str(p.stderr).find('Timeout exceeded. Timeout value:') >= 0
 time.sleep(5)
 assert str(os.listdir('/place/porto_layers')).find('ubuntu-api-test') == -1
 

@@ -44,6 +44,7 @@ public:
             LastError = EError::SocketUnavailable;
             break;
         case EAGAIN:
+            LastErrorMsg = std::string(prefix + ": Timeout exceeded. Timeout value: " + std::to_string(Timeout));
             LastError = EError::SocketTimeout;
             break;
         case EIO:
@@ -54,6 +55,7 @@ public:
             LastError = EError::Unknown;
             break;
         }
+
         Close();
         return LastError;
     }
