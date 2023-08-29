@@ -5,6 +5,7 @@ import os
 import porto
 import time
 import hashlib
+from traceback import print_exc
 
 ConfigurePortod('test-spec', """
 core {
@@ -29,6 +30,7 @@ def CopyProps(ct_a, ct_b):
 def CheckVolatileProp(v1, v2):
     assert v1*0.95 <= v2 <= v1*1.05
 
+ab = a = b = None
 try:
     a = c.Create(container_name_a, weak=True)
     b = c.Create(container_name_b, weak=True)
@@ -712,12 +714,14 @@ try:
             a.Destroy()
 
 except:
-    pass
-
+    print_exc()
 finally:
-    Catch(a.Destroy)
-    Catch(b.Destroy)
-    Catch(ab.Destroy)
+    if a is not None:
+        Catch(a.Destroy)
+    if b is not None:
+        Catch(b.Destroy)
+    if ab is not None:
+        Catch(ab.Destroy)
 
     AsRoot()
     ConfigurePortod('test-spec', '')
