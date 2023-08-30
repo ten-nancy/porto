@@ -445,22 +445,36 @@ try:
     assert 4 in dump.status.cpu_set_affinity.cpu
 
     a.SetProperty("io_limit", "/ssd: 1000; /place: 500")
+    a.SetProperty("io_guarantee", "/ssd: 1001; /place: 501")
     a.SetProperty("io_ops_limit", "/ssd: 1500; /place: 550")
+    a.SetProperty("io_ops_guarantee", "/ssd: 1501; /place: 551")
     dump = a.Dump()
     CopyProps(a, b)
 
     assert a.GetProperty('io_limit') == b.GetProperty('io_limit')
+    assert a.GetProperty('io_guarantee') == b.GetProperty('io_guarantee')
     assert a.GetProperty('io_ops_limit') == b.GetProperty('io_ops_limit')
+    assert a.GetProperty('io_ops_guarantee') == b.GetProperty('io_ops_guarantee')
 
     io_limits = a.GetProperty('io_limit')
     for kv in dump.spec.io_limit.map:
         assert io_limits.find('{}: {}'.format(kv.key, kv.val)) != -1
     assert io_limits.count(';') + 1 == len(dump.spec.io_limit.map)
 
+    io_guarantees = a.GetProperty('io_guarantee')
+    for kv in dump.spec.io_guarantee.map:
+        assert io_guarantees.find('{}: {}'.format(kv.key, kv.val)) != -1
+    assert io_guarantees.count(';') + 1 == len(dump.spec.io_guarantee.map)
+
     io_ops_limits = a.GetProperty('io_ops_limit')
     for kv in dump.spec.io_ops_limit.map:
         assert io_ops_limits.find('{}: {}'.format(kv.key, kv.val)) != -1
     assert io_ops_limits.count(';') + 1 == len(dump.spec.io_ops_limit.map)
+
+    io_ops_guarantees = a.GetProperty('io_ops_guarantee')
+    for kv in dump.spec.io_ops_guarantee.map:
+        assert io_ops_guarantees.find('{}: {}'.format(kv.key, kv.val)) != -1
+    assert io_ops_guarantees.count(';') + 1 == len(dump.spec.io_ops_guarantee.map)
 
     a.SetProperty('max_respawns', '10')
     a.SetProperty('respawn_delay', '1500ns')

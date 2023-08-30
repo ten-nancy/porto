@@ -4133,9 +4133,9 @@ public:
     }
 } static CpuSetAffinity;
 
-class TIoLimit : public TProperty {
+class TIoProperty : public TProperty {
 public:
-    TIoLimit(std::string name, EProperty prop, std::string desc) :
+    TIoProperty(std::string name, EProperty prop, std::string desc) :
         TProperty(name, prop, desc) {}
     void Init(void) override {
         IsSupported = MemorySubsystem.SupportIoLimit() ||
@@ -4190,9 +4190,9 @@ public:
     }
 };
 
-class TIoBpsLimit : public TIoLimit {
+class TIoBpsLimit : public TIoProperty {
 public:
-    TIoBpsLimit()  : TIoLimit(P_IO_LIMIT, EProperty::IO_LIMIT,
+    TIoBpsLimit()  : TIoProperty(P_IO_LIMIT, EProperty::IO_LIMIT,
             "IO bandwidth limit: fs|<path>|<disk> [r|w]: <bytes/s>;...")
     {
         IsDynamic = true;
@@ -4225,9 +4225,49 @@ public:
     }
 } static IoBpsLimit;
 
-class TIoOpsLimit : public TIoLimit {
+class TIoBpsGuarantee : public TIoProperty {
 public:
-    TIoOpsLimit()  : TIoLimit(P_IO_OPS_LIMIT, EProperty::IO_OPS_LIMIT,
+    TIoBpsGuarantee()  : TIoProperty(P_IO_GUARANTEE, EProperty::IO_GUARANTEE,
+            "IO bandwidth guarantee: fs|<path>|<disk> [r|w]: <bytes/s>;...")
+    {
+        IsDynamic = true;
+    }
+
+    TError Get(std::string &value) const override {
+        return GetMap(CT->IoBpsGuarantee, value);
+    }
+
+    TError Set(const std::string &value) override {
+        return SetMap(CT->IoBpsGuarantee, value);
+    }
+
+    TError GetIndexed(const std::string &index, std::string &value) override {
+        return GetMapIndexed(CT->IoBpsGuarantee, index, value);
+    }
+
+    TError SetIndexed(const std::string &index, const std::string &value) override {
+        return SetMapIndexed(CT->IoBpsGuarantee, index, value);
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        if (CT->HasProp(EProperty::IO_GUARANTEE))
+            DumpMap(CT->IoBpsGuarantee, *spec.mutable_io_guarantee());
+    }
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_io_guarantee();
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        TUintMap map;
+        LoadMap(spec.io_guarantee(), CT->IoBpsGuarantee, map);
+        return SetMapMap(CT->IoBpsGuarantee, map);
+    }
+} static IoBpsGuarantee;
+
+class TIoOpsLimit : public TIoProperty {
+public:
+    TIoOpsLimit()  : TIoProperty(P_IO_OPS_LIMIT, EProperty::IO_OPS_LIMIT,
             "IOPS limit: fs|<path>|<disk> [r|w]: <iops>;...")
     {
         IsDynamic = true;
@@ -4259,6 +4299,46 @@ public:
         return SetMapMap(CT->IoOpsLimit, map);
     }
 } static IoOpsLimit;
+
+class TIoOpsGuarantee : public TIoProperty {
+public:
+    TIoOpsGuarantee()  : TIoProperty(P_IO_OPS_GUARANTEE, EProperty::IO_OPS_GUARANTEE,
+            "IOPS guarantee: fs|<path>|<disk> [r|w]: <iops>;...")
+    {
+        IsDynamic = true;
+    }
+
+    TError Get(std::string &value) const override {
+        return GetMap(CT->IoOpsGuarantee, value);
+    }
+
+    TError Set(const std::string &value) override {
+        return SetMap(CT->IoOpsGuarantee, value);
+    }
+
+    TError GetIndexed(const std::string &index, std::string &value) override {
+        return GetMapIndexed(CT->IoOpsGuarantee, index, value);
+    }
+
+    TError SetIndexed(const std::string &index, const std::string &value) override {
+        return SetMapIndexed(CT->IoOpsGuarantee, index, value);
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        if (CT->HasProp(EProperty::IO_OPS_GUARANTEE))
+            DumpMap(CT->IoOpsGuarantee, *spec.mutable_io_ops_guarantee());
+    }
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_io_ops_guarantee();
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        TUintMap map;
+        LoadMap(spec.io_ops_guarantee(), CT->IoOpsGuarantee, map);
+        return SetMapMap(CT->IoOpsGuarantee, map);
+    }
+} static IoOpsGuarantee;
 
 class TRespawn : public TProperty {
 public:

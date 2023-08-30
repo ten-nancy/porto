@@ -86,7 +86,9 @@ constexpr const char *P_CPU_PRESSURE = "cpu_pressure";
 constexpr const char *P_IO_POLICY = "io_policy";
 constexpr const char *P_IO_WEIGHT = "io_weight";
 constexpr const char *P_IO_LIMIT = "io_limit";
+constexpr const char *P_IO_GUARANTEE = "io_guarantee";
 constexpr const char *P_IO_OPS_LIMIT = "io_ops_limit";
+constexpr const char *P_IO_OPS_GUARANTEE = "io_ops_guarantee";
 constexpr const char *P_IO_READ = "io_read";
 constexpr const char *P_IO_WRITE = "io_write";
 constexpr const char *P_IO_OPS = "io_ops";
@@ -242,7 +244,9 @@ enum class EProperty {
     IO_POLICY,
     IO_WEIGHT,
     IO_LIMIT,
+    IO_GUARANTEE,
     IO_OPS_LIMIT,
+    IO_OPS_GUARANTEE,
     NET_GUARANTEE,
     NET_LIMIT,
     RESPAWN,

@@ -249,8 +249,9 @@ public:
     double IoWeight = 1;
 
     TUintMap IoBpsLimit;
+    TUintMap IoBpsGuarantee;
     TUintMap IoOpsLimit;
-
+    TUintMap IoOpsGuarantee;
     std::string CpuPolicy;
 
     int SchedPolicy;

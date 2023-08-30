@@ -871,7 +871,11 @@ Absolute paths are resolved in host, paths starting with dot in chroot:
     - \<path\> \[r|w\]: \<bytes\> - setup blkio limit for disk used by this filesystem
     - \<disk\> \[r|w\]: \<bytes\> - setup blkio limit for disk
 
-* **io\_ops\_limit**  - IOPS limit: fs|\<path\>|\<disk\> \[r|w\]: \<iops\>;...
+* **io\_guarantee** - IO bandwidth guarantee, syntax: fs|\<path\>|\<disk\> \[r|w\]: \<bytes/s\>;... (see description in io\_limit above)
+
+* **io\_ops\_limit**  - IOPS limit: fs|\<path\>|\<disk\> \[r|w\]: \<iops\>;... (see description in io\_limit above)
+
+* **io\_ops\_guarantee** - IOPS guarantee: fs|\<path\>|\<disk\> \[r|w\]: \<iops\>;... (see description in io\_limit above)
 
 * **io\_policy** IO scheduler policy, see **ioprio\_set(2)**
     - *none*    - set by **cpu\_policy**, blkio.weight = 500 (default)
