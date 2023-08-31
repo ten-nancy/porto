@@ -89,7 +89,7 @@ struct TDockerImage {
     static TError List(const TPath &place, std::vector<TDockerImage> &images, const std::string &mask = "");
     TError Status(const TPath &place);
     TError Pull(const TPath &place);
-    TError Remove(const TPath &place, bool needLock = true);
+    TError Remove(const TPath &place);
 
 private:
     inline std::string RepositoryAndName() const {
@@ -159,7 +159,6 @@ private:
     std::string ManifestsUrl(const std::string &digest) const;
     std::string BlobsUrl(const std::string &digest) const;
 
-    std::vector<std::unique_ptr<TFileMutex>> Lock(const TPath &place, bool lockTagPath = true);
     TError DownloadManifest(const THttpClient &client);
     TError ParseManifest();
     TError DownloadConfig(const THttpClient &client);
@@ -169,6 +168,8 @@ private:
     void RemoveLayers(const TPath &place) const;
 
     TError LinkTag(const TPath &place) const;
+    void UnlinkTag(const TPath &place) const;
+
     TError SaveImages(const TPath &place) const;
     TError SaveImages(const TPath &imagesPath,
                       const std::unordered_map<std::string, std::unordered_set<std::string>> &images) const;

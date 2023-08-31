@@ -172,7 +172,11 @@ TError THttpClient::SingleRequest(const TUri &uri, std::string &response, const 
     if (uri.Port > 0)
         host = fmt::format("{}:{}", host, uri.Port);
 
-    return THttpClient(host).MakeRequest(fmt::format("{}?{}", uri.Path, uri.FormatOptions()), response, headers, request);
+    std::string path = uri.Path;
+    if (uri.Options.size())
+        path += "?" + uri.FormatOptions();
+
+    return THttpClient(host).MakeRequest(path, response, headers, request);
 }
 
 std::string THttpClient::EncodeBase64(const std::string &text) {

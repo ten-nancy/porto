@@ -45,20 +45,43 @@ std::unique_lock<std::mutex> MeasuredMutex::UniqueLock() {
 
 TFileMutex::TFileMutex(const TPath &path, int flags) {
     TError error = File.Open(path, flags);
-    if (!error) {
-        int ret = flock(File.Fd, LOCK_EX);
-        if (ret)
-            L_WRN("cannot flock lock {} {}", File.RealPath(), ret);
-    } else {
+    if (error)
         L_WRN("cannot open {} {}", path, error);
-    }
+
+    lock();
 }
 
 TFileMutex::~TFileMutex() {
     if (!File)
         return;
 
+    unlock();
+}
+
+void TFileMutex::lock() const {
+    int ret = flock(File.Fd, LOCK_EX);
+    if (ret)
+        L_WRN("cannot flock lock {} {}", File.RealPath(), ret);
+}
+
+void TFileMutex::unlock() const {
     int ret = flock(File.Fd, LOCK_UN);
     if (ret)
         L_WRN("cannot flock unlock {} {}", File.RealPath(), ret);
+}
+
+std::unique_ptr<TFileMutex> TFileMutex::MakePathLock(const TPath &path, int flags) {
+    return std::unique_ptr<TFileMutex>(new TFileMutex(path, flags));
+}
+
+std::unique_ptr<TFileMutex> TFileMutex::MakeDirLock(const TPath &path) {
+    return std::unique_ptr<TFileMutex>(new TFileMutex(path, O_CLOEXEC | O_NOCTTY | O_DIRECTORY));
+}
+
+std::unique_ptr<TFileMutex> TFileMutex::MakeRegLock(const TPath &path) {
+    return std::unique_ptr<TFileMutex>(new TFileMutex(path, O_CLOEXEC | O_NOCTTY));
+}
+
+std::unique_ptr<TFileMutex> TFileMutex::MakeSymLock(const TPath &path) {
+    return std::unique_ptr<TFileMutex>(new TFileMutex(path, O_CLOEXEC | O_NOCTTY | O_NOFOLLOW));
 }

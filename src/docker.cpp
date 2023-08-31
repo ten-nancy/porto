@@ -130,7 +130,7 @@ TError TDockerImage::DetectImage(const TPath &place) {
         TPath tagPath = TagPath(place);
         TPath digestPath = tagPath.RealPath();
         if (digestPath == tagPath)
-            return TError(EError::Docker, "Detected tag symlink is broken");
+            return TError(EError::Docker, "Detected tag symlink is broken: {}", tagPath);
 
         Digest = digestPath.BaseName();
 
@@ -145,19 +145,19 @@ TError TDockerImage::DetectImage(const TPath &place) {
 
 TError TDockerImage::DetectTagPath(const TPath &place) {
     TPath tagPath = TagPath(place);
-    if (!tagPath.Exists()) {
+    if (!tagPath.PathExists()) {
         SchemaVersion = 1;
         tagPath = TagPath(place);
-        if (!tagPath.Exists()) {
+        if (!tagPath.PathExists()) {
             if (Repository == "library") {
                 // try to load empty repository
                 Repository = "";
                 SchemaVersion = 2;
                 tagPath = TagPath(place);
-                if (!tagPath.Exists()) {
+                if (!tagPath.PathExists()) {
                     SchemaVersion = 1;
                     tagPath = TagPath(place);
-                    if (!tagPath.Exists()) {
+                    if (!tagPath.PathExists()) {
                         return TError(EError::DockerImageNotFound, FullName());
                     }
                 }
@@ -207,36 +207,6 @@ std::string TDockerImage::ManifestsUrl(const std::string &digest) const {
 
 std::string TDockerImage::BlobsUrl(const std::string &digest) const {
     return fmt::format("/v2/{}/blobs/sha256:{}", RepositoryAndName(), digest);
-}
-
-std::vector<std::unique_ptr<TFileMutex>> TDockerImage::Lock(const TPath &place, bool lockTagPath) {
-    std::vector<std::unique_ptr<TFileMutex>> mutexes;
-    std::set<TPath> lockedPaths;
-
-    auto createAndAppend = [&mutexes, &lockedPaths](TPath &&path) {
-        if (lockedPaths.find(path) != lockedPaths.end() || path.IsEmpty())
-            return;
-
-        lockedPaths.emplace(path);
-
-        if (!path.Exists()) {
-            TError error = path.MkdirAll(0755);
-            if (error) {
-                L_ERR("Cannot create directory {}: {}", path, error);
-                return;
-            }
-        }
-
-        mutexes.emplace_back(new TFileMutex(path, O_CLOEXEC | O_DIRECTORY));
-    };
-
-    if (lockTagPath)
-        createAndAppend(TagPath(place).DirName());
-    createAndAppend(DigestPath(place));
-    for (auto &layer: Layers)
-       createAndAppend(layer.LayerPath(place));
-
-    return mutexes;
 }
 
 TError TDockerImage::DownloadManifest(const THttpClient &client) {
@@ -433,6 +403,12 @@ TError TDockerImage::DownloadLayers(const TPath &place) const {
     for (const auto &layer: Layers) {
         TPath archivePath = layer.ArchivePath(place);
 
+        error = archivePath.DirName().MkdirAll(0755);
+        if (error && error.Errno != EEXIST)
+            L_ERR("Cannot create directory {}: {}", archivePath.DirName(), error);
+
+        auto layerLock = TFileMutex::MakeDirLock(archivePath.DirName());
+
         if (archivePath.Exists()) {
             struct stat st;
             error = archivePath.StatStrict(st);
@@ -474,6 +450,7 @@ void TDockerImage::RemoveLayers(const TPath &place) const {
     TError error;
 
     for (const auto &layer: Layers) {
+        auto layerLock = TFileMutex::MakeDirLock(layer.LayerPath(place).DirName());
         error = layer.Remove(place);
         if (error)
             L_ERR("Cannot remove layer: {}", error);
@@ -485,14 +462,27 @@ TError TDockerImage::LinkTag(const TPath &place) const {
     TPath digestPath = DigestPath(place);
     TPath tagPath = TagPath(place);
 
+    error = tagPath.DirName().MkdirAll(0755);
+    if (error && error.Errno != EEXIST)
+        L_ERR("Cannot create directory {}: {}", tagPath.DirName(), error);
+
+    auto tagLock = TFileMutex::MakeDirLock(tagPath.DirName());
+
     error = tagPath.Symlink(digestPath);
     if (error) {
         if (error.Errno != EEXIST)
             return error;
 
+        // skip if symlink to the same digest path exists
+        if (tagPath.RealPath() == digestPath) {
+            L_WRN("Reuse tag path symlink: {} to {}", tagPath, digestPath);
+            return OK;
+        }
+
         // load tags of current digest
         std::unordered_map<std::string, std::unordered_set<std::string>> images;
         std::string name = FullName(true);
+        auto digestLock = TFileMutex::MakeDirLock(tagPath.RealPath());
         error = LoadImages(tagPath.RealPath() / DOCKER_IMAGES_FILE, images);
         if (error)
             return error;
@@ -530,6 +520,23 @@ TError TDockerImage::LinkTag(const TPath &place) const {
     return OK;
 }
 
+void TDockerImage::UnlinkTag(const TPath &place) const {
+    TError error;
+    TPath tagPath = TagPath(place);
+
+    auto tagLock = TFileMutex::MakeDirLock(tagPath.DirName());
+
+    error = tagPath.Unlink();
+    if (error)
+        L_ERR("Cannot unlink tag: {}", error);
+
+    tagLock.reset();
+
+    error = tagPath.DirName().ClearEmptyDirectories(place / PORTO_DOCKER_TAGS);
+    if (error)
+        L_ERR("Cannot clear directories: {}", error);
+}
+
 TError TDockerImage::SaveImages(const TPath &place) const {
     return SaveImages(DigestPath(place) / DOCKER_IMAGES_FILE, Images);
 }
@@ -565,10 +572,6 @@ TError TDockerImage::Save(const TPath &place) const {
     TError error;
     TPath digestPath = DigestPath(place);
     TPath layersPath =  digestPath / DOCKER_LAYERS_DIR;
-
-    error = LinkTag(place);
-    if (error)
-        return error;
 
     error = TPath(digestPath / "manifest.json").CreateAndWriteAll(Manifest);
     if (error)
@@ -678,7 +681,6 @@ TError TDockerImage::List(const TPath &place, std::vector<TDockerImage> &images,
             continue;
 
         TDockerImage image(walk.Name());
-        auto lock = image.Lock(place, false);
         error = image.Load(place);
         if (error) {
             L_ERR("{}", error);
@@ -710,13 +712,10 @@ TError TDockerImage::List(const TPath &place, std::vector<TDockerImage> &images,
 
 TError TDockerImage::Status(const TPath &place) {
     TError error;
-    bool tagSpecified = Digest.empty();
 
     error = DetectImage(place);
     if (error)
         return error;
-
-    auto lock = Lock(place, tagSpecified);
 
     error = Load(place);
     if (error)
@@ -729,33 +728,28 @@ TError TDockerImage::Pull(const TPath &place) {
     TError error;
     THttpClient client("https://" + Registry);
 
-    auto cleanup = [this, &place](const TError &error, bool needLock) -> TError {
-        this->Remove(place, needLock);
-        return error;
-    };
-
     error = DownloadManifest(client);
     if (error)
-        return cleanup(error, true);
+        return error;
 
     error = ParseManifest();
     if (error)
-        return cleanup(error, true);
+        return error;
 
     error = DownloadConfig(client);
     if (error)
-        return cleanup(error, true);
+        return error;
 
     error = ParseConfig();
     if (error)
-        return cleanup(error, true);
+        return error;
 
     std::string name = FullName(true);
     TPath digestPath = DigestPath(place);
-    auto lock = Lock(place);
-
     if (!digestPath.IsEmpty() && (digestPath / DOCKER_IMAGES_FILE).Exists()) {
         // digest already exists and we check its tags and images
+        auto digestLock = TFileMutex::MakeDirLock(digestPath);
+
         error = LoadImages(place);
         if (error)
             return error;
@@ -777,31 +771,67 @@ TError TDockerImage::Pull(const TPath &place) {
     }
 
     error = DownloadLayers(place);
-    if (error)
-        return cleanup(error, false);
+    if (error) {
+        RemoveLayers(place);
+        return error;
+    }
 
+    error = digestPath.MkdirAll(0755);
+    if (error && error.Errno != EEXIST)
+        L_ERR("Cannot create directory {}: {}", digestPath, error);
+
+    error = LinkTag(place);
+    if (error) {
+        UnlinkTag(place);
+
+        TError error2 = digestPath.DirName().ClearEmptyDirectories(place / PORTO_DOCKER_IMAGES);
+        if (error2)
+            L_ERR("Cannot clear directories: {}", error);
+
+        RemoveLayers(place);
+
+        return error;
+    }
+
+    auto digestLock = TFileMutex::MakeDirLock(digestPath);
     Images[name].emplace(Tag);
     error = Save(place);
-    if (error)
-        return cleanup(error, false);
+    if (error) {
+        TError error2 = digestPath.RemoveAll();
+        if (error2)
+            L_ERR("Cannot cleanup image: {}", error2);
+
+        digestLock.reset();
+
+        error2 = digestPath.DirName().ClearEmptyDirectories(place / PORTO_DOCKER_IMAGES);
+        if (error2)
+            L_ERR("Cannot clear directories: {}", error);
+
+        UnlinkTag(place);
+
+        RemoveLayers(place);
+
+        return error;
+    }
 
     return OK;
 }
 
-TError TDockerImage::Remove(const TPath &place, bool needLock) {
+TError TDockerImage::Remove(const TPath &place) {
     TError error;
     bool tagSpecified = Digest.empty();
 
     error = DetectImage(place);
-    if (error)
+    if (error) {
+        if (tagSpecified && StringStartsWith(error.ToString(), "Docker:(Detected tag symlink is broken"))
+            UnlinkTag(place);
         return error;
-
-    auto lock = needLock ? Lock(place, tagSpecified) : std::vector<std::unique_ptr<TFileMutex>>();
+    }
 
     error = Load(place);
     if (error) {
-        if (tagSpecified && StringStartsWith(error.ToString(), "Cannot find digest path of image"))
-            TagPath(place).Unlink();
+        if (tagSpecified && StringStartsWith(error.ToString(), "Docker:(Cannot find digest path of image"))
+            UnlinkTag(place);
         return error;
     }
 
@@ -810,21 +840,15 @@ TError TDockerImage::Remove(const TPath &place, bool needLock) {
         std::string name = FullName(true);
         if (Images.size() > 1 || Images[name].size() > 1) {
             // delete only tag
-            tagPath = TagPath(place);
-            error = tagPath.Unlink();
-            if (error)
-                return TError(EError::Docker, "Cannot remove tag {}", FullName());
+            UnlinkTag(place);
 
             if (Images[name].size() <= 1)
                 Images.erase(name);
             else
                 Images[name].erase(Tag);
 
+            auto digestLock = TFileMutex::MakeDirLock(DigestPath(place).DirName());
             error = SaveImages(place);
-            if (error)
-                return error;
-
-            error = tagPath.DirName().ClearEmptyDirectories(place / PORTO_DOCKER_TAGS);
             if (error)
                 return error;
 
@@ -842,19 +866,13 @@ TError TDockerImage::Remove(const TPath &place, bool needLock) {
             if (error)
                 return error;
 
-            tagPath = TagPath(place);
-            error = tagPath.Unlink();
-            if (error)
-                L_ERR("Cannot unlink tag: {}", error);
-
-            error = tagPath.DirName().ClearEmptyDirectories(place / PORTO_DOCKER_TAGS);
-            if (error)
-                L_ERR("Cannot clear directories: {}", error);
+            UnlinkTag(place);
         }
     }
 
     // delete digest
     TPath digestPath = DigestPath(place);
+    auto digestLock = TFileMutex::MakeDirLock(digestPath.DirName());
     error = digestPath.RemoveAll();
     if (error)
         return error;
@@ -862,6 +880,8 @@ TError TDockerImage::Remove(const TPath &place, bool needLock) {
     error = digestPath.DirName().ClearEmptyDirectories(place / PORTO_DOCKER_IMAGES);
     if (error)
         L_ERR("Cannot clear directories: {}", error);
+
+    digestLock.reset();
 
     RemoveLayers(place);
 
