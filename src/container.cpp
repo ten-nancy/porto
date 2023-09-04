@@ -442,6 +442,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
         PlacePolicy = Parent->PlacePolicy;
 
     CpuPolicy = Parent ? Parent->CpuPolicy : "normal";
+    ExtSchedIdle = Parent ? Parent->ExtSchedIdle : false; // inheritance extended SCHED_IDLE flag
     ChooseSchedPolicy();
 
     CpuPeriod = Parent ? Parent->CpuPeriod : config().container().cpu_period();
@@ -1407,6 +1408,8 @@ TError TContainer::ApplyUlimits() {
     return OK;
 }
 
+static constexpr const char* CPU_POLICE_IDLE = "idle";
+
 void TContainer::ChooseSchedPolicy() {
     SchedPolicy = SCHED_OTHER;
     SchedPrio = 0;
@@ -1423,7 +1426,7 @@ void TContainer::ChooseSchedPolicy() {
         SchedNice = config().container().high_nice();
     } else if (CpuPolicy == "batch") {
         SchedPolicy = SCHED_BATCH;
-    } else if (CpuPolicy == "idle") {
+    } else if (CpuPolicy == CPU_POLICE_IDLE) {
         SchedPolicy = SCHED_IDLE;
     } else if (CpuPolicy == "iso") {
         SchedPolicy = 4;
@@ -1458,6 +1461,23 @@ TError TContainer::ApplySchedPolicy() {
 
     L_ACT("Set {} scheduler policy {}", cg, CpuPolicy);
 
+    if (CpuSubsystem.HasIdle) { // Has extending SCHED_IDLE to cgroups (kernel 5.15 and above)
+        bool IsSchedIdle = SchedPolicy == SCHED_IDLE; // cpu_policy=idle
+
+        if ((ExtSchedIdle) && (!IsSchedIdle)) { // enabled extended SCHED_IDLE in parent and cpu_policy!=idle
+            return TError(EError::InvalidValue, "cpu_policy must be idle, if parent has cpu_policy=idle and cgroup CPU at kernel 5.15 and above");
+        }
+
+        if ((!ExtSchedIdle) &&         // cpu.idle not set to 1 in parent
+            (IsSchedIdle) &&           // and current cpu_policy=idle
+            (Controllers & CGROUP_CPU) // and has CPU controller
+        ) { // Enable extended SCHED_IDLE for cgroups https://lore.kernel.org/lkml/20210608231132.32012-1-joshdon@google.com/
+            auto cpucg = GetCgroup(CpuSubsystem);
+            cpucg.Set(TCpuSubsystem::CPU_IDLE, "1");
+            ExtSchedIdle = true;
+        }
+    }
+
     TBitMap taskAffinity;
     if (SchedNoSmt) {
         taskAffinity = GetNoSmtCpus();
@@ -1487,7 +1507,7 @@ TError TContainer::ApplySchedPolicy() {
 
             if (setpriority(PRIO_PROCESS, pid, SchedNice) && errno != ESRCH)
                 return TError::System("setpriority");
-            if (sched_setscheduler(pid, SchedPolicy, &param) && errno != ESRCH)
+            if (sched_setscheduler(pid, ExtSchedIdle ? SCHED_OTHER : SchedPolicy, &param) && errno != ESRCH)
                 return TError::System("sched_setscheduler");
             if (sched_setaffinity(pid, sizeof(taskMask), &taskMask) && errno != ESRCH)
                 return TError::System("sched_setaffinity");
@@ -2506,7 +2526,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
 
         if ((Controllers & CGROUP_MEMORY) && MemorySubsystem.SupportNumaBalance()) {
             auto memcg = GetCgroup(MemorySubsystem);
-            if (config().mutable_container()->enable_numa_migration() && !RootPath.IsRoot() && CpuSetType == ECpuSetType::Node)
+            if (config().container().enable_numa_migration() && !RootPath.IsRoot() && CpuSetType == ECpuSetType::Node)
                 error = MemorySubsystem.SetNumaBalance(memcg, 0, 0);
             else
                 error = MemorySubsystem.SetNumaBalance(memcg, 0, 4);

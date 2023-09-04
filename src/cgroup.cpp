@@ -852,22 +852,26 @@ bool TFreezerSubsystem::IsParentFreezing(const TCgroup &cg) const {
 TError TCpuSubsystem::InitializeSubsystem() {
     TCgroup cg = RootCgroup();
 
-    HasShares = cg.Has("cpu.shares");
-    if (HasShares && cg.GetUint64("cpu.shares", BaseShares))
+    HasShares = cg.Has(CPU_SHARES);
+    if (HasShares && cg.GetUint64(CPU_SHARES, BaseShares))
         BaseShares = 1024;
 
     MinShares = 2; /* kernel limit MIN_SHARES */
     MaxShares = 1024 * 256; /* kernel limit MAX_SHARES */
 
-    HasQuota = cg.Has("cpu.cfs_quota_us") &&
-               cg.Has("cpu.cfs_period_us");
+    HasQuota = cg.Has(CPU_CFS_QUOTA_US) &&
+               cg.Has(CPU_CFS_PERIOD_US);
 
-    HasRtGroup = cg.Has("cpu.rt_runtime_us") &&
-                 cg.Has("cpu.rt_period_us");
+    HasRtGroup = cg.Has(CPU_RT_RUNTIME_US) &&
+                 cg.Has(CPU_RT_PERIOD_US);
 
     HasReserve = HasShares && HasQuota &&
-                 cg.Has("cpu.cfs_reserve_us") &&
-                 cg.Has("cpu.cfs_reserve_shares");
+                 cg.Has(CPU_CFS_RESERVE_US) &&
+                 cg.Has(CPU_CFS_RESERVE_SHARES);
+
+    auto ExistsIdle = cg.Has(CPU_IDLE);
+    auto EnabledIdle = config().container().enable_sched_idle();
+    HasIdle = ExistsIdle && EnabledIdle;
 
     L_SYS("{} cores", GetNumCores());
     if (HasShares)
@@ -877,12 +881,17 @@ TError TCpuSubsystem::InitializeSubsystem() {
     if (HasReserve)
         L_CG("support reserves");
 
+    if (HasIdle)
+        L_CG("support SCHED_IDLE cgroups");
+    else if (ExistsIdle)
+        L_CG("SCHED_IDLE cgroups disabled in config");
+
     return OK;
 }
 
 TError TCpuSubsystem::InitializeCgroup(TCgroup &cg) {
     if (HasRtGroup && config().container().rt_priority())
-        (void)cg.SetInt64("cpu.rt_runtime_us", -1);
+        (void)cg.SetInt64(CPU_RT_RUNTIME_US, -1);
     return OK;
 }
 
@@ -899,7 +908,7 @@ TError TCpuSubsystem::SetPeriod(TCgroup &cg, uint64_t period) {
         if (period > 1000000) /* 1s */
             period = 1000000;
 
-        return cg.Set("cpu.cfs_period_us", std::to_string(period));
+        return cg.Set(CPU_CFS_PERIOD_US, std::to_string(period));
     }
 
     return OK;
@@ -920,13 +929,13 @@ TError TCpuSubsystem::SetLimit(TCgroup &cg, uint64_t period, uint64_t limit) {
         else if (quota < 1000) /* 1ms */
             quota = 1000;
 
-        (void)cg.Set("cpu.cfs_quota_us", std::to_string(quota));
+        (void)cg.Set(CPU_CFS_QUOTA_US, std::to_string(quota));
 
-        error = cg.Set("cpu.cfs_period_us", std::to_string(period));
+        error = cg.Set(CPU_CFS_PERIOD_US, std::to_string(period));
         if (error)
             return error;
 
-        error = cg.Set("cpu.cfs_quota_us", std::to_string(quota));
+        error = cg.Set(CPU_CFS_QUOTA_US, std::to_string(quota));
         if (error)
             return error;
     }
@@ -941,7 +950,7 @@ TError TCpuSubsystem::SetGuarantee(TCgroup &cg, uint64_t period, uint64_t guaran
     if (HasReserve && config().container().enable_cpu_reserve()) {
         uint64_t reserve = std::floor((double)guarantee * period / CPU_POWER_PER_SEC);
 
-        error = cg.SetUint64("cpu.cfs_reserve_us", reserve);
+        error = cg.SetUint64(CPU_CFS_RESERVE_US, reserve);
         if (error)
             return error;
     }
@@ -975,11 +984,11 @@ TError TCpuSubsystem::SetShares(TCgroup &cg, const std::string &policy, double w
         shares = std::min(std::max(shares, MinShares), MaxShares);
         reserve_shares = std::min(std::max(reserve_shares, MinShares), MaxShares);
 
-        error = cg.SetUint64("cpu.shares", shares);
+        error = cg.SetUint64(CPU_SHARES, shares);
         if (error)
             return error;
 
-        error = cg.SetUint64("cpu.cfs_reserve_shares", reserve_shares);
+        error = cg.SetUint64(CPU_CFS_RESERVE_SHARES, reserve_shares);
         if (error)
             return error;
 
@@ -1000,7 +1009,7 @@ TError TCpuSubsystem::SetShares(TCgroup &cg, const std::string &policy, double w
 
         shares = std::min(std::max(shares, MinShares), MaxShares);
 
-        error = cg.SetUint64("cpu.shares", shares);
+        error = cg.SetUint64(CPU_SHARES, shares);
         if (error)
             return error;
     }
@@ -1017,10 +1026,10 @@ TError TCpuSubsystem::SetRtLimit(TCgroup &cg, uint64_t period, uint64_t limit) {
         uint64_t max = GetNumCores() * CPU_POWER_PER_SEC;
         int64_t root_runtime, root_period, runtime;
 
-        if (RootCgroup().GetInt64("cpu.rt_period_us", root_period))
+        if (RootCgroup().GetInt64(CPU_RT_PERIOD_US, root_period))
             root_period = 1000000;
 
-        if (RootCgroup().GetInt64("cpu.rt_runtime_us", root_runtime))
+        if (RootCgroup().GetInt64(CPU_RT_RUNTIME_US, root_runtime))
             root_runtime = 950000;
         else if (root_runtime < 0)
             root_runtime = root_period;
@@ -1034,15 +1043,15 @@ TError TCpuSubsystem::SetRtLimit(TCgroup &cg, uint64_t period, uint64_t limit) {
                 runtime = 1000;
         }
 
-        error = cg.SetInt64("cpu.rt_period_us", period);
+        error = cg.SetInt64(CPU_RT_PERIOD_US, period);
         if (error) {
-            (void)cg.SetInt64("cpu.rt_runtime_us", runtime);
-            error = cg.SetInt64("cpu.rt_period_us", period);
+            (void)cg.SetInt64(CPU_RT_RUNTIME_US, runtime);
+            error = cg.SetInt64(CPU_RT_PERIOD_US, period);
         }
         if (!error)
-            error = cg.SetInt64("cpu.rt_runtime_us", runtime);
+            error = cg.SetInt64(CPU_RT_RUNTIME_US, runtime);
         if (error) {
-            (void)cg.SetInt64("cpu.rt_runtime_us", 0);
+            (void)cg.SetInt64(CPU_RT_RUNTIME_US, 0);
             return error;
         }
     }

@@ -252,6 +252,7 @@
   "test/test-prev_release_upgrade.py":"infra/porto/porto/test/test-prev_release_upgrade.py",
   "test/test-recovery.py":"infra/porto/porto/test/test-recovery.py",
   "test/test-retriability.py":"infra/porto/porto/test/test-retriability.py",
+  "test/test-sched-idle.py":"infra/porto/porto/test/test-sched-idle.py",
   "test/test-security.py":"infra/porto/porto/test/test-security.py",
   "test/test-self-container.py":"infra/porto/porto/test/test-self-container.py",
   "test/test-spec.py":"infra/porto/porto/test/test-spec.py",

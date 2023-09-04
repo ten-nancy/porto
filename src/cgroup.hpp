@@ -303,10 +303,20 @@ public:
 
 class TCpuSubsystem : public TSubsystem {
 public:
+    static constexpr const char *CPU_IDLE = "cpu.idle";
+    static constexpr const char *CPU_SHARES = "cpu.shares";
+    static constexpr const char *CPU_CFS_QUOTA_US = "cpu.cfs_quota_us";
+    static constexpr const char *CPU_CFS_PERIOD_US = "cpu.cfs_period_us";
+    static constexpr const char *CPU_CFS_RESERVE_US = "cpu.cfs_reserve_us";
+    static constexpr const char *CPU_CFS_RESERVE_SHARES = "cpu.cfs_reserve_shares";
+    static constexpr const char *CPU_RT_RUNTIME_US = "cpu.rt_runtime_us";
+    static constexpr const char *CPU_RT_PERIOD_US = "cpu.rt_period_us";
+
     bool HasShares = false;
     bool HasQuota = false;
     bool HasReserve = false;
     bool HasRtGroup = false;
+    bool HasIdle = false;    // Has extending SCHED_IDLE to cgroups
 
     uint64_t BaseShares = 0ull;
     uint64_t MinShares = 0ull;

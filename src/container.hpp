@@ -258,6 +258,7 @@ public:
     int SchedPrio;
     int SchedNice;
     bool SchedNoSmt = false;
+    bool ExtSchedIdle; // enabled extended SCHED_IDLE for cgroups in current or some parent containers
 
     uint64_t CpuLimit = 0;
     uint64_t CpuGuarantee = 0;
