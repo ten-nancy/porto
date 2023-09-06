@@ -1866,10 +1866,15 @@ class TListVolumesCmd final : public ICmd {
 public:
     TListVolumesCmd(Porto::Connection *api) : ICmd(api, "vlist", 0, "[-1|-i|-v] [-c <ct>] [volume]...",
         "list volumes",
-        "    -1        list only paths\n"
-        "    -i        list inode information\n"
-        "    -v        list all properties\n"
-        "    -c <ct>   list volumes linked to container\n"
+        "    -1                         list only paths\n"
+        "    -i                         list inode information\n"
+        "    -v                         list all properties\n"
+        "    -c <ct>                    list volumes linked to container\n"
+        "\npatterns:\n"
+        " \"***/suffix/of/path\"          volumes with the specified suffix of path\n"
+        " \"/prefix/of/path/***\"         volumes with the specified prefix of path\n"
+        " \"/foo*/bar*\"                  all matching"
+        "\n"
         ) {}
 
     void ShowSizeProperty(Porto::Volume &v, const char *p, int w, bool raw = false) {
@@ -2019,7 +2024,7 @@ public:
             int errors = 0;
 
             for (const auto &arg : args) {
-                const auto path = TPath(arg).AbsolutePath().NormalPath().ToString();
+                const auto path = (arg.find('*') == std::string::npos ? TPath(arg).AbsolutePath().NormalPath().ToString() : arg);
 
                 vlist.clear();
                 int ret = Api->ListVolumes(path, "", vlist);
@@ -2028,6 +2033,7 @@ public:
                     errors++;
                     continue;
                 }
+
                 for (auto &v : vlist)
                     ShowVolume(v);
             }

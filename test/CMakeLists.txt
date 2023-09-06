@@ -153,6 +153,8 @@ ADD_PYTHON_TEST(htb-restore)
 ADD_PYTHON3_TEST(retriability)
 ADD_PYTHON3_TEST(async-cleanup)
 
+ADD_PYTHON3_TEST(volume_list)
+
 # legacy tests
 
 add_test(NAME portotest

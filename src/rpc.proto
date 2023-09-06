@@ -1292,7 +1292,7 @@ message TVolumeUnlinkRequest {
 
 
 message TVolumeListRequest {
-    optional string path = 1;
+    optional string path = 1;           // volume path or wildcard
     optional string container = 2;
     optional uint64 changed_since = 3;  // change_time >= changed_since
 }

@@ -1309,7 +1309,7 @@ noinline TError ListVolumes(const rpc::TVolumeListRequest &req,
                             rpc::TContainerResponse &rsp) {
     TError error;
 
-    if (req.has_path() && !req.path().empty()) {
+    if (req.has_path() && !req.path().empty() && !StringContains(req.path(), '*')) {
         auto link = TVolume::ResolveLink(CL->ClientContainer->RootPath / req.path());
         if (!link)
             return TError(EError::VolumeNotFound, "Volume {} not found", req.path());
@@ -1322,6 +1322,8 @@ noinline TError ListVolumes(const rpc::TVolumeListRequest &req,
             link->Volume->DumpDescription(link.get(), req.path(), entry);
         return OK;
     }
+
+    std::string mask = req.has_path() && req.path().size() ? req.path() : "***";
 
     TPath base_path;
     if (req.has_container()) {
@@ -1336,11 +1338,14 @@ noinline TError ListVolumes(const rpc::TVolumeListRequest &req,
 
     std::map<TPath, std::shared_ptr<TVolumeLink>> map;
     auto volumes_lock = LockVolumes();
+
     for (auto &it: VolumeLinks) {
         TPath path = base_path.InnerPath(it.first);
-        if (path)
+
+        if (path && StringMatch(path.ToString(), mask))
             map[path] = it.second;
     }
+
     volumes_lock.unlock();
 
     for (auto &it: map) {
