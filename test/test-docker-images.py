@@ -13,6 +13,8 @@ K8S_IMAGE_ALT_TAG = "registry-1.docker.io/kndrvt/pause:latest"
 
 PLACE = ""
 
+STORAGE_PATH = "/place/porto_docker/v1"
+
 conn = porto.Connection(timeout=30)
 
 ConfigurePortod('docker-images', """
@@ -21,15 +23,35 @@ daemon {
 }
 """)
 
+def check_storage_of_image(digest, tags):
+    for tag in tags:
+        path = "{}/tags/v2/{}".format(STORAGE_PATH, tag.replace(":", "/"))
+        Expect(os.path.exists(path))
+
+    path = "{}/images/{}/{}".format(STORAGE_PATH, digest[:2], digest)
+    Expect(os.path.exists(path))
+
+
 def check_image(image, digest, tags):
     ExpectEq(image.id, digest)
     ExpectEq(set(image.tags), set(tags))
     ExpectEq(len(image.digests), 1)
     ExpectEq(image.digests[0], "sha256:" + digest)
+    check_storage_of_image(digest, tags)
+
+
+def check_storage_is_empty():
+    Expect(os.path.exists("{}/{}".format(STORAGE_PATH, "tags")))
+    Expect(not os.path.exists("{}/{}".format(STORAGE_PATH, "tags/*")))
+    Expect(os.path.exists("{}/{}".format(STORAGE_PATH, "images")))
+    Expect(not os.path.exists("{}/{}".format(STORAGE_PATH, "images/*")))
+    Expect(os.path.exists("{}/{}".format(STORAGE_PATH, "layers")))
+    Expect(not os.path.exists("{}/{}".format(STORAGE_PATH, "layers/*")))
 
 
 # api
 print("Check python api")
+check_storage_is_empty()
 
 image = conn.PullDockerImage(IMAGE_NAME, place=PLACE)
 check_image(image, IMAGE_DIGEST, [IMAGE_TAG])
@@ -53,6 +75,7 @@ for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
 
 # volume
 print("Check volumes")
+check_storage_is_empty()
 
 image = conn.PullDockerImage(IMAGE_NAME, place=PLACE)
 volume = conn.CreateVolume(image=IMAGE_NAME, layers=[LAYER_NAME], place=PLACE)
@@ -66,6 +89,7 @@ volume.Destroy()
 
 # portoctl
 print("Check portoctl commands")
+check_storage_is_empty()
 
 image = subprocess.check_output([portoctl, "docker-pull", "-P", PLACE, IMAGE_NAME]).decode("utf-8")[:-1]
 ExpectEq(image, IMAGE_DIGEST)
@@ -89,6 +113,7 @@ for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
 
 # k8s image
 print("Check k8s pause image")
+check_storage_is_empty()
 
 image = conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG])
@@ -105,6 +130,7 @@ for name in (K8S_IMAGE_TAG, K8S_IMAGE_DIGEST, K8S_IMAGE_DIGEST[:12]):
 
 # tag adding
 print("Check tag adding")
+check_storage_is_empty()
 
 conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
 image = conn.PullDockerImage(K8S_IMAGE_ALT_TAG, place=PLACE)
@@ -122,3 +148,4 @@ conn.RemoveDockerImage(K8S_IMAGE_DIGEST, place=PLACE)
 ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_TAG, place=PLACE)
 ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_ALT_TAG, place=PLACE)
 ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_DIGEST, place=PLACE)
+check_storage_is_empty()

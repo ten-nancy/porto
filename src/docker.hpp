@@ -26,6 +26,8 @@ Layers path has the following structure:
 
 #include "util/path.hpp"
 #include "util/mutex.hpp"
+#include "storage.hpp"
+#include "client.hpp"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -164,6 +166,8 @@ private:
     TError DownloadConfig(const THttpClient &client);
     TError ParseConfig();
 
+    // thread function
+    static void DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url, const std::string &token);
     TError DownloadLayers(const TPath &place) const;
     void RemoveLayers(const TPath &place) const;
 

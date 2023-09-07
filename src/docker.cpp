@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <fstream>
 #include <unordered_set>
+#include <thread>
 
 constexpr const char *DOCKER_IMAGES_FILE = "images.json";
 constexpr const char *DOCKER_LAYERS_DIR = "layers";
@@ -397,51 +398,75 @@ TError TDockerImage::ParseConfig() {
     return OK;
 }
 
-TError TDockerImage::DownloadLayers(const TPath &place) const {
+void TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url, const std::string &token) {
     TError error;
+    TPath archivePath = layer.ArchivePath(place);
 
-    for (const auto &layer: Layers) {
-        TPath archivePath = layer.ArchivePath(place);
+    CL = client;
 
-        error = archivePath.DirName().MkdirAll(0755);
-        if (error && error.Errno != EEXIST)
-            L_ERR("Cannot create directory {}: {}", archivePath.DirName(), error);
+    error = archivePath.DirName().MkdirAll(0755);
+    if (error && error.Errno != EEXIST)
+        L_ERR("Cannot create directory {}: {}", archivePath.DirName(), error);
 
-        auto layerLock = TFileMutex::MakeDirLock(archivePath.DirName());
+    auto layerLock = TFileMutex::MakeDirLock(archivePath.DirName());
 
-        if (archivePath.Exists()) {
-            struct stat st;
-            error = archivePath.StatStrict(st);
-            if (error)
-                return error;
-            if ((size_t)st.st_size == layer.Size)
-                continue;
-
-            (void)layer.Remove(place);
+    if (archivePath.Exists()) {
+        struct stat st;
+        error = archivePath.StatStrict(st);
+        if (error) {
+            L_ERR("Cannot stat archive path: {}", error);
+            return;
         }
 
-        const std::string uri = fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest));
-        error = DownloadFile(uri, archivePath);
-        if (error && !AuthToken.empty()) {
-            // retry if registry api expects to receive token and we received code 401
-            error = DownloadFile(uri, archivePath, { "Authorization: " + AuthToken });
-            if (error)
-                return error;
-        }
+        if ((size_t)st.st_size == layer.Size)
+            return;
 
-        TStorage portoLayer;
-        error = portoLayer.Resolve(EStorageType::DockerLayer, place, layer.Digest);
-        if (error)
-            return error;
-
-        error = portoLayer.ImportArchive(archivePath, PORTO_HELPERS_CGROUP);
-        if (error)
-            return error;
-
-        error = TStorage::SanitizeLayer(portoLayer.Path);
-        if (error)
-            return error;
+        (void)layer.Remove(place);
     }
+
+    error = DownloadFile(url, archivePath);
+    if (error && !token.empty()) {
+        // retry if registry api expects to receive token and we received code 401
+        error = DownloadFile(url, archivePath, { "Authorization: " + token });
+        if (error) {
+            L_ERR("Cannot download layer: {}", error);
+            return;
+        }
+    }
+
+    TStorage portoLayer;
+
+    error = portoLayer.Resolve(EStorageType::DockerLayer, place, layer.Digest);
+    if (error) {
+        L_ERR("Cannot resolve layer storage: {}", error);
+        return;
+    }
+
+
+    error = portoLayer.ImportArchive(archivePath, PORTO_HELPERS_CGROUP);
+    if (error) {
+        L_ERR("Cannot import archive: {}", error);
+        return;
+    }
+
+
+    error = TStorage::SanitizeLayer(portoLayer.Path);
+    if (error) {
+        L_ERR("Cannot sanitize layer: {}", error);
+        return;
+    }
+}
+
+TError TDockerImage::DownloadLayers(const TPath &place) const {
+    std::vector<std::thread> threads;
+
+    // download layers using threads
+    for (const auto &layer: Layers)
+        threads.emplace_back(TDockerImage::DownloadLayer, place, layer, std::ref(CL), fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest)), AuthToken);
+
+    // waiting all downloads
+    for (auto &t: threads)
+        t.join();
 
     return OK;
 }
@@ -450,7 +475,7 @@ void TDockerImage::RemoveLayers(const TPath &place) const {
     TError error;
 
     for (const auto &layer: Layers) {
-        auto layerLock = TFileMutex::MakeDirLock(layer.LayerPath(place).DirName());
+        auto layerLock = TFileMutex::MakeDirLock(layer.LayerPath(place));
         error = layer.Remove(place);
         if (error)
             L_ERR("Cannot remove layer: {}", error);
