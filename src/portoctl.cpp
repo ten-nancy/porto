@@ -2565,6 +2565,11 @@ public:
             launcher.Properties.erase("resolv_conf");
         }
 
+        if (launcher.Properties.count("bind")) {
+            chroot.SetProperty("bind", launcher.Properties["bind"]);
+            launcher.Properties.erase("bind");
+        }
+
         if (!outputImage.IsEmpty() && !squash) {
             error = loopStorage.MkdirTmp(outputImage.DirName(), "loop.", 0755);
             if (error) {
