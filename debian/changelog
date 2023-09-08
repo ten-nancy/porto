@@ -1,3 +1,23 @@
+porto (5.3.24) unstable; urgency=low
+  [ kndrvt ]
+      docker: parallel layers download
+      docker: split mutexes
+      api: add timeouts to Go API in sources
+  [ flown4qqqq ]
+      portoctl: add propagation of property \'bind\' to chroot container in command \'build\'
+      rpc: add pattern to path in vlist
+      libporto: change log message about timeout
+      rpc: add info about properties in RSP log
+  [ dimdim11 ]
+      cgroup: enable SHED_IDLE for cgroups if cpu.idle presents
+      property: add io guarantee properties
+  [ ovov ]
+      fix test-spec.py
+      helpers: replace call to "rm -rf" with nftw
+  last commit: cb49a20fbf177c8c3456d53b40cdc7fa5991ff27
+
+ -- Porto Team <porto@yandex-team.ru>  Fri, 08 Sep 2023 13:29:06 -0000
+
 porto (5.3.23) unstable; urgency=low
   [ kndrvt ]
       volume: fix storage opening for volume shares
