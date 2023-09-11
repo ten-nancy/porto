@@ -1487,11 +1487,13 @@ TError TContainer::ApplySchedPolicy() {
     }
 
     cpu_set_t taskMask;
+    int schedPolicy = ExtSchedIdle ? SCHED_OTHER : SchedPolicy;
     taskAffinity.FillCpuSet(&taskMask);
 
     do {
         error = cg.GetTasks(pids);
         retry = false;
+
         for (auto pid: pids) {
             cpu_set_t current;
 
@@ -1499,7 +1501,7 @@ TError TContainer::ApplySchedPolicy() {
                 if (!sched_getaffinity(pid, sizeof(current), &current) &&
                     // PORTO-993#627a4d9fcd10ac4784266ff7
                     CPU_SUBSET(&current, &taskMask) &&
-                    sched_getscheduler(pid) == SchedPolicy) {
+                    sched_getscheduler(pid) == schedPolicy) {
 
                     continue;
                 }
@@ -1507,7 +1509,7 @@ TError TContainer::ApplySchedPolicy() {
 
             if (setpriority(PRIO_PROCESS, pid, SchedNice) && errno != ESRCH)
                 return TError::System("setpriority");
-            if (sched_setscheduler(pid, ExtSchedIdle ? SCHED_OTHER : SchedPolicy, &param) && errno != ESRCH)
+            if (sched_setscheduler(pid, schedPolicy, &param) && errno != ESRCH)
                 return TError::System("sched_setscheduler");
             if (sched_setaffinity(pid, sizeof(taskMask), &taskMask) && errno != ESRCH)
                 return TError::System("sched_setaffinity");
