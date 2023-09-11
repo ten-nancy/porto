@@ -1,3 +1,10 @@
+porto (5.3.25) unstable; urgency=low
+  [ kndrvt ]
+      container: fix cpu idle on 5.15
+  last commit: 98f7110225dc6284931c1fce8f00037d01aa19c1
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 11 Sep 2023 16:37:11 -0000
+
 porto (5.3.24) unstable; urgency=low
   [ kndrvt ]
       docker: parallel layers download
