@@ -17,7 +17,7 @@ struct TUri {
     TUri(const std::string &uri);
     ~TUri() = default;
 
-    void Parse(const std::string &uri);
+    TError Parse(const std::string &uri);
     void ParseOptions(const std::string &options);
     std::string FormatOptions() const;
 };

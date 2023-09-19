@@ -9,10 +9,15 @@
 #include "cpp-httplib/httplib.h"
 
 TUri::TUri(const std::string &uri) {
-    Parse(uri);
+    TError error;
+
+    error = Parse(uri);
+    if (error)
+        L_ERR("Cannot create TUri object: {}", error);
 }
 
-void TUri::Parse(const std::string &uri) {
+TError TUri::Parse(const std::string &uri) {
+    TError error;
     std::string u = uri;
     std::regex reg("([a-z0-9\\+\\-\\.]+):.*");
 
@@ -31,10 +36,10 @@ void TUri::Parse(const std::string &uri) {
         u = u.substr(2);
 
         // [<credentials>@]<host>[:<port>]][/<path>][?<option>[&<option>]][#fragment]
-        auto slashPos = u.find("/");
-        if (slashPos != std::string::npos) {
-            authority = u.substr(0, slashPos);
-            u = u.substr(slashPos);
+        auto endPos = u.find_first_of("/?#");
+        if (endPos != std::string::npos) {
+            authority = u.substr(0, endPos);
+            u = u.substr(endPos);
         } else {
             authority = std::move(u);
             u.clear();
@@ -50,7 +55,13 @@ void TUri::Parse(const std::string &uri) {
         // <host>[:<port>]
         auto colonPos = authority.rfind(":");
         if (colonPos != std::string::npos) {
-            Port = std::stoi(authority.substr(colonPos + 1));
+            std::string portString = authority.substr(colonPos + 1);
+            std::size_t pos;
+
+            Port = std::stoi(portString, &pos);
+            if (pos != portString.size())
+                error = TError(EError::InvalidValue, "Cannot parse URI '{}': invalid port '{}'", uri, portString);
+
             authority = authority.substr(0, colonPos);
         }
 
@@ -74,6 +85,8 @@ void TUri::Parse(const std::string &uri) {
 
     // [/<path>]
     Path = u;
+
+    return error;
 }
 
 void TUri::ParseOptions(const std::string &options) {

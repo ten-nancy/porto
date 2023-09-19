@@ -4921,7 +4921,7 @@ static void TestDockerImageParsing(Porto::Connection &) {
 
 static void TestUriParsing(Porto::Connection &) {
     auto test = [](const std::string &rawUri, const std::vector<std::string> &target) {
-        std::cerr << rawUri << std::endl;
+        std::cerr << "+ " << rawUri << std::endl;
         TUri uri(rawUri);
         ExpectEq(uri.Scheme,                target[0]);
         ExpectEq(uri.Host,                  target[1]);
@@ -4930,6 +4930,12 @@ static void TestUriParsing(Porto::Connection &) {
         ExpectEq(uri.Credentials,           target[4]);
         ExpectEq(uri.FormatOptions(),       target[5]);
         ExpectEq(uri.Fragment,              target[6]);
+    };
+
+    auto ntest = [](const std::string &rawUri) {
+        std::cerr << "- " << rawUri << std::endl;
+        TUri uri;
+        ExpectNeq(uri.Parse(rawUri), EError::Success);
     };
 
     // path and after it
@@ -4942,16 +4948,27 @@ static void TestUriParsing(Porto::Connection &) {
     test("http://kndrvt:password@host.com/path/to/something?lol=kek&cheburek#frag",      { "http", "host.com", "-1", "/path/to/something", "kndrvt:password", "lol=kek&cheburek", "frag" });
     test("http://host.com/path/to/something?lol=kek&cheburek#frag",                      { "http", "host.com", "-1", "/path/to/something", "", "lol=kek&cheburek", "frag" });
 
-    // authority without path and after it
-    test("http://kndrvt:password@host.com:80",              { "http", "host.com", "80", "", "kndrvt:password", "", "" });
-    test("http://host.com:80",                              { "http", "host.com", "80", "", "", "", "" });
-    test("http://kndrvt:password@host.com",                 { "http", "host.com", "-1", "", "kndrvt:password", "", "" });
-    test("http://host.com",                                 { "http", "host.com", "-1", "", "", "", "" });
+    // without path
+    test("http://kndrvt:password@host.com:80",                                           { "http", "host.com", "80", "", "kndrvt:password", "", "" });
+    test("http://host.com:80",                                                           { "http", "host.com", "80", "", "", "", "" });
+    test("http://kndrvt:password@host.com",                                              { "http", "host.com", "-1", "", "kndrvt:password", "", "" });
+    test("http://host.com",                                                              { "http", "host.com", "-1", "", "", "", "" });
+
+    test("http://kndrvt:password@host.com:80#frag",                                      { "http", "host.com", "80", "", "kndrvt:password", "", "frag" });
+    test("http://kndrvt:password@host.com:80?lol=kek&cheburek",                          { "http", "host.com", "80", "", "kndrvt:password", "lol=kek&cheburek", "" });
+    test("http://kndrvt:password@host.com:80?lol=kek&cheburek#frag",                     { "http", "host.com", "80", "", "kndrvt:password", "lol=kek&cheburek", "frag" });
+
+    test("http://kndrvt:password@host.com&lol&kek=cheburek",                             { "http", "host.com&lol&kek=cheburek", "-1", "", "kndrvt:password", "", "" });
+    test("http://kndrvt:password@host.com&lol&kek=cheburek#frag",                        { "http", "host.com&lol&kek=cheburek", "-1", "", "kndrvt:password", "", "frag" });
+    test("http://kndrvt:password@host.com&lol&kek=cheburek?lol=kek&cheburek",            { "http", "host.com&lol&kek=cheburek", "-1", "", "kndrvt:password", "lol=kek&cheburek", "" });
 
     // not http
-    test("file:/path/to/something",                         { "file", "", "-1", "/path/to/something", "", "", "" });
-    test("unix+tcp:/path/to/something?cheburek&lol=kek",    { "unix+tcp", "", "-1", "/path/to/something", "", "cheburek&lol=kek", "" });
-    test("unix:///path/to/something",                       { "unix", "", "-1", "/path/to/something", "", "", "" });
+    test("file:/path/to/something",                                                      { "file", "", "-1", "/path/to/something", "", "", "" });
+    test("unix+tcp:/path/to/something?cheburek&lol=kek",                                 { "unix+tcp", "", "-1", "/path/to/something", "", "cheburek&lol=kek", "" });
+    test("unix:///path/to/something",                                                    { "unix", "", "-1", "/path/to/something", "", "", "" });
+
+    // invalid case
+    ntest("http://kndrvt:password@host.com:80&lol&kek=cheburek");
 }
 
 int SelfTest(std::vector<std::string> args) {
