@@ -8,7 +8,8 @@ Build-Depends:
  libelf-dev, zlib1g-dev,
  g++ (>= 4:4.7) | g++-4.7,
  dh-python, python-all, python-setuptools, python3-setuptools,
- bash-completion, pandoc
+ bash-completion, pandoc,
+ libgoogle-perftools-dev (>= 2.4)
 Standards-Version: 3.9.2
 X-Python-Version: >= 2.6
 X-Python3-Version: >= 3.2
