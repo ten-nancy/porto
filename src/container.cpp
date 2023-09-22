@@ -2725,6 +2725,8 @@ TError TContainer::PrepareCgroups() {
             Controllers |= CGROUP2;
             RequiredControllers |= CGROUP2;
         }
+        if (Level == 1 && PidsSubsystem.Supported)
+            Controllers |= CGROUP_PIDS;
     }
 
     if (!HasProp(EProperty::CPU_SET) && Parent) {
