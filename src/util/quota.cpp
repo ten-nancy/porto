@@ -1,3 +1,6 @@
+#include <fstream>
+#include <string>
+
 #include "util/proc.hpp"
 #include "quota.hpp"
 #include "log.hpp"
@@ -518,6 +521,25 @@ TError TProjectQuota::FindProject() {
     return OK;
 }
 
+/* find any writable non-bind mountpoint */
+static TError LookupDeviceRoot(dev_t dev, TMount& mnt) {
+    //FIXME check overmounted mountpoints, for example via GetMountId
+    std::ifstream istrm("/proc/self/mountinfo", std::ios::in);
+    std::string line;
+
+    while (std::getline(istrm, line)) {
+        if (!mnt.ParseMountinfo(line) &&
+                dev == mnt.Device &&
+                mnt.BindPath.IsRoot() &&
+                !(mnt.MntFlags & MS_RDONLY)) {
+            if (mnt.Type != "ext4" && mnt.Type != "xfs")
+                return TError(EError::NotSupported, "Unsupported filesystem {}", mnt.Type);
+            return OK;
+        }
+    }
+    return TError("mountpoint for dev {} not found", dev);
+}
+
 TError TProjectQuota::FindDevice() {
     TMount mount;
     TError error;
@@ -526,32 +548,19 @@ TError TProjectQuota::FindDevice() {
     if (!Device.IsEmpty())
         return OK;
 
-    auto device = Path.GetDev();
-    if (!device)
+    auto dev = Path.GetDev();
+    if (!dev)
         return TError("device not found: " + Path.ToString());
 
-    std::vector<std::string> lines;
-    error = TPath("/proc/self/mountinfo").ReadLines(lines, MOUNT_INFO_LIMIT);
+    error = LookupDeviceRoot(dev, mount);
     if (error)
         return error;
 
-    /* find any writable non-bind mountpoint */
-    //FIXME check overmounted mountpoints, for example via GetMountId
-    for (auto &line : lines) {
-        if (!mount.ParseMountinfo(line) &&
-                device == mount.Device &&
-                mount.BindPath.IsRoot() &&
-                !(mount.MntFlags & MS_RDONLY)) {
-            if (mount.Type != "ext4" && mount.Type != "xfs")
-                return TError(EError::NotSupported, "Unsupported filesystem {}", mount.Type);
-            Type = mount.Type;
-            Device = mount.Source;
-            RootPath = mount.Target;
-            return OK;
-        }
-    }
+    Type = mount.Type;
+    Device = mount.Source;
+    RootPath = mount.Target;
 
-    return TError("mountpoint not found: " + Path.ToString());
+    return OK;
 }
 
 bool TProjectQuota::Exists() {

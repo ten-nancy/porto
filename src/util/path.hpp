@@ -205,7 +205,7 @@ public:
     static std::string UmountFlagsToString(uint64_t flags);
 
     TError FindMount(TMount &mount, bool exact = false) const;
-    static TError ListAllMounts(std::list<TMount> &list);
+    static TError ListAllMounts(std::vector<TMount> &list);
 
     TError Mount(const TPath &source, const std::string &type, uint64_t flags,
                  const std::vector<std::string> &options) const;
@@ -245,7 +245,6 @@ struct TMount {
     dev_t Device;
     TPath BindPath; /* path within filesystem */
     uint64_t MntFlags;
-    std::vector<std::string> OptFields;
 
     static std::string Demangle(const std::string &s);
     TError ParseMountinfo(const std::string &line);

@@ -1961,7 +1961,7 @@ TError TVolume::Configure(const TPath &target_root) {
             BackendType = "plain";
     }
 
-    InternalPath = Place / PORTO_VOLUMES / Id / "volume";
+    InternalPath = GetInternal("volume");
 
     if (Path) {
         Path = target_root / Path;
@@ -2949,13 +2949,6 @@ TError TVolume::DestroyOne() {
             if (!ret)
                 ret = error;
         }
-    }
-
-    error = internal.UmountNested();
-    if (error) {
-        L_ERR("Cannot umount internal: {}", error);
-        if (!ret)
-            ret = error;
     }
 
     StorageFd.Close();

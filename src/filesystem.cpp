@@ -370,7 +370,7 @@ TError TMountNamespace::RemountRun(const TContainer &ct) {
     TPath run("/run"), tmp("/tmp");
     TError error;
 
-    std::list<TMount> mounts;
+    std::vector<TMount> mounts;
     error = TPath::ListAllMounts(mounts);
     if (error)
         return error;

@@ -915,7 +915,7 @@ TError TPath::Remount(uint64_t mnt_flags) const {
     /* vfsmount remount isn't recursive in kernel */
     if (recursive && (remount_flags & MS_BIND)) {
         TPath normal = NormalPath();
-        std::list<TMount> mounts;
+        std::vector<TMount> mounts;
         TError error = TPath::ListAllMounts(mounts);
         if (error)
             return error;
@@ -998,7 +998,7 @@ TError TPath::UmountAll() const {
 }
 
 TError TPath::UmountNested() const {
-    std::list<TMount> mounts;
+    std::vector<TMount> mounts;
     TError error = ListAllMounts(mounts);
     if (error)
         return error;
@@ -1191,7 +1191,7 @@ TError TPath::FindMount(TMount &mount, bool exact) const {
     return OK;
 }
 
-TError TPath::ListAllMounts(std::list<TMount> &list) {
+TError TPath::ListAllMounts(std::vector<TMount> &list) {
     std::vector<std::string> lines;
 
     TError error = TPath("/proc/self/mountinfo").ReadLines(lines, MOUNT_INFO_LIMIT);
@@ -1262,9 +1262,9 @@ TError TMount::ParseMountinfo(const std::string &line) {
     std::string opt;
     std::stringstream ss(tokens[6]);
 
-    OptFields.clear();
-    while (std::getline(ss, opt, ' ') && (opt != "-"))
-        OptFields.push_back(opt);
+    while (std::getline(ss, opt, ' '))
+        if (opt == "-")
+            break;
 
     if (opt != "-")
         return TError("optional delimiter not found");
