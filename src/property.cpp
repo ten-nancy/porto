@@ -5034,7 +5034,8 @@ public:
     }
 
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_coredump_filter(CT->CoredumpFilter);
+        if (CT->HasProp(EProperty::COREDUMP_FILTER))
+            spec.set_coredump_filter(CT->CoredumpFilter);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {

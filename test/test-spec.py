@@ -727,8 +727,6 @@ try:
             check(a, 'running' if start1 or start2 else 'stopped')
             a.Destroy()
 
-except:
-    print_exc()
 finally:
     if a is not None:
         Catch(a.Destroy)
