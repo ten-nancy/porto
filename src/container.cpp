@@ -2189,6 +2189,7 @@ void TContainer::PropagateCpuLimit() {
 
 TError TContainer::ApplyExtraProperties() {
     TError error;
+    std::set<std::string> extraPropertiesSet;
 
     // clean old extra properties
     for (const auto &extraProp: EnabledExtraProperties) {
@@ -2222,20 +2223,33 @@ TError TContainer::ApplyExtraProperties() {
                 return TError(EError::InvalidProperty, "Empty property index");
 
             auto prop = ContainerProperties.find(property);
-            if (prop != ContainerProperties.end() && !HasProp(prop->second->Prop)) {
+            if (prop != ContainerProperties.end()) {
+                if (!HasProp(prop->second->Prop)) {
+                    if (idx.empty())
+                        error = prop->second->Set(extraProperty.Value);
+                    else
+                        error = prop->second->SetIndexed(idx, extraProperty.Value);
 
-                if (idx.empty())
-                    error = prop->second->Set(extraProperty.Value);
-                else
-                    error = prop->second->SetIndexed(idx, extraProperty.Value);
+                    if (error)
+                        return error;
 
-                if (error)
-                    return error;
+                    extraPropertiesSet.insert(extraProperty.Name);
+                } else if (property == "capabilities" && idx == "SYS_ADMIN") {
+                    std::string value;
 
-                EnabledExtraProperties.push_back(extraProperty.Name);
+                    error = prop->second->GetIndexed(idx, value);
+                    if (error)
+                        return error;
+
+                    if (value == extraProperty.Value)
+                        extraPropertiesSet.insert(extraProperty.Name);
+                }
             }
         }
     }
+
+    EnabledExtraProperties.insert(EnabledExtraProperties.end(),
+            extraPropertiesSet.begin(), extraPropertiesSet.end());
 
     if (!EnabledExtraProperties.empty())
         SetProp(EProperty::EXTRA_PROPS);
