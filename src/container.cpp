@@ -2134,7 +2134,7 @@ TError TContainer::ApplyCpuGuarantee() {
 TError TContainer::ApplyCpuShares() {
     TError error;
 
-    if (!IsRoot() && (Controllers & CGROUP_CPU)) {
+    if (!IsRoot() && (Controllers & CGROUP_CPU) && !ExtSchedIdle) {
         auto cpucg = GetCgroup(CpuSubsystem);
         error = CpuSubsystem.SetShares(cpucg, CpuPolicy, CpuWeight, CpuGuaranteeCur);
         if (error) {
