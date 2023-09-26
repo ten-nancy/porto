@@ -533,7 +533,10 @@ noinline TError UpdateFromSpec(const rpc::TUpdateFromSpecRequest &req) {
 
 noinline TError ListContainersBy(const rpc::TListContainersRequest &req,
                              rpc::TListContainersResponse &rsp) {
-    std::vector<std::string> names, props;
+    std::vector<
+        std::pair<std::string, std::shared_ptr<TContainer>>
+    > relnames;
+    std::vector<std::string> props;
     std::unordered_map<std::string, std::string> propsOps;
     TError error;
 
@@ -555,30 +558,27 @@ noinline TError ListContainersBy(const rpc::TListContainersRequest &req,
     auto lock = LockContainers();
     for (auto &it: Containers) {
         auto &ct = it.second;
-        std::string name;
-        if (CL->ComposeName(ct->Name, name))
+        std::string relname;
+        if (CL->ComposeName(ct->Name, relname))
             continue;
-        names.push_back(name);
+        relnames.emplace_back(relname, ct);
     }
     lock.unlock();
 
     std::set<std::string> found;
 
-    for (const auto &name : names) {
-        std::shared_ptr<TContainer> ct;
-        lock.lock();
-        auto error = CL->ResolveContainer(name, ct);
-        lock.unlock();
-        if (error)
-            continue;
+    for (const auto &pair : relnames) {
+        const auto &relname = pair.first;
+        auto ct = pair.second;
+
         for (auto filter : req.filters()) {
-            if (StringMatch(name, filter.name())) {
+            if (StringMatch(relname, filter.name())) {
                 if (filter.has_labels() && !ct->MatchLabels(filter.labels()))
                     continue;
 
                 found.insert(filter.name());
                 auto container = rsp.add_containers();
-                container->mutable_spec()->set_name(name);
+                container->mutable_spec()->set_name(relname);
 
                 error = CL->LockContainer(ct);
                 if (!error) {

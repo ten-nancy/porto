@@ -367,16 +367,15 @@ public:
     const std::string BFQ_WEIGHT = "blkio.bfq.weight";
 
     bool HasThrottler = false;
-    bool HasSaneBehavior = false;
+    std::string TimeKnob;
+    std::string OpsKnob;
+    std::string BytesKnob;
+
     TBlkioSubsystem() : TSubsystem(CGROUP_BLKIO, "blkio") {}
     bool IsDisabled() override { return !config().container().enable_blkio(); }
     bool IsOptional() override { return true; }
-    TError InitializeSubsystem() override {
-        HasThrottler = RootCgroup().Has("blkio.throttle.read_bps_device");
-        if (RootCgroup().GetBool("cgroup.sane_behavior", HasSaneBehavior))
-            HasSaneBehavior = false;
-        return OK;
-    }
+    TError InitializeSubsystem() override;
+
     enum IoStat {
         Read = 1,
         Write = 2,

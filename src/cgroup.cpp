@@ -1228,45 +1228,35 @@ TError TBlkioSubsystem::ResolveDisk(const TPath &root, const std::string &key, s
     return OK;
 }
 
+TError TBlkioSubsystem::InitializeSubsystem() {
+    HasThrottler = RootCgroup().Has("blkio.throttle.io_serviced");
+    auto sched = HasThrottler ? "throttle." : "";
+    auto recOpsKnob = fmt::format("blkio.{}io_serviced_recursive", sched);
+    auto recur =  RootCgroup().Has(recOpsKnob) ? "_recursive" : "";
+
+    TimeKnob = fmt::format("blkio.{}io_service_time{}", sched, recur);
+    OpsKnob = fmt::format("blkio.{}io_serviced{}", sched, recur);
+    BytesKnob = fmt::format("blkio.{}io_service_bytes{}", sched, recur);
+
+    return OK;
+}
+
 TError TBlkioSubsystem::GetIoStat(TCgroup &cg, enum IoStat stat, TUintMap &map) const {
     std::vector<std::string> lines;
     std::string knob, prev, name;
     bool summ = false, hide = false;
-    bool recursive = true;
     TError error;
 
     if (stat & IoStat::Time)
-        knob = "blkio.io_service_time_recursive";
-    else if (HasThrottler && (HasSaneBehavior || !cg.IsRoot())) {
-        /* get statistics from throttler if possible, it has counters for raids */
-        knob = (stat & IoStat::Iops) ? "blkio.throttle.io_serviced" : "blkio.throttle.io_service_bytes";
-
-        /* throtter is recurisve only in sane behavior */
-        recursive = HasSaneBehavior;
-    } else
-        knob = (stat & IoStat::Iops) ? "blkio.io_serviced_recursive" : "blkio.io_service_bytes_recursive";
+        knob = TimeKnob;
+    else if (stat & IoStat::Iops)
+        knob = OpsKnob;
+    else
+        knob = BytesKnob;
 
     error = cg.Knob(knob).ReadLines(lines);
     if (error)
         return error;
-
-    if (!recursive) {
-        std::vector<TCgroup> list;
-
-        error = cg.ChildsAll(list);
-        if (error) {
-            L_WRN("Cannot get io stat {}", error);
-            return error;
-        }
-
-        for (auto &child_cg: list) {
-            error = child_cg.Knob(knob).ReadLines(lines);
-            if (error && error.Errno != ENOENT) {
-                L_WRN("Cannot get io stat {}", error);
-                return error;
-            }
-        }
-    }
 
     uint64_t total = 0;
     for (auto &line: lines) {
