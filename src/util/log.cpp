@@ -92,6 +92,9 @@ void InitStatistics() {
     PortoStatMembers.insert(std::make_pair("fail_invalid_command", TStatistic(&TStatistics::FailInvalidCommand)));
     PortoStatMembers.insert(std::make_pair("fail_memory_guarantee", TStatistic(&TStatistics::FailMemoryGuarantee)));
     PortoStatMembers.insert(std::make_pair("fail_invalid_netaddr", TStatistic(&TStatistics::FailInvalidNetaddr)));
+    PortoStatMembers.insert(std::make_pair("wait_time", TStatistic(&TStatistics::WaitTime)));
+    PortoStatMembers.insert(std::make_pair("exec_time", TStatistic(&TStatistics::ExecTime)));
+    PortoStatMembers.insert(std::make_pair("lock_time", TStatistic(&TStatistics::LockTime)));
     PortoStatMembers.insert(std::make_pair("requests_longer_1s", TStatistic(&TStatistics::RequestsLonger1s)));
     PortoStatMembers.insert(std::make_pair("requests_longer_3s", TStatistic(&TStatistics::RequestsLonger3s)));
     PortoStatMembers.insert(std::make_pair("requests_longer_30s", TStatistic(&TStatistics::RequestsLonger30s)));

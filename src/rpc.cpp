@@ -14,6 +14,7 @@
 #include "util/log.hpp"
 #include "util/string.hpp"
 #include "util/cred.hpp"
+#include "util/mutex.hpp"
 #include "portod.hpp"
 #include "storage.hpp"
 #include "docker.hpp"
@@ -2103,6 +2104,7 @@ void TRequest::Handle() {
     if (RequestHandlingDelayMs)
         usleep(RequestHandlingDelayMs * 1000);
 
+    LockTimer::Reset();
     StartTime = GetCurrentTimeMs();
     auto timestamp = time(nullptr);
     bool specRequest = false;
@@ -2259,8 +2261,14 @@ void TRequest::Handle() {
     Client->FinishRequest();
 
     uint64_t RequestTime = FinishTime - QueueTime;
+    uint64_t WaitTime = StartTime - QueueTime;
+    uint64_t ExecTime = FinishTime - StartTime;
 
     Statistics->RequestsQueued--;
+    Statistics->ExecTime += ExecTime;
+    Statistics->WaitTime += WaitTime;
+    Statistics->LockTime += LockTimer::Get();
+
     if (!specRequest) {
         Statistics->RequestsCompleted++;
 
@@ -2316,13 +2324,13 @@ void TRequest::Handle() {
     rsp.set_timestamp(timestamp);
 
     if (!RoReq || Verbose) {
-        L_RSP("{} {} {} {} to {} time={}+{} ms", Cmd, Arg, Opt, ResponseAsString(rsp),
-                Client->Id, StartTime - QueueTime, FinishTime - StartTime);
+        L_RSP("{} {} {} {} to {} lock={} ms time={}+{} ms", Cmd, Arg, Opt, ResponseAsString(rsp),
+              Client->Id, LockTimer::Get(), WaitTime, ExecTime);
     } else if (error || RequestTime >= 1000) {
         /* Log failed or slow silent requests without details */
         L_REQ("{} {} from {}", Cmd, Arg, Client->Id);
-        L_RSP("{} {} {} to {} time={}+{} ms", Cmd, Arg, error,
-                Client->Id, StartTime - QueueTime, FinishTime - StartTime);
+        L_RSP("{} {} {} to {} lock={} ms time={}+{} ms", Cmd, Arg, error,
+              Client->Id, LockTimer::Get(), WaitTime, ExecTime);
     }
 
     if (Debug)

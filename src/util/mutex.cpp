@@ -1,47 +1,53 @@
+#include "log.hpp"
 #include "mutex.hpp"
 #include "unix.hpp"
-#include "log.hpp"
 
 #include <sys/file.h>
 
-class MutexTimer {
-    const std::string &Name;
-    uint64_t StartTime;
+__thread uint64_t LockTimer::LockTime  = 0;
+__thread uint64_t LockTimer::LockLevel = 0;
+__thread uint64_t LockTimer::LockStart = 0;
 
-public:
-    MutexTimer(const std::string &name) : Name(name) {
-        Statistics->LockOperationsCount++;
-        StartTime = GetCurrentTimeMs();
+LockTimer::LockTimer(const std::string &name) : Name(name) {
+    auto level = LockLevel++;
+
+    StartTime = GetCurrentTimeMs();
+    if (!level)
+        LockStart = StartTime;
+    Statistics->LockOperationsCount++;
+}
+
+LockTimer::~LockTimer() {
+    auto level = --LockLevel;
+    auto endTime = GetCurrentTimeMs();
+
+    uint64_t requestTime = endTime - StartTime;
+
+    if (requestTime > 1000) {
+        L("Long lock {} operation time={} ms", Name, requestTime);
+        Statistics->LockOperationsLonger1s++;
     }
+    if (requestTime > 3000)
+        Statistics->LockOperationsLonger3s++;
+    if (requestTime > 30000)
+        Statistics->LockOperationsLonger30s++;
+    if (requestTime > 300000)
+        Statistics->LockOperationsLonger5m++;
 
-    ~MutexTimer() {
-        uint64_t requestTime = GetCurrentTimeMs() - StartTime;
-        if (requestTime > 1000) {
-            L("Long lock {} operation time={} ms", Name, requestTime);
-            Statistics->LockOperationsLonger1s++;
-        }
-        if (requestTime > 3000)
-            Statistics->LockOperationsLonger3s++;
-        if (requestTime > 30000)
-            Statistics->LockOperationsLonger30s++;
-        if (requestTime > 300000)
-            Statistics->LockOperationsLonger5m++;
-    }
-};
-
+    if (!level)
+        LockTime += endTime - LockStart;
+}
 
 MeasuredMutex::MeasuredMutex(const std::string &name) : Name(name) {}
 
 void MeasuredMutex::lock() {
-    MutexTimer timer(Name);
+    LockTimer timer(Name);
     std::mutex::lock();
 }
 
 std::unique_lock<std::mutex> MeasuredMutex::UniqueLock() {
-    MutexTimer timer(Name);
     return std::unique_lock<std::mutex>(*this);
 }
-
 
 TFileMutex::TFileMutex(const TPath &path, int flags) {
     TError error = File.Open(path, flags);

@@ -43,6 +43,11 @@ extern "C" {
 #include <sched.h>
 }
 
+static const std::string LOCK_ACTION("LockAction");
+static const std::string UPGRADE_LOCK_ACTION("UpgradeLockAction");
+static const std::string LOCK_STATE_READ("LockStateRead");
+static const std::string LOCK_STATE_WRITE("LockStateWrite");
+
 MeasuredMutex ContainersMutex("containers");
 static std::condition_variable ContainersCV;
 std::shared_ptr<TContainer> RootContainer;
@@ -215,6 +220,7 @@ TError TContainer::FindTaskContainer(pid_t pid, std::shared_ptr<TContainer> &ct,
 
 /* lock subtree shared or exclusive */
 TError TContainer::LockAction(std::unique_lock<std::mutex> &containers_lock, bool shared) {
+    LockTimer timer(LOCK_ACTION);
     L_DBG("LockAction{} CT{}:{}", (shared ? "Shared" : ""), Id, Name);
 
     while (1) {
@@ -292,6 +298,7 @@ void TContainer::DowngradeActionLock() {
 
 /* only after downgrade */
 void TContainer::UpgradeActionLock() {
+    LockTimer timer(UPGRADE_LOCK_ACTION);
     auto lock = LockContainers();
 
     L_DBG("Upgrading shared back to exclusive CT{}:{}", Id, Name);
@@ -313,6 +320,7 @@ void TContainer::UpgradeActionLock() {
 }
 
 void TContainer::LockStateRead() {
+    LockTimer timer(LOCK_STATE_READ);
     auto lock = LockContainers();
     L_DBG("LockStateRead CT{}:{}", Id, Name);
     while (StateLocked < 0)
@@ -322,6 +330,7 @@ void TContainer::LockStateRead() {
 }
 
 void TContainer::LockStateWrite() {
+    LockTimer timer(LOCK_STATE_WRITE);
     auto lock = LockContainers();
     L_DBG("LockStateWrite CT{}:{}", Id, Name);
     while (StateLocked < 0)

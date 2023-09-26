@@ -47,6 +47,9 @@ struct TStatistics {
     std::atomic<uint64_t> RequestsLonger5m;
     std::atomic<uint64_t> ClientsConnected;
     std::atomic<uint64_t> RequestsFailed;
+    std::atomic<uint64_t> WaitTime;
+    std::atomic<uint64_t> ExecTime;
+    std::atomic<uint64_t> LockTime;
     std::atomic<uint64_t> SpecRequestsCompleted;
     std::atomic<uint64_t> SpecRequestsLonger1s;
     std::atomic<uint64_t> SpecRequestsLonger3s;
