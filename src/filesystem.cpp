@@ -840,9 +840,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         error = TPath("/sys/fs/cgroup").UmountAll();
         if (error)
             return error;
-    }
 
-    if (HostRoot.IsRoot()) {
         error = TPath("/sys/fs/pstore").UmountAll();
         if (error)
             return error;
@@ -858,14 +856,27 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         error = TPath(PORTO_VOLUMES_KV).UmountAll();
         if (error)
             return error;
-
-        // protect sysfs
-        error = TPath("/sys").Remount(MS_BIND | MS_RDONLY | MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_REC);
-        if (error)
-            return error;
     }
 
     if (Root.IsRoot()) {
+        // always mount new sysfs
+        TPath sys("/sys");
+
+        error = sys.UmountAll();
+        if (error)
+            return error;
+
+        error = sys.Mount("sysfs", "sysfs", (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : MS_RDONLY) | MS_NOSUID | MS_NOEXEC | MS_NODEV, {});
+        if (error)
+            return error;
+
+        TPath tracefs = "/sys/kernel/tracing";
+        if (config().container().enable_tracefs() && tracefs.Exists()) {
+            error = tracefs.Mount("none", "tracefs", MS_NOEXEC | MS_NOSUID | MS_NODEV, {"mode=755"});
+            if (error && error.Errno != EBUSY)
+                L_SYS("Cannot mount tracefs: {}", error);
+        }
+
         if (IsolateRun) {
             error = RemountRun(ct);
             if (error)
@@ -888,7 +899,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
             return error;
     }
 
-    if (ct.CgroupFs != ECgroupFs::None)
+    if (ct.CgroupFs != ECgroupFs::None || ct.DockerMode)
         error = MountCgroups(ct);
     else
         error = MountSystemd();

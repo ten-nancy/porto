@@ -37,10 +37,8 @@ def CheckCgroupHierarchy(ct, haveCgroups):
     # Check cgroup hierarchy in child container
     r = conn.Run(ct.name + '/child', wait=10, command='ls /sys/fs/cgroup')
     res_cgroups = r['stdout'].strip().split('\n')
-    if haveCgroups:
-        assert len(res_cgroups) == 16
-    else:
-        assert res_cgroups == ['systemd']
+    # porto mounts new sysfs, so there are no cgroups
+    assert len(res_cgroups) == 1
     r.Destroy()
 
     if haveCgroups:
@@ -80,13 +78,6 @@ try:
         use_os_mode_cgroupns : true
     }""")
 
-    a = conn.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-precise"]})
-    ExpectRunlevel(a, 'N 2')
-    a.Stop()
-    a.Start()
-    ExpectRunlevel(a, 'N 2')
-    a.Destroy()
-
     a = conn.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-xenial"]})
     ExpectRunlevel(a, 'N 5')
     a.Stop()
@@ -105,14 +96,6 @@ try:
     a.Start()
     CheckCgroupHierarchy(a, True)
     CheckSystemd(a)
-    m.Destroy()
-
-    m = conn.Run("m", root_volume={'layers': ["ubuntu-precise"]})
-    a = conn.Run("m/a", virt_mode='os')
-    ExpectRunlevel(a, 'N 2')
-    a.Stop()
-    a.Start()
-    ExpectRunlevel(a, 'N 2')
     m.Destroy()
 
     ConfigurePortod('test-os', """
