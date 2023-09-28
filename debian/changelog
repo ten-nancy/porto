@@ -1,3 +1,24 @@
+porto (5.3.26) unstable; urgency=low
+  [ kndrvt ]
+      volume: remove VolumesLock for ListVolumes with exact path
+      container: skip cpu shares applying with cpu.idle
+      http: fix uri parsing
+  [ ovov ]
+      rpc: ro api perfomance improvements
+      rpc: add wait/exec/lock metrics
+      add explicit libunwind-dev dep in github workflows
+      add tcmalloc deps in github workflows
+      test: fix spec test
+      cmake: use tcmalloc
+      volume: optimize work with /proc/self/mountinfo
+  [ oleglatin ]
+      container: apply SYS_ADMIN extra property regardless manual capabilities set
+  [ reshilkin ]
+      container: always add pids controller on first level
+  last commit: 86d443fbf738695fa299c8cfb2b67664fc9a0370
+
+ -- Porto Team <porto@yandex-team.ru>  Thu, 28 Sep 2023 16:40:39 -0000
+
 porto (5.3.25) unstable; urgency=low
   [ kndrvt ]
       container: fix cpu idle on 5.15
