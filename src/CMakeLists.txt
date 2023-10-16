@@ -45,7 +45,7 @@ add_library(portocore portod.cpp core.cpp cgroup.cpp rpc.cpp container.cpp
             docker.cpp)
 
 find_library(LIBTCMALLOC NAMES libtcmalloc_minimal.a)
-target_link_libraries(portocore version porto utilbase util config
+target_link_libraries(portocore nlohmann-safe version porto utilbase util config
 			     rpc_proto kv_proto
 			     rt fmt ${PB} ${LIBNL} ${LIBNL_ROUTE} ${LIBNL_IDIAG} ${LIBSSL} ${LIBCRYPTO}
 			     ${LIBBPF} ${LIBELF} ${LIBZ} ${LIBTCMALLOC} pthread)

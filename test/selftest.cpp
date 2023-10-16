@@ -16,6 +16,7 @@
 #include "util/md5.hpp"
 #include "util/proc.hpp"
 #include "util/hgram.hpp"
+#include "util/nlohmann-safe/json.hpp"
 #include "docker.hpp"
 #include "http.hpp"
 #include "test.hpp"
@@ -4971,6 +4972,77 @@ static void TestUriParsing(Porto::Connection &) {
     ntest("http://kndrvt:password@host.com:80&lol&kek=cheburek");
 }
 
+static void TestJsonParsing(Porto::Connection &) {
+    std::string src = R"(
+{
+  "str": "Value",
+  "i": 12345,
+  "arr": [
+    {
+      "key1": "value1",
+      "key2": -1234
+    },
+    {
+      "key1": "value2",
+      "key2": 293
+    }
+  ],
+  "strArr": [
+    "antimony",
+    "arsenic",
+    "aluminum",
+    "selenium"
+  ]
+})";
+    TJson json;
+    ExpectOk(json.Parse(src));
+
+    Expect(json.Contains("str"));
+    Expect(json.Contains("arr"));
+    Expect(!json.Contains("noSuchKey"));
+    Expect(json["noSuchKey"].IsNull());
+
+    std::string str;
+    ExpectOk(json["str"].Get(str));
+    ExpectEq(str, "Value");
+
+    TError error = json["noSuchKey"].Get(str);
+    Expect(error);
+
+    int i;
+    ExpectOk(json["i"].Get(i));
+    ExpectEq(i, 12345);
+
+    std::vector<TJson> arr;
+    ExpectOk(json["arr"].Get(arr));
+
+    std::string vals;
+    int vali;
+    ExpectOk(arr[0]["key1"].Get(vals));
+    ExpectEq(vals, "value1");
+    ExpectOk(arr[0]["key2"].Get(vali));
+    ExpectEq(vali, -1234);
+
+    ExpectOk(arr[1]["key1"].Get(vals));
+    ExpectEq(vals, "value2");
+    ExpectOk(arr[1]["key2"].Get(vali));
+    ExpectEq(vali, 293);
+
+    std::vector<std::string> strArr;
+    ExpectOk(json["strArr"].Get(strArr));
+    std::vector<std::string> original = {"antimony", "arsenic", "aluminum", "selenium"};
+    ExpectEq(strArr.size(), original.size());
+    Expect(std::equal(strArr.begin(), strArr.end(), original.begin()));
+
+    std::string badSrc = R"(
+{
+    "a": "b"
+    "c": 1234
+})";
+    error = json.Parse(badSrc);
+    Expect(error);
+}
+
 int SelfTest(std::vector<std::string> args) {
     pair<string, std::function<void(Porto::Connection &)>> tests[] = {
         { "path", TestPath },
@@ -5022,6 +5094,7 @@ int SelfTest(std::vector<std::string> args) {
         { "spec", TestContainerSpec },
         { "docker_images_parsing", TestDockerImageParsing },
         { "uri_parsing", TestUriParsing },
+        { "json_parsing", TestJsonParsing},
 
         // the following tests will restart porto several times
         { "bad_client", TestBadClient },

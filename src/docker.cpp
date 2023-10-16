@@ -1,10 +1,10 @@
-#include "util/nlohmann/json.hpp"
 #include "util/http.hpp"
 #include "util/log.hpp"
 #include "helpers.hpp"
 #include "common.hpp"
 #include "storage.hpp"
 #include "docker.hpp"
+#include "util/nlohmann-safe/json.hpp"
 #include "util/string.hpp"
 
 #include <fcntl.h>
@@ -14,8 +14,6 @@
 
 constexpr const char *DOCKER_IMAGES_FILE = "images.json";
 constexpr const char *DOCKER_LAYERS_DIR = "layers";
-
-using json = nlohmann::json;
 
 TPath TDockerImage::TLayer::LayerPath(const TPath &place) const {
     return place / PORTO_DOCKER_LAYERS / "blobs" / Digest.substr(0, 2) / Digest;
@@ -105,9 +103,17 @@ TError TDockerImage::GetAuthToken() {
         return error;
     }
 
-    auto responseJson = json::parse(response);
-    AuthToken = "Bearer " + responseJson["token"].get<std::string>();
+    TJson responseJson;
+    error = responseJson.Parse(response);
+    if (error)
+        return TError("Failed to parse response: {}", error);
 
+    std::string token;
+    error = responseJson["token"].Get(token);
+    if (error)
+        return TError("Failed to get token from response: {}", error);
+
+    AuthToken = "Bearer " + token;
     return OK;
 }
 
@@ -263,30 +269,65 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
             return error;
     }
 
-    auto manifestJson = json::parse(manifests);
-    if (!manifestJson.contains("schemaVersion"))
+    TJson manifestJson;
+    error = manifestJson.Parse(manifests);
+    if (error)
+        return TError("Failed to parse manifests");
+
+    if (!manifestJson.Contains("schemaVersion"))
         return TError(EError::Docker, "schemaVersion is not found in manifest");
 
-    SchemaVersion = manifestJson["schemaVersion"].get<int>();
+    error = manifestJson["schemaVersion"].Get(SchemaVersion);
+    if (error)
+        return TError("Failed to get schemaVersion from manifest: {}", error);
+
     if (SchemaVersion == 1) {
         Manifest = manifests;
     } else if (SchemaVersion == 2) {
-        auto mediaType = manifestJson["mediaType"].get<std::string>();
+        std::string mediaType;
+        error = manifestJson["mediaType"].Get(mediaType);
+        if (error)
+            return TError("Failed to get mediaType from manifest: {}", error);
+
         if (mediaType == "application/vnd.docker.distribution.manifest.v2+json") {
             Manifest = manifests;
         } else if (mediaType == "application/vnd.docker.distribution.manifest.list.v2+json") {
             const std::string targetArch = "amd64";
             const std::string targetOs = "linux";
             bool found = false;
-            for (const auto &m: manifestJson["manifests"]) {
-                if (!m.contains("platform"))
+
+            if (!manifestJson["manifests"].IsArray())
+                return TError("Failed to find manifests array: {}", error);
+
+            std::vector<TJson> manifests;
+            error = manifestJson["manifests"].Get(manifests);
+            if (error)
+                return TError("Failed to get manifests array: {}", error);
+
+            for (const auto &m: manifests) {
+                if (!m.Contains("platform"))
                     continue;
                 auto p = m["platform"];
-                if (!p.contains("architecture") || !p.contains("os"))
+                if (!p.Contains("architecture") || !p.Contains("os"))
                     continue;
-                if (p["architecture"] == targetArch && p["os"] == targetOs) {
+                std::string arch;
+                std::string os;
+
+                error = p["architecture"].Get(arch);
+                if (error)
+                    return TError("Failed to get architecture: {}", error);
+
+                error = p["os"].Get(os);
+                if (error)
+                    return TError("Failed to get os: {}", error);
+
+                if (arch == targetArch && os == targetOs) {
                     found = true;
-                    auto digest = m["digest"].get<std::string>();
+                    std::string digest;
+                    error = m["digest"].Get(digest);
+                    if (error)
+                        return TError("Failed to get digest: {}", error);
+
                     error = client.MakeRequest(ManifestsUrl(digest), Manifest, headers);
                     if (error) {
                         L_WRN("Failed to download manifest: {}", error);
@@ -305,43 +346,106 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
 }
 
 TError TDockerImage::ParseManifest() {
-    auto manifestJson = json::parse(Manifest);
-    if (!manifestJson.contains("schemaVersion"))
+    TError error;
+
+    TJson manifestJson;
+    error = manifestJson.Parse(Manifest);
+    if (error || !manifestJson.Contains("schemaVersion"))
         return TError(EError::Docker, "schemaVersion is not found in manifest");
 
-    if (SchemaVersion != manifestJson["schemaVersion"].get<int>())
+    int schemaVersion;
+    error = manifestJson["schemaVersion"].Get(schemaVersion);
+    if (error)
+        return TError("Failed to get schema version: {}", error);
+
+    if (SchemaVersion != schemaVersion)
         return TError(EError::Docker, "schemaVersions are not equal");
 
     if (SchemaVersion == 1) {
         // there is no size info
         Size = 1;
         auto history = manifestJson["history"];
-        if (history.is_null())
+        if (!history.IsArray())
             return TError(EError::Docker, "history is empty in manifest");
 
-        for (const auto &h: history) {
-            if (h.contains("v1Compatibility")) {
-                auto c = json::parse(h["v1Compatibility"].get<std::string>());
-                Digest = c["id"].get<std::string>();
-                Config = c.dump();
+        std::vector<TJson> hs;
+        error = history.Get(hs);
+        if (error)
+            return TError("Failed to get history: {}", error);
+
+        for (const auto &h: hs) {
+            if (h.Contains("v1Compatibility")) {
+                std::string v1Compatibility;
+                error = h["v1Compatibility"].Get(v1Compatibility);
+                if (error)
+                    return TError("Failed to get v1Compatibility: {}", error);
+
+                TJson c;
+                error = c.Parse(v1Compatibility);
+                if (error)
+                    return TError("Failed to parse v1Compatibility: {}", error);
+
+                error = c["id"].Get(Digest);
+                if (error)
+                    return TError("Failed to get id: {}", error);
+
+                error = c.Dump(Config);
+                if (error)
+                    return TError("Failed to dump config: {}", error);
+
                 break;
             }
         }
 
-        for (const auto &layer: manifestJson["fsLayers"]) {
-            Layers.emplace_back(TrimDigest(layer["blobSum"]));
+        std::vector<TJson> fsLayers;
+        error = manifestJson["fsLayers"].Get(fsLayers);
+        if (error)
+            return TError("Failed to get fsLayers: {}", error);
+
+        for (const auto &layer: fsLayers) {
+            std::string blobSum;
+            error = layer["blobSum"].Get(blobSum);
+            if (error)
+                return TError("Failed to get blobSum: {}", error);
+
+            Layers.emplace_back(TrimDigest(blobSum));
         }
     } else if (SchemaVersion == 2) {
-        Digest = TrimDigest(manifestJson["config"]["digest"].get<std::string>());
-        Size = manifestJson["config"]["size"].get<uint64_t>();
+        error = manifestJson["config"]["digest"].Get(Digest);
+        if (error)
+            return TError("Failed to get config digest: {}", error);
+        Digest = TrimDigest(Digest);
 
-        for (const auto &layer: manifestJson["layers"]) {
-            auto mediaType = layer["mediaType"].get<std::string>();
+        error = manifestJson["config"]["size"].Get(Size);
+        if (error)
+            return TError("Failed to get config size: {}", error);
+
+        std::vector<TJson> layers;
+        error = manifestJson["layers"].Get(layers);
+        if (error)
+            return TError("Failed to get layers: {}", error);
+
+        for (const auto &layer: layers) {
+            std::string mediaType;
+            error = layer["mediaType"].Get(mediaType);
+            if (error)
+                return TError("Failed to get mediaType: {}", error);
+
             if (mediaType != "application/vnd.docker.image.rootfs.diff.tar.gzip")
                 return TError(EError::Docker, "Unknown layer mediaType: {}", mediaType);
 
-            Layers.emplace_back(TrimDigest(layer["digest"]), layer["size"]);
-            Size += layer["size"].get<uint64_t>();
+            std::string digest;
+            error = layer["digest"].Get(digest);
+            if (error)
+                return TError("Failed to get digest: {}", error);
+
+            uint64_t size;
+            error = layer["size"].Get(size);
+            if (error)
+                return TError("Failed to get size: {}", error);
+
+            Layers.emplace_back(TrimDigest(digest), size);
+            Size += size;
         }
     } else
         return TError(EError::Docker, "Unknown manifest schemaVersion: {}", SchemaVersion);
@@ -369,30 +473,50 @@ TError TDockerImage::DownloadConfig(const THttpClient &client) {
 }
 
 TError TDockerImage::ParseConfig() {
-    auto configJson = json::parse(Config);
+    TError error;
+
+    TJson configJson;
+    error = configJson.Parse(Config);
+    if (error)
+        return TError("Failed to parse config");
+
     auto config = configJson["config"];
     auto entrypoint = config["Entrypoint"];
     auto cmd = config["Cmd"];
 
-    if (!entrypoint.is_null()) {
-        for (const auto &c: entrypoint)
-            Command.emplace_back(c);
-        if (!cmd.is_null()) {
-            for (const auto &c: cmd)
-                Command.emplace_back(c);
+    if (!entrypoint.IsNull()) {
+        std::vector<std::string> entrypointCmds;
+        error = entrypoint.Get(entrypointCmds);
+        if (error)
+            return TError("Failed to get entrypoint commands: {}", error);
+        Command.insert(Command.end(), entrypointCmds.begin(), entrypointCmds.end());
+
+        if (!cmd.IsNull()) {
+            std::vector<std::string> cmds;
+            error = cmd.Get(cmds);
+            if (error)
+                return TError("Failed to get commands: {}", error);
+            Command.insert(Command.end(), cmds.begin(), cmds.end());
         }
     } else {
         Command.emplace_back("/bin/sh");
-        if (!cmd.is_null()) {
+        if (!cmd.IsNull()) {
+            std::vector<std::string> cmds;
+            error = cmd.Get(cmds);
+            if (error)
+                return TError("Failed to get commands: {}", error);
             Command.emplace_back("-c");
-            Command.emplace_back(MergeWithQuotes(cmd, ' ', '\''));
+            Command.emplace_back(MergeWithQuotes(cmds, ' ', '\''));
         }
     }
 
-    auto env = config["Env"];
-    if (!env.is_null()) {
-        for (const auto &e: env)
-            Env.emplace_back(e);
+    TJson env = config["Env"];
+    if (!env.IsNull()) {
+        std::vector<std::string> envs;
+        error = env.Get(envs);
+        if (error)
+            return TError("Failed to get envs: {}", error);
+        Env.insert(Env.end(), envs.begin(), envs.end());
     }
 
     return OK;
@@ -569,9 +693,12 @@ TError TDockerImage::SaveImages(const TPath &place) const {
 TError TDockerImage::SaveImages(const TPath &imagesPath, const std::unordered_map<std::string, std::unordered_set<std::string>> &images) const {
     TError error;
     std::ofstream file(imagesPath.ToString());
+    TJson imagesJson;
+    error = imagesJson.From(images);
+    if (error)
+        return TError("Failed to construct images: {}", error);
 
-    json imagesJson = images;
-    file << imagesJson;
+    imagesJson.Dump(file);
 
     return OK;
 }
@@ -587,8 +714,14 @@ TError TDockerImage::LoadImages(const TPath &imagesPath, std::unordered_map<std:
     if (!imagesPath.Exists())
         return OK;
 
-    json imagesJson = json::parse(file);
-    images = imagesJson.get<std::unordered_map<std::string, std::unordered_set<std::string>>>();
+    TJson imagesJson;
+    error = imagesJson.Parse(file);
+    if (error)
+        return TError("Failed to parse images: {}", error);
+
+    error = imagesJson.Get(images);
+    if (error)
+        return TError("Failed to get images: {}", error);
 
     return OK;
 }

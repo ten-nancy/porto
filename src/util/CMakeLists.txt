@@ -1,6 +1,7 @@
 project(util)
 
 add_subdirectory(prometheus-cpp-lite)
+add_subdirectory(nlohmann-safe)
 
 set(UTIL_BASE_SRCS error.cpp log.cpp path.cpp signal.cpp unix.cpp string.cpp proc.cpp)
 add_library(utilbase STATIC ${UTIL_BASE_SRCS})

@@ -6,7 +6,7 @@ include_directories(${porto_SOURCE_DIR})
 include_directories(${porto_BINARY_DIR})
 
 add_executable(portotest portotest.cpp test.cpp selftest.cpp stresstest.cpp)
-target_link_libraries(portotest version porto util config pthread rt fmt ${PB} ${LIBNL} ${LIBNL_ROUTE})
+target_link_libraries(portotest nlohmann-safe version porto util config pthread rt fmt ${PB} ${LIBNL} ${LIBNL_ROUTE})
 set_target_properties(portotest PROPERTIES LINK_FLAGS "-pthread")
 
 add_executable(mem_touch mem_touch.c)
