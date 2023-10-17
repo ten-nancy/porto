@@ -64,6 +64,7 @@ message TConfig {
         optional string default_qdisc = 24;
         optional string default_qdisc_limit = 25;
         optional string default_qdisc_quantum = 26;
+        optional string default_qdisc_burst_duration = 76;
 
         // Container tc class
         optional string container_rate = 21;

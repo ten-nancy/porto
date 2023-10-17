@@ -179,6 +179,7 @@ static void DefaultConfig() {
     network->set_default_rate("default: 1250000");  /* 10Mbit */
     network->set_default_qdisc("default: fq_codel");
     network->set_default_qdisc_limit("default: 10240");
+    network->set_default_qdisc_burst_duration("default: 10"); /* msec */
 
     network->set_container_rate("default: 125000");  /* 1Mbit */
     network->set_container_qdisc("default: pfifo_fast");

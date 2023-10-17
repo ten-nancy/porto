@@ -90,6 +90,7 @@ static TUintMap DefaultClassCeil;
 static TStringMap DefaultQdisc;
 static TUintMap DefaultQdiscLimit;
 static TUintMap DefaultQdiscQuantum;
+static TUintMap DefaultQdiscBurstDuration;
 
 static TUintMap ContainerRate;
 static TStringMap ContainerQdisc;
@@ -495,6 +496,8 @@ void TNetwork::InitializeConfig() {
         StringToUintMap(config().network().default_qdisc_limit(), DefaultQdiscLimit);
     if (config().network().has_default_qdisc_quantum())
         StringToUintMap(config().network().default_qdisc_quantum(), DefaultQdiscQuantum);
+    if (config().network().has_default_qdisc_burst_duration())
+        StringToUintMap(config().network().default_qdisc_burst_duration(), DefaultQdiscBurstDuration);
 
     if (config().network().has_container_qdisc())
         StringToStringMap(config().network().container_qdisc(), ContainerQdisc);
@@ -855,7 +858,7 @@ TError TNetwork::SetupShaper(TNetDevice &dev) {
     cls.Index = dev.Index;
     cls.Rate = cls.Ceil = rate;
     cls.Burst = UplinkSpeed;
-    cls.BurstDuration = 10000; // 10ms
+    cls.BurstDuration = dev.GetConfig(DefaultQdiscBurstDuration, 10) * 1000; // ms
 
     TNlQdisc leaf(dev.Index, TC_HANDLE(ROOT_TC_MAJOR, 1), TC_HANDLE(2, 0));
     leaf.Kind = dev.GetConfig(ContainerQdisc, "pfifo");
@@ -995,7 +998,7 @@ TError TNetwork::SetupPolicer(TNetDevice &dev, std::unique_lock<std::mutex> &sta
     cls.Kind = qdisc.Kind;
     cls.Rate = cls.Ceil = rate;
     cls.Burst = UplinkSpeed;
-    cls.BurstDuration = 10000; // 10ms
+    cls.BurstDuration = dev.GetConfig(DefaultQdiscBurstDuration, 10) * 1000; // ms
 
     TNlQdisc leaf(dev.Link, TC_HANDLE(ROOT_TC_MAJOR, 1), TC_HANDLE(2, 0));
     leaf.Kind = dev.GetConfig(ContainerQdisc, "pfifo");
