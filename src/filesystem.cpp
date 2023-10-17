@@ -537,7 +537,7 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         if (error)
             return error;
 
-        error = cgroup.Mount(cg.Type, cg.Type, MS_NOSUID | MS_NOEXEC | MS_NODEV | (rw && !cg.ForceRo ? MS_ALLOW_WRITE : MS_RDONLY), cg.Options);
+        error = cgroup.Mount(cg.Type, cg.Type, MS_NOSUID | MS_NOEXEC | MS_NODEV | (rw && !cg.ForceRo ? MS_ALLOW_WRITE : (uint64_t)MS_RDONLY), cg.Options);
         if (error)
             return error;
 
@@ -631,7 +631,7 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
         { "dev/pts", "devpts", MS_NOSUID | MS_NOEXEC,
             { "newinstance", "ptmxmode=0666", "mode=620" ,"gid=5",
               "max=" + std::to_string(config().container().devpts_max()) }},
-        { "sys", "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV | (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : MS_RDONLY), {}},
+        { "sys", "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV | (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : (uint64_t)MS_RDONLY), {}},
     };
 
     for (auto &m : mounts) {
@@ -866,7 +866,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         if (error)
             return error;
 
-        error = sys.Mount("sysfs", "sysfs", (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : MS_RDONLY) | MS_NOSUID | MS_NOEXEC | MS_NODEV, {});
+        error = sys.Mount("sysfs", "sysfs", (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : (uint64_t)MS_RDONLY) | MS_NOSUID | MS_NOEXEC | MS_NODEV, {});
         if (error)
             return error;
 

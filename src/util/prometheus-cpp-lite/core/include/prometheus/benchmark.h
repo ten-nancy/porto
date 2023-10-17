@@ -4,6 +4,7 @@
 #include "prometheus/family.h"
 
 #include <chrono>
+#include <stdexcept>
 
 namespace prometheus {
 

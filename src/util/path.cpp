@@ -34,10 +34,10 @@ void TStatFS::Init(const struct statfs &st) {
     SpaceAvail = (uint64_t)st.f_bavail * st.f_bsize;
     InodeUsage = st.f_files - st.f_ffree;
     InodeAvail = st.f_ffree;
-    MntFlags = ((st.f_flags & ST_NODEV) ? MS_NODEV : MS_ALLOW_DEV) |
-               ((st.f_flags & ST_NOEXEC) ? MS_NOEXEC : MS_ALLOW_EXEC) |
-               ((st.f_flags & ST_NOSUID) ? MS_NOSUID : MS_ALLOW_SUID) |
-               ((st.f_flags & ST_RDONLY) ? MS_RDONLY : MS_ALLOW_WRITE);
+    MntFlags = ((st.f_flags & ST_NODEV) ? (uint64_t)MS_NODEV : MS_ALLOW_DEV) |
+               ((st.f_flags & ST_NOEXEC) ? (uint64_t)MS_NOEXEC : MS_ALLOW_EXEC) |
+               ((st.f_flags & ST_NOSUID) ? (uint64_t)MS_NOSUID : MS_ALLOW_SUID) |
+               ((st.f_flags & ST_RDONLY) ? (uint64_t)MS_RDONLY : MS_ALLOW_WRITE);
     FsType = st.f_type;
 }
 
