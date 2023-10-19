@@ -580,12 +580,7 @@ noinline TError ListContainersBy(const rpc::TListContainersRequest &req,
                 auto container = rsp.add_containers();
                 container->mutable_spec()->set_name(relname);
 
-                error = CL->LockContainer(ct);
-                if (!error) {
-                    ct->Dump(props, propsOps, *container);
-                    CL->ReleaseContainer();
-                } else
-                    error.Dump(*container->mutable_error());
+                ct->Dump(props, propsOps, *container);
                 break;
             }
         }
