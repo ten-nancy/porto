@@ -271,6 +271,10 @@ public:
                BackendType == "quota";
     }
 
+    bool Ephemeral(void) const {
+        return !KeepStorage && BackendType == "overlay";
+    }
+
     /* Backend storage could be a regular file */
     bool LoopFileStorage(void) const {
         return BackendType == "loop" && StoragePath.IsRegularFollow();
@@ -325,3 +329,6 @@ extern TError PutLoopDev(const int loopNr); /* Legacy */
 
 void StartStatFsLoop();
 void StopStatFsLoop();
+
+TError StartAsyncUmounter();
+void StopAsyncUmounter();

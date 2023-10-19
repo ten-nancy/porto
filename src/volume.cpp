@@ -1,6 +1,7 @@
 #include <sstream>
 #include <algorithm>
 #include <condition_variable>
+#include <future>
 #include <unordered_map>
 #include <unordered_set>
 #include <thread>
@@ -12,6 +13,7 @@
 #include "util/log.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
+#include "util/worker.hpp"
 #include "util/quota.hpp"
 #include "util/thread.hpp"
 #include "config.hpp"
@@ -104,6 +106,118 @@ void StopStatFsLoop() {
     }
     StatFsCv.notify_all();
     StatFsThread->join();
+}
+
+static class TPinCloser : public TWorker<TFile> {
+protected:
+    TFile Pop() override {
+        auto request = std::move(Queue.front());
+        Queue.pop();
+        return request;
+    }
+
+    bool Handle(TFile &pin) override {
+        pin.Close();
+        return true;
+    }
+public:
+    TPinCloser(const std::string &name) : TWorker(name, 0) { }
+
+    void Start(size_t nr) {
+        Nr = nr;
+        TWorker::Start();
+    }
+} PinCloser("portod-PC");
+
+struct TUmountRequest {
+    TPath path;
+    std::promise<TError> promise;
+
+    TUmountRequest(const TPath &path) : path(path) { }
+};
+
+static class TAsyncUmounter : public TWorker<TUmountRequest> {
+protected:
+    TUmountRequest Pop() override {
+        auto request = std::move(Queue.front());
+        Queue.pop();
+        return request;
+    }
+
+    bool Handle(TUmountRequest &req) override {
+        TFile pin;
+        TError error;
+
+        L_ACT("async umount {}", req.path);
+        // pin path to prevent actual umount and force detach only
+        error = pin.OpenDir(req.path);
+        if (error) {
+            req.promise.set_value(error);
+            return true;
+        }
+
+        error = req.path.Umount(UMOUNT_NOFOLLOW|MNT_DETACH);
+        if (error) {
+            req.promise.set_value(error);
+            return true;
+        }
+
+        req.promise.set_value(OK);
+
+        PinCloser.Push(std::move(pin));
+        return true;
+    }
+
+public:
+    TAsyncUmounter(const std::string &name) : TWorker(name, 0) { }
+
+    void Start(size_t nr) {
+        Nr = nr;
+        TWorker::Start();
+    }
+
+    std::future<TError> AsyncUmount(const TPath &path) {
+        TUmountRequest req(path);
+        auto fut = req.promise.get_future();
+
+        Push(std::move(req));
+
+        return fut;
+    }
+} AsyncUmounter("portod-AU");
+
+TError AsyncUmount(const TPath &path) {
+    auto fut = AsyncUmounter.AsyncUmount(path);
+    if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+        L_ERR("async umount timeout");
+        return path.Umount(UMOUNT_NOFOLLOW|MNT_DETACH);
+    }
+    return fut.get();
+}
+
+TError StartAsyncUmounter() {
+    std::promise<TError> p;
+    auto fut = p.get_future();
+
+    auto t = std::thread([&p](){
+        if (unshare(CLONE_FILES) < 0) {
+            p.set_value(TError::System("unshare(CLONE_FILES) failed:"));
+            return;
+        }
+        TFile::CloseAllExcept({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, LogFile.Fd});
+
+        PinCloser.Start(2 * config().daemon().vl_threads());
+        AsyncUmounter.Start(config().daemon().vl_threads());
+        p.set_value(OK);
+    });
+
+    t.join();
+    return fut.get();
+}
+
+void StopAsyncUmounter() {
+    AsyncUmounter.Stop();
+    PinCloser.Stop();
 }
 
 /* TVolumeBackend - abstract */
@@ -852,10 +966,10 @@ public:
             if (name[0] == '/') {
                 error = pin.OpenDir(name);
                 if (error)
-                    goto err;
+                    goto cleanup;
                 error = CL->ReadAccess(pin);
                 if (error)
-                    goto err;
+                    goto cleanup;
                 path = pin.ProcPath();
             } else {
                 TStorage layer;
@@ -867,13 +981,13 @@ public:
                 error = pin.OpenDir(path);
                 if (error) {
                     error = TError(error, "Cannot open layer {} in place {}", name, Volume->Place);
-                    goto err;
+                    goto cleanup;
                 }
             }
 
             error = pin.Stat(st);
             if (error)
-                goto err;
+                goto cleanup;
 
             auto dev_inode = ovlInodes.find(st.st_dev);
             if (dev_inode != ovlInodes.end()) {
@@ -892,7 +1006,7 @@ public:
             if (!error)
                 error = temp.BindRemount(path, MS_RDONLY | MS_NODEV | MS_PRIVATE);
             if (error)
-                goto err;
+                goto cleanup;
 
             pin.Close();
 
@@ -907,42 +1021,42 @@ public:
 
         error = upperFd.OpenDirStrictAt(Volume->StorageFd, "upper");
         if (error)
-            goto err;
+            goto cleanup;
 
         (void)Volume->StorageFd.MkdirAt("work", 0755);
 
         error = workFd.OpenDirStrictAt(Volume->StorageFd, "work");
         if (error)
-            goto err;
+            goto cleanup;
 
         error = workFd.ClearDirectory();
         if (error)
-            goto err;
+            goto cleanup;
 
         error = Volume->GetInternal("").Chdir();
         if (error)
-            goto err;
+            goto cleanup;
 
         error = Volume->MakeDirectories(upperFd);
         if (error)
-            goto err;
+            goto cleanup;
 
         error = Volume->MakeSymlinks(upperFd);
         if (error)
-            goto err;
+            goto cleanup;
 
         error = Volume->MakeShares(upperFd, false);
         if (error)
-            goto err;
+            goto cleanup;
 
         if (Volume->NeedCow) {
             error = cowFd.CreateDirAllAt(Volume->StorageFd, "cow", 0755, Volume->VolumeCred);
             if (error)
-                goto err;
+                goto cleanup;
 
             error = Volume->MakeShares(cowFd, true);
             if (error)
-                goto err;
+                goto cleanup;
         } else
             (void)cowFd.OpenDirAt(Volume->StorageFd, "cow");
 
@@ -960,10 +1074,10 @@ public:
 
         (void)TPath("/").Chdir();
 
-err:
+cleanup:
         while (layer_idx--) {
             TPath temp = Volume->GetInternal("L" + std::to_string(Volume->Layers.size() - layer_idx - 1));
-            (void)temp.UmountAll();
+            (void)AsyncUmount(temp);
             (void)temp.Rmdir();
         }
 
@@ -977,7 +1091,12 @@ err:
 
     TError Destroy() override {
         TProjectQuota quota(Volume->StoragePath);
-        TError error = Volume->InternalPath.UmountAll();
+        TError error;
+
+        if (Volume->Ephemeral())
+            error = AsyncUmount(Volume->InternalPath);
+        else
+            error = Volume->InternalPath.UmountAll();
 
         if (Volume->HaveQuota() && quota.Exists()) {
             L_ACT("Destroying project quota: {}", quota.Path);

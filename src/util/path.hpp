@@ -272,6 +272,7 @@ public:
     };
     TFile() : Fd(-1) { }
     TFile(int fd) : Fd(fd) { }
+    TFile(TFile &&other) : Fd(other.Fd) { other.SetFd = -1; }
     ~TFile() { Close(); }
     explicit operator bool() const { return Fd >= 0; }
     TError Open(const TPath &path, int flags);

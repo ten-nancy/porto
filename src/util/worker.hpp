@@ -19,34 +19,7 @@ protected:
     std::vector<std::shared_ptr<std::thread>> Threads;
     size_t Seq = 0;
     const std::string Name;
-    const size_t Nr;
-public:
-    TWorker(const std::string &name, size_t nr) : Name(name), Nr(nr) {}
-
-    void Start() {
-        for (size_t i = 0; i < Nr; i++)
-            Threads.push_back(std::shared_ptr<std::thread>(NewThread(&TWorker::WorkerFn, this, Name + std::to_string(i))));
-    }
-
-    void Stop() {
-        if (Valid) {
-            {
-                auto lock = ScopedLock();
-                Valid = false;
-                Cv.notify_all();
-            }
-            for (auto thread : Threads)
-                thread->join();
-            Threads.clear();
-        }
-    }
-
-    void Push(const T &elem) {
-        auto lock = ScopedLock();
-        Queue.push(elem);
-        Seq++;
-        Cv.notify_one();
-    }
+    size_t Nr;
 
     virtual void Wait(TScopedLock &lock) {
         if (!Valid)
@@ -63,8 +36,7 @@ public:
                 Wait(lock);
 
             while (Valid && !Queue.empty()) {
-                T request = Top();
-                Queue.pop();
+                T request = Pop();
 
                 size_t seq = Seq;
                 lock.unlock();
@@ -73,7 +45,7 @@ public:
                 bool haveNewData = seq != Seq;
 
                 if (!handled) {
-                    Queue.push(request);
+                    Queue.push(std::move(request));
                     if (!haveNewData)
                         Wait(lock);
                 }
@@ -81,6 +53,34 @@ public:
         }
     }
 
-    virtual const T &Top() =0;
-    virtual bool Handle(const T &elem) =0;
+    virtual T Pop() =0;
+    virtual bool Handle(T &elem) =0;
+
+public:
+    TWorker(const std::string &name, size_t nr) : Name(name), Nr(nr) {}
+
+    void Start() {
+        for (size_t i = 0; i < Nr; i++)
+            Threads.push_back(std::shared_ptr<std::thread>(NewThread(&TWorker::WorkerFn, this, Name + std::to_string(i))));
+    }
+
+    virtual void Stop() {
+        if (Valid) {
+            {
+                auto lock = ScopedLock();
+                Valid = false;
+                Cv.notify_all();
+            }
+            for (auto thread : Threads)
+                thread->join();
+            Threads.clear();
+        }
+    }
+
+    void Push(T &&elem) {
+        auto lock = ScopedLock();
+        Queue.push(std::move(elem));
+        Seq++;
+        Cv.notify_one();
+    }
 };

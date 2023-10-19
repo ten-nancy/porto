@@ -7,13 +7,13 @@
 #include "client.hpp"
 
 class TEventWorker : public TWorker<TEvent, std::priority_queue<TEvent>> {
-public:
-    TEventWorker(const size_t nr) : TWorker("portod-EV", nr), client("<event>") {}
-
+protected:
     TClient client;
 
-    const TEvent &Top() override {
-        return Queue.top();
+    TEvent Pop() override {
+        auto request = Queue.top();
+        Queue.pop();
+        return request;
     }
 
     void Wait(TScopedLock &lock) override {
@@ -24,16 +24,16 @@ public:
 
         if (Queue.size()) {
             auto now = GetCurrentTimeMs();
-            if (Top().DueMs <= now)
+            if (Queue.top().DueMs <= now)
                 return;
-            auto timeout = Top().DueMs - now;
+            auto timeout = Queue.top().DueMs - now;
             Cv.wait_for(lock, std::chrono::milliseconds(timeout));
         } else {
             TWorker::Wait(lock);
         }
     }
 
-    bool Handle(const TEvent &event) override {
+    bool Handle(TEvent &event) override {
         if (event.DueMs <= GetCurrentTimeMs()) {
             client.ClientContainer = RootContainer;
             client.StartRequest();
@@ -44,6 +44,9 @@ public:
 
         return false;
     }
+
+public:
+    TEventWorker(const size_t nr) : TWorker("portod-EV", nr), client("<event>") {}
 };
 
 std::string TEvent::GetMsg() const {
@@ -78,7 +81,7 @@ bool TEvent::operator<(const TEvent& rhs) const {
 void TEventQueue::Add(uint64_t timeoutMs, const TEvent &e) {
     TEvent copy = e;
     copy.DueMs = GetCurrentTimeMs() + timeoutMs;
-    Worker->Push(copy);
+    Worker->Push(std::move(copy));
 }
 
 TEventQueue::TEventQueue() {

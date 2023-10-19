@@ -220,7 +220,7 @@ def get_random_dir(base):
         else:
             result += select_by_weight( [
                 (1, create_dir(result, get_random_str(DIRNAME_LIMIT))),
-                (2, "/" + subdirs[randint(0,len(subdirs) - 1)]) 
+                (2, "/" + subdirs[randint(0,len(subdirs) - 1)])
             ])
 
     return result
@@ -962,7 +962,7 @@ def cleanup_fuzzer():
 
     if (os.path.ismount(FUZZER_MNT)):
         subprocess.check_call(["umount", '-l', FUZZER_MNT])
-        subprocess.call('losetup -a | grep "{}/" | cut -d: -f 1 | xargs losetup -d'.format(FUZZER_MNT), shell=True)
+        subprocess.call('losetup -a | grep "{}/" | cut -d: -f 1 | xargs -r losetup -d'.format(FUZZER_MNT), shell=True)
 
     if (os.path.exists(FUZZER_MNT)):
         os.rmdir(FUZZER_MNT)
