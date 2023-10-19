@@ -46,6 +46,7 @@ void MeasuredMutex::lock() {
 }
 
 std::unique_lock<std::mutex> MeasuredMutex::UniqueLock() {
+    LockTimer timer(Name);
     return std::unique_lock<std::mutex>(*this);
 }
 
