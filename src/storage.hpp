@@ -32,6 +32,8 @@ public:
 
     static TError CheckName(const std::string &name, bool meta=false);
     static TError CheckPlace(const TPath &place);
+    static TError CheckBaseDirectory(const TPath &place, EStorageType type, unsigned perms);
+    static TError Cleanup(const TPath &place, EStorageType type);
     static TError SanitizeLayer(const TPath &layer);
     TError List(enum EStorageType type, std::list<TStorage> &list);
     TError ImportArchive(const TPath &archive, const std::string &cgroup, const std::string &compress = "",
@@ -41,7 +43,7 @@ public:
     bool Weak() const;
     uint64_t LastUsage() const;
     TError Load();
-    TError Remove(bool weak = false, bool enable_async = true, bool async_layer = false); // async_layer will be deleted soon
+    TError Remove(bool weak = false, bool async = false);
     TError Touch();
     TError SaveOwner(const TCred &owner);
     TError SetPrivate(const std::string &text);
@@ -58,8 +60,6 @@ public:
     static void DecPlaceLoad(const TPath &place);
 
 private:
-    static TError CheckBaseDirectory(const TPath &place, const TPath &base, unsigned perms);
-    static TError Cleanup(const TPath &place, EStorageType type, unsigned perms);
     TPath TempPath(const std::string &kind);
     TError CheckUsage();
 };

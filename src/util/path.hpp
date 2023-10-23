@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <atomic>
 
 #include "util/error.hpp"
 #include "util/cred.hpp"
@@ -189,6 +190,7 @@ public:
     TError Rmdir() const;
     TError Unlink() const;
     TError RemoveAll() const;
+    TError RemoveAllInterruptible(std::atomic_bool &interrupt) const;
     TError ClearEmptyDirectories(const TPath &root) const;
     TError Rename(const TPath &dest) const;
     TError ReadDirectory(std::vector<std::string> &result) const;

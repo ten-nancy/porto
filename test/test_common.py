@@ -29,8 +29,8 @@ def Catch(func, *args, **kwargs):
         return sys.exc_info()[0]
     return None
 
-def Expect(a):
-    assert a, "condition does not hold"
+def Expect(a, message="condition does not hold"):
+    assert a, message
 
 def ExpectEq(a, b):
     assert a == b, "{} should be equal {}".format(a, b)

@@ -168,7 +168,6 @@ static void DefaultConfig() {
 
     volumes->set_fs_stat_update_interval_ms(60000);
     volumes->set_async_remove_watchdog_ms(5000);
-    volumes->set_async_remove_storage(false);
 
     auto* network = cfg.mutable_network();
 

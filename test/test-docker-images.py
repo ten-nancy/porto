@@ -41,12 +41,10 @@ def check_image(image, digest, tags):
 
 
 def check_storage_is_empty():
-    Expect(os.path.exists("{}/{}".format(STORAGE_PATH, "tags")))
-    Expect(not os.path.exists("{}/{}".format(STORAGE_PATH, "tags/*")))
-    Expect(os.path.exists("{}/{}".format(STORAGE_PATH, "images")))
-    Expect(not os.path.exists("{}/{}".format(STORAGE_PATH, "images/*")))
-    Expect(os.path.exists("{}/{}".format(STORAGE_PATH, "layers")))
-    Expect(not os.path.exists("{}/{}".format(STORAGE_PATH, "layers/*")))
+    for x in ("tags", "images", "layers"):
+        Expect(os.path.exists("{}/{}".format(STORAGE_PATH, x)))
+        xs = os.listdir("{}/{}".format(STORAGE_PATH, x))
+        Expect(not xs, message="{}: {}".format(x, "; ".join(xs)))
 
 
 # api

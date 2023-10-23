@@ -3092,21 +3092,14 @@ TError TVolume::DestroyOne() {
 
     if (!KeepStorage && !RemoteStorage() && StoragePath.Exists()) {
         if (!UserStorage()) {
-            error = RemoveRecursive(StoragePath);
+            error = StoragePath.RemoveAll();
             if (error) {
-                L_VERBOSE("Cannot remove storage {}: {}", StoragePath, error);
-                error = StoragePath.RemoveAll();
-                if (error) {
-                    L_WRN("Cannot remove storage {}: {}", StoragePath, error);
-                    if (!ret)
-                        ret = error;
-                }
+                L_WRN("Cannot remove storage {}: {}", StoragePath, error);
+                if (!ret)
+                    ret = error;
             }
         } else {
             /* File image storage for backend=loop always persistent. */
-            error = ClearRecursive(StoragePath);
-            if (error)
-                L_VERBOSE("Cannot clear storage {}: {}", StoragePath, error);
             error = StoragePath.ClearDirectory();
             if (error) {
                 L_WRN("Cannot clear storage {}: {}", StoragePath, error);
@@ -3116,19 +3109,20 @@ TError TVolume::DestroyOne() {
         }
     }
 
-    if (IsAutoPath && Path.Exists()) {
-        error = Path.RemoveAll();
+    if (internal.Exists()) {
+        error = internal.RemoveAll();
         if (error) {
-            L_ERR("Cannot remove volume path: {}", error);
+            L_ERR("Cannot remove internal: {}", error);
             if (!ret)
                 ret = error;
         }
     }
 
-    if (internal.Exists()) {
-        error = internal.RemoveAll();
+    if (IsAutoPath && Path.Exists()) {
+        L_WRN("Rogue path {} internal {}", Path, internal);
+        error = Path.RemoveAll();
         if (error) {
-            L_ERR("Cannot remove internal: {}", error);
+            L_ERR("Cannot remove volume path: {}", error);
             if (!ret)
                 ret = error;
         }
@@ -4244,13 +4238,9 @@ next_link:
             if (error)
                 L_ERR("Cannot umount nested : {}", error);
 
-            error = RemoveRecursive(dir);
-            if (error) {
-                L_VERBOSE("Cannot remove {}: {}", dir, error);
-                error = dir.RemoveAll();
-                if (error)
-                    L_WRN("Cannot remove {}: {}", dir, error);
-            }
+            error = dir.RemoveAll();
+            if (error)
+                L_WRN("Cannot remove {}: {}", dir, error);
         }
     }
 

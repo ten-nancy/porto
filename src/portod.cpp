@@ -756,13 +756,9 @@ static void CleanupWorkdir() {
                 it->second->State != EContainerState::Stopped)
             continue;
         TPath path = temp / name;
-        error = RemoveRecursive(path);
-        if (error) {
-            L_VERBOSE("Cannot remove workdir {}: {}", path, error);
-            error = path.RemoveAll();
-            if (error)
-                L_WRN("Cannot remove workdir {}: {}", path, error);
-        }
+        error = path.RemoveAll();
+        if (error)
+            L_WRN("Cannot remove workdir {}: {}", path, error);
     }
 }
 

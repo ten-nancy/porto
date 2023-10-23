@@ -25,7 +25,6 @@ static const char LAYER_TMP[] = "_tmp_";
 static const char WEAK_PREFIX[] = "_weak_";
 static const char IMPORT_PREFIX[] = "_import_";
 static const char REMOVE_PREFIX[] = "_remove_";
-static const char ASYNC_REMOVE_PREFIX[] = "_asyncremove_";
 static const char PRIVATE_PREFIX[] = "_private_";
 static const char META_PREFIX[] = "_meta_";
 static const char META_LAYER[] = "_layer_";
@@ -66,47 +65,66 @@ static inline std::unique_lock<std::mutex> LockPlaces() {
 }
 
 
+static TPath getStorageBase(const TPath &place, EStorageType type) {
+    switch (type) {
+    case EStorageType::Volume:
+        return place / PORTO_VOLUMES;
+    case EStorageType::Layer:
+        return place / PORTO_LAYERS;
+    case EStorageType::Storage:
+        return place / PORTO_STORAGE;
+    case EStorageType::DockerLayer:
+        return place / PORTO_DOCKER;
+    case EStorageType::Meta:
+        return place;
+    default:
+        return TPath();
+    }
+}
+
+static unsigned getPermission(EStorageType type) {
+    switch (type) {
+    case EStorageType::Volume:
+        return 0755;
+    default:
+        return 0700;
+    }
+}
+
 void AsyncRemoveWatchDog() {
-    static const char *storage_types[] = {PORTO_LAYERS, PORTO_STORAGE, PORTO_VOLUMES};
     TError error;
 
+    SetProcessName("portod-AR");
+
+    auto period = std::chrono::milliseconds(AsyncRemoveWatchDogPeriod);
+
     while (!NeedStopHelpers) {
+        auto until = std::chrono::steady_clock::now() + period;
         auto placesLock = LockPlaces();
         const auto places = Places;
         placesLock.unlock();
 
         for (const auto &place : places) {
-            for (const auto &storage_type : storage_types) {
-                TPath base = place / storage_type;
-
-                std::vector<std::string> list;
-
-                error = base.ReadDirectory(list);
-                if (error)
-                    continue;
-
-                for (auto &name: list) {
-                    if (!StringStartsWith(name, ASYNC_REMOVE_PREFIX))
-                        continue;
-
-                    TPath path = base / name;
-
-                    TFile dirent;
-                    if (!dirent.OpenDir(path))
-                        path = dirent.RealPath();
-
-                    error = RemoveRecursive(path);
-                    if (error)
-                        L_ERR("Can not async remove {}: {}", storage_type, error);
-
-                    if (NeedStopHelpers)
-                        return;
+            for (auto type : {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
+                error = TStorage::Cleanup(place, type);
+                if (error) {
+                    L_ERR("Cleanup place {} failed: {}", getStorageBase(place, type), error);
+                    error = TStorage::CheckBaseDirectory(place, type, getPermission(type));
+                    if (error) {
+                        L_ERR("Check place {} failed: {}", getStorageBase(place, type), error);
+                        auto placesLock = LockPlaces();
+                        Places.erase(place);
+                    }
                 }
+                if (NeedStopHelpers)
+                    return;
             }
+            if (NeedStopHelpers)
+                return;
         }
 
         auto asyncRemoverLock = LockAsyncRemover();
-        AsyncRemoverCv.wait_for(asyncRemoverLock, std::chrono::milliseconds(AsyncRemoveWatchDogPeriod));
+        AsyncRemoverCv.wait_until(asyncRemoverLock, until);
     }
 }
 
@@ -168,7 +186,7 @@ void TStorage::Init() {
     if (StringToUintMap(config().volumes().place_load_limit(), PlaceLoadLimit))
         PlaceLoadLimit = {{"default", 1}};
 
-    Places.insert("/place");
+    CheckPlace(PORTO_PLACE);
     AsyncRemoveWatchDogPeriod = config().volumes().async_remove_watchdog_ms();
     AsyncRemoveThread = std::unique_ptr<std::thread>(NewThread(&AsyncRemoveWatchDog));
 }
@@ -201,10 +219,12 @@ void TStorage::DecPlaceLoad(const TPath &place) {
     StorageCv.notify_all();
 }
 
-TError TStorage::CheckBaseDirectory(const TPath &place, const TPath &base, unsigned perms) {
+TError TStorage::CheckBaseDirectory(const TPath &place, EStorageType type, unsigned perms) {
     TError error;
     bool default_place = false;
     struct stat st;
+
+    auto base = getStorageBase(place, type);
 
     if (place == PORTO_PLACE)
         default_place = true;
@@ -254,38 +274,9 @@ TError TStorage::CheckBaseDirectory(const TPath &place, const TPath &base, unsig
 }
 
 /* FIXME racy. rewrite with openat... etc */
-TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) {
-    TPath base;
-    struct stat st;
+TError TStorage::Cleanup(const TPath &place, EStorageType type) {
     TError error;
-
-    switch (type) {
-    case EStorageType::Volume:
-        base = place / PORTO_VOLUMES;
-        break;
-    case EStorageType::Layer:
-        base = place / PORTO_LAYERS;
-        break;
-    case EStorageType::DockerLayer:
-        return OK;
-    case EStorageType::Storage:
-        base = place / PORTO_STORAGE;
-        break;
-    case EStorageType::Meta:
-        base = place;
-        break;
-    case EStorageType::Place:
-        break;
-    }
-
-    error = CheckBaseDirectory(place, base, perms);
-    if (error)
-        return error;
-
-    // Here base has been created in CheckBaseDirectory() or by user
-    error = base.StatStrict(st);
-    if (error)
-        return error;
+    TPath base = getStorageBase(place, type);
 
     std::vector<std::string> list;
     error = base.ReadDirectory(list);
@@ -293,14 +284,11 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
         return error;
 
     for (auto &name: list) {
-        if (StringStartsWith(name, ASYNC_REMOVE_PREFIX))
-            continue;
-
         TPath path = base / name;
 
         if (type == EStorageType::Storage && path.IsDirectoryStrict() &&
                 StringStartsWith(name, META_PREFIX)) {
-            error = Cleanup(path, EStorageType::Meta, 0700);
+            error = Cleanup(path, EStorageType::Meta);
             if (error)
                 L_WRN("Cannot cleanup metastorage {} {}", path, error);
             continue;
@@ -341,31 +329,12 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type, unsigned perms) 
             continue;
         }
 
-        std::string async_kind;
-        bool is_async_type = (type != EStorageType::Meta && type != EStorageType::Place);
-        if (is_async_type)
-            async_kind = ASYNC_REMOVE_PREFIX + std::to_string(RemoveCounter++);
-
         lock.unlock();
 
-        if (is_async_type) {
-            /* Rename original path (not real path in case of symlinks) to remove it later in AsyncRemoveWatchDog */
-            TPath original_path = base / name;
-            TPath async_path = base / async_kind + name;
-
-            error = original_path.Rename(async_path);
-            if (!error)
-                continue;
-        }
-
-        L_ACT("Sync remove junk: {}", path);
-        error = RemoveRecursive(path);
-        if (error) {
-            L_VERBOSE("Cannot remove junk {}: {}", path, error);
-            error = path.RemoveAll();
-            if (error)
-                L_WRN("Cannot remove junk {}: {}", path, error);
-        }
+        L_ACT("Remove junk: {}", path);
+        error = path.RemoveAllInterruptible(NeedStopHelpers);
+        if (error)
+            L_WRN("Cannot remove junk {}: {}", path, error);
     }
 
     return OK;
@@ -383,20 +352,21 @@ TError TStorage::CheckPlace(const TPath &place) {
     if (IsSystemPath(place))
         return TError(EError::InvalidPath, "Place path {} in system directory", place);
 
-    error = Cleanup(place, EStorageType::Volume, 0755);
-    if (error)
-        return error;
+    auto lockPlaces = LockPlaces();
+    auto found = Places.find(place) != Places.end();
+    lockPlaces.unlock();
 
-    error = Cleanup(place, EStorageType::Layer, 0700);
-    if (error)
-        return error;
+    if (found)
+        return OK;
 
-    error = Cleanup(place, EStorageType::Storage, 0700);
-    if (error)
-        return error;
+    for (auto type : {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
+        error = CheckBaseDirectory(place, type, getPermission(type));
+        if (error)
+            return error;
+    }
 
     if (config().daemon().docker_images_support()) {
-        error = CheckBaseDirectory(place, place / PORTO_DOCKER, 0700);
+        error = CheckBaseDirectory(place, EStorageType::DockerLayer, 0700);
         if (error)
             return error;
 
@@ -405,7 +375,7 @@ TError TStorage::CheckPlace(const TPath &place) {
             return error;
     }
 
-    auto lockPlaces = LockPlaces();
+    lockPlaces = LockPlaces();
     Places.insert(place);
     lockPlaces.unlock();
 
@@ -428,7 +398,6 @@ TError TStorage::CheckName(const std::string &name, bool meta) {
             StringStartsWith(name, LAYER_TMP) ||
             StringStartsWith(name, IMPORT_PREFIX) ||
             StringStartsWith(name, REMOVE_PREFIX) ||
-            StringStartsWith(name, ASYNC_REMOVE_PREFIX) ||
             StringStartsWith(name, PRIVATE_PREFIX) ||
             StringStartsWith(name, META_PREFIX) ||
             StringStartsWith(name, META_LAYER))
@@ -1081,10 +1050,9 @@ TError TStorage::ExportArchive(const TPath &archive, const std::string &compress
     return error;
 }
 
-TError TStorage::Remove(bool weak, bool enable_async, bool async_layer) {
+TError TStorage::Remove(bool weak, bool async) {
     TPath temp;
     TError error;
-    bool async = enable_async ? async_layer || config().volumes().async_remove_storage() : false;
 
     error = CheckName(Name);
     if (error)
@@ -1116,7 +1084,7 @@ TError TStorage::Remove(bool weak, bool enable_async, bool async_layer) {
     }
 
     TFile temp_dir;
-    temp = TempPath((async ? ASYNC_REMOVE_PREFIX : REMOVE_PREFIX) + std::to_string(RemoveCounter++));
+    temp = TempPath(REMOVE_PREFIX + std::to_string(RemoveCounter++));
 
     // We don't have to use active paths, because async temp files are skipped by Cleanup
     error = Path.Rename(temp);
@@ -1144,13 +1112,9 @@ TError TStorage::Remove(bool weak, bool enable_async, bool async_layer) {
     }
 
     if (!async) {
-        error = RemoveRecursive(temp);
-        if (error) {
-            L_VERBOSE("Cannot remove storage {}: {}", temp, error);
-            error = temp.RemoveAll();
-            if (error)
-                L_WRN("Cannot remove storage {}: {}", temp, error);
-        }
+        error = temp.RemoveAll();
+        if (error)
+            L_WRN("Cannot remove storage {}: {}", temp, error);
     }
 
     DecPlaceLoad(Place);

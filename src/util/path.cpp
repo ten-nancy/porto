@@ -15,6 +15,7 @@ extern "C" {
 #include <sys/statvfs.h>
 #include <sys/time.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <sys/prctl.h>
 #include <linux/limits.h>
 #include <linux/falloc.h>
@@ -28,6 +29,58 @@ extern "C" {
 #endif
 
 constexpr off_t ROTATE_OFFSET_LIMIT = 16384; // 16Kb
+
+static __thread std::atomic_bool *StopNftw;
+
+static int nftw_clear_cb(const char *path, const struct stat *, int tflag, struct FTW* ftwbuf) {
+    if (ftwbuf->level == 0)
+        return 0;
+    if (StopNftw && *StopNftw) {
+        errno = EINTR;
+        return -1;
+    }
+    switch (tflag) {
+    case FTW_D:
+    case FTW_DNR:
+    case FTW_DP:
+        return rmdir(path);
+    default:
+        return unlink(path);
+    }
+}
+
+static TError ClearRecursive(const TPath &path, std::atomic_bool *interrupt = nullptr) {
+    StopNftw = interrupt;
+    int ret = nftw(path.c_str(), nftw_clear_cb, 1024, FTW_DEPTH|FTW_MOUNT|FTW_PHYS);
+    StopNftw = nullptr;
+    if (ret)
+        return TError::System("nftw failed");
+    return OK;
+}
+
+static int nftw_remove_cb(const char *path, const struct stat *, int tflag, struct FTW *) {
+    if (StopNftw && *StopNftw) {
+        errno = EINTR;
+        return -1;
+    }
+    switch (tflag) {
+    case FTW_D:
+    case FTW_DNR:
+    case FTW_DP:
+        return rmdir(path);
+    default:
+        return unlink(path);
+    }
+}
+
+static TError RemoveRecursive(const TPath &path, std::atomic_bool *interrupt = nullptr) {
+    StopNftw = interrupt;
+    int ret = nftw(path.c_str(), nftw_remove_cb, 1024, FTW_DEPTH|FTW_MOUNT|FTW_PHYS);
+    StopNftw = nullptr;
+    if (ret)
+        return TError::System("nftw failed");
+    return OK;
+}
 
 void TStatFS::Init(const struct statfs &st) {
     SpaceUsage = (uint64_t)(st.f_blocks - st.f_bfree) * st.f_bsize;
@@ -571,36 +624,11 @@ TError TPath::Rmdir() const {
  * Works only on one filesystem and aborts if sees mountpint.
  */
 TError TPath::ClearDirectory() const {
-    TFile dir;
-    TError error = dir.OpenDirStrict(*this);
-    if (error)
-        return error;
-    return dir.ClearDirectory();
+    return ClearRecursive(*this);
 }
 
 TError TFile::ClearDirectory() const {
-    TPathWalk walk;
-    TError error;
-
-    error = Chdir();
-    if (error)
-        return error;
-
-    error = walk.OpenNoStat(".");
-    while (!error) {
-        error = walk.Next();
-        if (error || !walk.Path)
-            break;
-        if (walk.Directory) {
-            if (!walk.Postorder || walk.Path == ".")
-                continue;
-            error = RmdirAt(walk.Path);
-        } else
-            error = UnlinkAt(walk.Path);
-    }
-
-    (void)TPath("/").Chdir();
-    return error;
+    return RealPath().ClearDirectory();
 }
 
 TError TFile::RemoveAt(const TPath &path) const {
@@ -611,21 +639,17 @@ TError TFile::RemoveAt(const TPath &path) const {
     if (error) {
         error = UnlinkAt(path);
     } else {
-        error = dir.ClearDirectory();
-        if (!error)
-            error = RmdirAt(path);
+        error = RemoveRecursive(dir.RealPath());
     }
     return error;
 }
 
 TError TPath::RemoveAll() const {
-    if (IsDirectoryStrict()) {
-        TError error = ClearDirectory();
-        if (error)
-            return error;
-        return Rmdir();
-    }
-    return Unlink();
+    return RemoveRecursive(*this);
+}
+
+TError TPath::RemoveAllInterruptible(std::atomic_bool &interrupt) const {
+    return RemoveRecursive(*this, &interrupt);
 }
 
 TError TPath::ClearEmptyDirectories(const TPath &root) const {
