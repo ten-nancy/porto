@@ -1007,14 +1007,14 @@ TError TPath::Umount(uint64_t flags) const {
     return TError::System("umount2({}, {})", Path, UmountFlagsToString(flags));
 }
 
-TError TPath::UmountAll() const {
+TError TPath::UmountAll(int flags) const {
     L_ACT("umount all {}", Path);
     while (1) {
-        if (umount2(c_str(), UMOUNT_NOFOLLOW)) {
+        if (umount2(c_str(), UMOUNT_NOFOLLOW | flags)) {
             if (errno == EINVAL || errno == ENOENT)
                 return OK; /* not a mountpoint */
             if (errno == EBUSY)
-                umount2(c_str(), UMOUNT_NOFOLLOW | MNT_DETACH);
+                umount2(c_str(), UMOUNT_NOFOLLOW | MNT_DETACH | flags);
             else
                 return TError::System("umount2(" + Path + ")");
         }

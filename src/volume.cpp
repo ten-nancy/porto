@@ -156,7 +156,7 @@ protected:
             return true;
         }
 
-        error = req.path.Umount(UMOUNT_NOFOLLOW|MNT_DETACH);
+        error = req.path.UmountAll(MNT_DETACH);
         if (error) {
             req.promise.set_value(error);
             return true;

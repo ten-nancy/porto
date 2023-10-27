@@ -216,7 +216,7 @@ public:
     TError Remount(uint64_t flags) const;
     TError BindRemount(const TPath &source, uint64_t flags) const;
     TError Umount(uint64_t flags) const;
-    TError UmountAll() const;
+    TError UmountAll(int flags = 0) const;
     TError UmountNested() const;
 
     TError ReadAll(std::string &text, size_t max = 1048576) const;

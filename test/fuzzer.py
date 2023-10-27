@@ -75,7 +75,13 @@ def attach_to_cgroup(dst, pid, move_all=False):
     if not PORTO_KERNEL_PID:
         return
 
-    cgroups = open("/proc/%s/cgroup" % dst).readlines()
+    # race can be here dst might be destroyed concurrently
+    try:
+        cgroups = open("/proc/%s/cgroup" % dst).readlines()
+    except Exception as e:
+        print("open(/proc/{}/cgroup) fail: {}".format(dst, e))
+        return
+
     if not move_all:
         cgroups = [cgroups[randint(0, len(cgroups) - 1)]]
     for cgroup in cgroups:
