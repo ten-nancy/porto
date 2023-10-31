@@ -19,6 +19,9 @@ bool Debug = false;
 
 __thread char ReqId[9];
 
+// TODO(ovov): kill me
+__thread bool DisableLogging = false;
+
 TStatistics *Statistics = nullptr;
 std::map<std::string, TStatistic> PortoStatMembers;
 
@@ -155,6 +158,9 @@ void OpenLog(const TPath &path) {
 }
 
 void WriteLog(const char *prefix, const std::string &log_msg) {
+    // TODO(ovov): kill me
+    if (DisableLogging)
+        return;
     std::string reqIdMsg = strlen(ReqId) ? fmt::format("[{}]", ReqId) : "";
 
     struct timespec ts;

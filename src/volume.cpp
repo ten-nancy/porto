@@ -148,7 +148,9 @@ protected:
         TFile pin;
         TError error;
 
-        L_ACT("async umount {}", req.path);
+        // TODO(ovov); kill me
+        DisableLogging = true;
+
         // pin path to prevent actual umount and force detach only
         error = pin.OpenDir(req.path);
         if (error) {
@@ -187,6 +189,8 @@ public:
 } AsyncUmounter("portod-AU");
 
 TError AsyncUmount(const TPath &path) {
+    L_ACT("async umount {}", path);
+
     auto fut = AsyncUmounter.AsyncUmount(path);
     if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
         L_ERR("async umount timeout");
@@ -204,7 +208,7 @@ TError StartAsyncUmounter() {
             p.set_value(TError::System("unshare(CLONE_FILES) failed:"));
             return;
         }
-        TFile::CloseAllExcept({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, LogFile.Fd});
+        TFile::CloseAllExcept({});
 
         PinCloser.Start(2 * config().daemon().vl_threads());
         AsyncUmounter.Start(config().daemon().vl_threads());
@@ -3109,20 +3113,19 @@ TError TVolume::DestroyOne() {
         }
     }
 
-    if (internal.Exists()) {
-        error = internal.RemoveAll();
+    if (IsAutoPath && Path.Exists()) {
+        error = Path.RemoveAll();
         if (error) {
-            L_ERR("Cannot remove internal: {}", error);
+            L_ERR("Cannot remove volume path: {}", error);
             if (!ret)
                 ret = error;
         }
     }
 
-    if (IsAutoPath && Path.Exists()) {
-        L_WRN("Rogue path {} internal {}", Path, internal);
-        error = Path.RemoveAll();
+    if (internal.Exists()) {
+        error = internal.RemoveAll();
         if (error) {
-            L_ERR("Cannot remove volume path: {}", error);
+            L_ERR("Cannot remove internal: {}", error);
             if (!ret)
                 ret = error;
         }
