@@ -1,6 +1,23 @@
+porto (5.3.27) unstable; urgency=low
+  [ conquistador ]
+      porto: allow unknown fields in config
+      test: fix fuzzer.py
+      porto: export hfsc burst_duration to config
+      porto: fix gcc-13 build
+  [ ovov ]
+      volume: cleanup optimizations
+      volume: async umount of ephemeral overlay volumes
+      mutex: measure MeasuredMutex::UniqueLock
+      rpc: do not take action lock in ListContainersBy
+  [ reshilkin ]
+      porto: errors handling in json parsing
+      porto: add library for prometheus serialization
+  last commit: d1b956a814928e5954a211e54f6eb9af17ad9469
+
+ -- Porto Team <porto@yandex-team.ru>  Tue, 31 Oct 2023 10:15:32 -0000
+
 porto (5.3.26) unstable; urgency=low
   [ kndrvt ]
-      volume: remove VolumesLock for ListVolumes with exact path
       container: skip cpu shares applying with cpu.idle
       http: fix uri parsing
   [ ovov ]
@@ -15,7 +32,7 @@ porto (5.3.26) unstable; urgency=low
       container: apply SYS_ADMIN extra property regardless manual capabilities set
   [ reshilkin ]
       container: always add pids controller on first level
-  last commit: 86d443fbf738695fa299c8cfb2b67664fc9a0370
+  last commit: af3eb4357995e1fd76abb538beb653d9168dec5d
 
  -- Porto Team <porto@yandex-team.ru>  Thu, 28 Sep 2023 16:40:39 -0000
 
