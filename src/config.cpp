@@ -3,9 +3,14 @@
 #include "util/log.hpp"
 #include "util/namespace.hpp"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <google/protobuf/text_format.h>
 #include <google/protobuf/io/tokenizer.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
+
+#pragma GCC diagnostic pop
 
 #include <algorithm>
 
@@ -248,6 +253,10 @@ static TError ReadConfig(const TPath &path, bool silent) {
         L_SYS("Read config {}", path);
         parser.RecordErrorsTo(&logger);
     }
+
+#if GOOGLE_PROTOBUF_VERSION >= 3008000
+    parser.AllowUnknownField(true);
+#endif
 
     bool ok = parser.Merge(&stream, &Config);
     if (!ok && !silent)

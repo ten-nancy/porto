@@ -4,15 +4,16 @@ include_directories(${util_SOURCE_DIR})
 include_directories(${libporto_SOURCE_DIR})
 include_directories(${porto_SOURCE_DIR})
 include_directories(${porto_BINARY_DIR})
+include_directories(${PROTOBUF_INCLUDE_DIRS})
 
 add_executable(portotest portotest.cpp test.cpp selftest.cpp stresstest.cpp)
-target_link_libraries(portotest nlohmann-safe version porto util config pthread rt fmt ${PB} ${LIBNL} ${LIBNL_ROUTE})
+target_link_libraries(portotest nlohmann-safe version porto util config pthread rt fmt ${PROTOBUF_STATIC_LIBRARY} ${LIBNL} ${LIBNL_ROUTE})
 set_target_properties(portotest PROPERTIES LINK_FLAGS "-pthread")
 
 add_executable(mem_touch mem_touch.c)
 
 add_executable(hijack hijack.cpp)
-target_link_libraries(hijack porto pthread fmt ${PB})
+target_link_libraries(hijack porto pthread fmt ${PROTOBUF_STATIC_LIBRARY})
 
 macro(ADD_PYTHON_TEST NAME)
          add_test(NAME ${NAME}

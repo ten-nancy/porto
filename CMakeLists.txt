@@ -21,6 +21,7 @@ OPTION(USE_SYSTEM_LIBNL "Use system libnl" ON)
 OPTION(USE_SYSTEM_LIBZ "Use system libz" ON)
 OPTION(USE_SYSTEM_LIBELF "Use system libelf" ON)
 OPTION(USE_SYSTEM_LIBBPF "Use system libbpf" ON)
+OPTION(USE_SYSTEM_PROTOBUF "Use system protobuf" OFF)
 OPTION(ENABLE_ASAN "Enables address sanitizer" OFF)
 OPTION(ENABLE_GCOV "Enables coverage" OFF)
 OPTION(USE_CLANG "Compile with clang" OFF)
@@ -158,11 +159,47 @@ else()
 	set(LIBBPF ${INSTALL_DIR}/usr/lib64/libbpf.a)
 endif()
 
-find_library(PB NAMES libprotobuf.a)
+# note: we need system protobuf anyway to generate compatible *.py files
+#
+# cmake note:
+# Changed in version 3.6: All input and output variables use the Protobuf_ prefix.
+# Variables with PROTOBUF_ prefix are still supported for compatibility.
 find_package(Protobuf REQUIRED)
+
+if(${USE_SYSTEM_PROTOBUF})
+	find_library(PROTOBUF_STATIC_LIBRARY NAMES libprotobuf.a)
+	add_custom_target(libprotobuf) # dummy target
+else()
+	if(NOT LIBPROTOBUF_TGZ_URL)
+		set(LIBPROTOBUF_TGZ_URL "https://github.com/protocolbuffers/protobuf/archive/refs/tags/v3.12.4.tar.gz")
+	endif()
+
+	ExternalProject_Add(
+		libprotobuf
+		URL ${LIBPROTOBUF_TGZ_URL}
+		URL_MD5 0f29b5c4a0d1903ba59606d37ddde318
+		BUILD_IN_SOURCE 1
+		CONFIGURE_COMMAND ./autogen.sh COMMAND ./configure --prefix=<INSTALL_DIR>
+		INSTALL_COMMAND $(MAKE) -C <SOURCE_DIR>/src install
+	)
+
+	ExternalProject_Get_Property(libprotobuf INSTALL_DIR)
+	# note: override all PROTOBUF_* vars (see FindProtobuf)
+	set(PORTO_PROTOC_EXECUTABLE ${INSTALL_DIR}/bin/protoc)
+	set(PROTOBUF_INCLUDE_DIRS ${INSTALL_DIR}/include/)
+	# use static protobuf libs to prevent linking with custom one and run with system one
+	set(PROTOBUF_LIBRARY ${INSTALL_DIR}/lib/libprotobuf.a)
+	set(PROTOBUF_LIBRARIES ${INSTALL_DIR}/lib/libprotobuf.a)
+	set(PROTOBUF_STATIC_LIBRARY ${INSTALL_DIR}/lib/libprotobuf.a)
+endif()
+
 # FindProtobuf requires only the libraries to be present
+if(NOT PROTOBUF_STATIC_LIBRARY)
+	message(FATAL_ERROR "Cannot find find protobuf static library")
+endif()
+
 if(NOT PROTOBUF_PROTOC_EXECUTABLE)
-	message(FATAL_ERROR "Couldn't find protoc executable.")
+	message(FATAL_ERROR "Cannot find find protoc executable")
 endif()
 
 find_package(Curses REQUIRED)
