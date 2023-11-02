@@ -3757,6 +3757,39 @@ err:
     return error;
 }
 
+TError TNetEnv::RunNetworkIfUpScript(TContainer &ct) {
+    if (config().network().network_ifup_script().empty()) {
+        return OK;
+    }
+
+    std::vector<std::string> env;
+
+    env.emplace_back("PORTO_CONTAINER=" + ct.Name);
+    env.emplace_back("PORTO_LABELS=" + StringMapToString(ct.Labels));
+
+    env.emplace_back("PORTO_NET=" + MergeEscapeStrings(ct.NetProp, ' ', ';'));
+    env.emplace_back("PORTO_IP=" + MergeEscapeStrings(ct.IpList, ' ', ';'));
+    std::string value;
+    (void)UintMapToString(ct.NetClass.TxLimit, value);
+    env.emplace_back("PORTO_NET_LIMIT=" + value);
+    (void)UintMapToString(ct.NetClass.RxLimit, value);
+    env.emplace_back("PORTO_NET_RX_LIMIT=" + value);
+
+    for (auto &d: Devices) {
+        if (d.PeerName.find("L3-") != std::string::npos) {
+            env.emplace_back("PORTO_L3_IFACE=" + d.PeerName);
+            break;
+        }
+    }
+
+    env.emplace_back("PORTO_NETNS_FD=/proc/" + std::to_string(GetPid()) +
+                     "/fd/" + std::to_string(NetNs.GetFd()));
+    // Return error if helper script exits with non-zero exit code.
+    // Client should receive an error creating slot container and may try to re-create the container.
+    // No silent misconfiguration will happen.
+    return RunCommand({config().network().network_ifup_script()}, env);
+}
+
 TError TNetEnv::Parse(TContainer &ct) {
     TError error;
 
@@ -3873,35 +3906,8 @@ TError TNetEnv::OpenNetwork(TContainer &ct) {
             error = SetupInterfaces();
         if (!error)
             error = ApplySysctl();
-
-        if (!error && !config().network().network_ifup_script().empty()) {
-            std::vector<std::string> env;
-
-            env.emplace_back("PORTO_CONTAINER=" + ct.Name);
-            env.emplace_back("PORTO_LABELS=" + StringMapToString(ct.Labels));
-
-            env.emplace_back("PORTO_NET=" + MergeEscapeStrings(ct.NetProp, ' ', ';'));
-            env.emplace_back("PORTO_IP=" + MergeEscapeStrings(ct.IpList, ' ', ';'));
-            std::string value;
-            (void)UintMapToString(ct.NetClass.TxLimit, value);
-            env.emplace_back("PORTO_NET_LIMIT=" + value);
-            (void)UintMapToString(ct.NetClass.RxLimit, value);
-            env.emplace_back("PORTO_NET_RX_LIMIT=" + value);
-
-            for (auto &d: Devices) {
-                if (d.PeerName.find("L3-") != std::string::npos) {
-                    env.emplace_back("PORTO_L3_IFACE=" + d.PeerName);
-                    break;
-                }
-            }
-
-            env.emplace_back("PORTO_NETNS_FD=/proc/" + std::to_string(GetPid()) +
-                             "/fd/" + std::to_string(NetNs.GetFd()));
-            // Return error if helper script exits with non-zero exit code.
-            // Client should receive an error creating slot container and may try to re-create the container.
-            // No silent misconfiguration will happen.
-            error = RunCommand({config().network().network_ifup_script()}, env);
-        }
+        if (!error)
+            error = RunNetworkIfUpScript(ct);
 
         if (error) {
             lock.unlock();

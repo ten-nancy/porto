@@ -371,6 +371,7 @@ struct TNetEnv {
     TError SetupInterfaces();
     TError ApplySysctl();
     TError AddRoute(const std::string &dsc, int index, struct nl_addr *via, int mtu, int advmss);
+    TError RunNetworkIfUpScript(TContainer &ct);
 
     TError CreateTap(TNetDeviceConfig &dev);
     TError DestroyTap(TNetDeviceConfig &dev);
