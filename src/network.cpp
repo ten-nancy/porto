@@ -2918,7 +2918,7 @@ std::string TNetEnv::GenerateHw(const std::string &name) {
             (h & 0x000000FF) >> 0);
 }
 
-TError TNetEnv::ParseNet(TMultiTuple &net_settings) {
+TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanSettings) {
     int vethIdx = 0;
     TError error;
 
@@ -2948,6 +2948,10 @@ TError TNetEnv::ParseNet(TMultiTuple &net_settings) {
 
         if (type == "inherited" || (type == "host" && settings.size() == 1)) {
             NetInherit = true;
+
+            // Save ipvlan/macvlan settings to futher re-use in child containers
+            if (Parent)
+                netXVlanSettings = Parent->NetXVlanSettings;
         } else if (type == "none") {
             NetIsolate = true;
             NetNone = true;
@@ -3004,6 +3008,8 @@ TError TNetEnv::ParseNet(TMultiTuple &net_settings) {
             /* Legacy kludge */
             if (dev.Mac.empty() && !Hostname.empty())
                 dev.Mac = GenerateHw(dev.Master + dev.Name);
+
+            netXVlanSettings.push_back(settings);
         } else if (type == "ipvlan") {
             if (settings.size() < 3)
                 return TError(EError::InvalidValue, "Invalid " + line);
@@ -3024,6 +3030,8 @@ TError TNetEnv::ParseNet(TMultiTuple &net_settings) {
                 if (error)
                     return error;
             }
+
+            netXVlanSettings.push_back(settings);
         } else if (type == "veth") {
             if (settings.size() < 3)
                 return TError(EError::InvalidValue, "Invalid " + line);
@@ -3190,6 +3198,14 @@ TError TNetEnv::ParseNet(TMultiTuple &net_settings) {
     if (!!NetInherit + !!NetIsolate + !NetNsName.empty() + !NetCtName.empty() != 1)
         return TError(EError::InvalidValue, "Uncertain network type");
 
+    /* manually include parent's ipvlan/macvlan configuration only if L3 (except "tap")
+     * or "none" network settings are specified */
+    if (config().network().network_inherit_xvlan() &&
+        ((!NetInherit /* to exclude "tap" */ && L3Only) || NetNone) &&
+        Parent && !Parent->NetXVlanSettings.empty()) {
+        return ParseNet(Parent->NetXVlanSettings, netXVlanSettings);
+    }
+
     return OK;
 }
 
@@ -3232,7 +3248,7 @@ TError TNetEnv::CheckIpLimit() {
     return OK;
 }
 
-TError TNetEnv::ParseIp(TMultiTuple &ip_settings) {
+TError TNetEnv::ParseIp(const TMultiTuple &ip_settings) {
     TError error;
     TNlAddr ip;
 
@@ -3256,7 +3272,7 @@ void TNetEnv::FormatIp(TMultiTuple &ip_settings) {
             ip_settings.push_back({ dev.Name , ip.Format() });
 }
 
-TError TNetEnv::ParseGw(TMultiTuple &gw_settings) {
+TError TNetEnv::ParseGw(const TMultiTuple &gw_settings) {
     TError error;
     TNlAddr ip;
 
@@ -3800,7 +3816,7 @@ TError TNetEnv::Parse(TContainer &ct) {
     NetUp = !ct.OsMode;
     TaskCred = ct.TaskCred;
 
-    error = ParseNet(ct.NetProp);
+    error = ParseNet(ct.NetProp, ct.NetXVlanSettings);
     if (error)
         return error;
 

@@ -1843,7 +1843,8 @@ public:
 
     TError Set(TMultiTuple &val) {
         TNetEnv NetEnv;
-        TError error = NetEnv.ParseNet(val);
+        TMultiTuple netXVlanSettings;
+        TError error = NetEnv.ParseNet(val, netXVlanSettings);
         if (error)
             return error;
         if (!NetEnv.NetInherit && !NetEnv.NetNone) {

@@ -129,6 +129,8 @@ message TConfig {
 
         optional string network_ifup_script = 68;
 
+        optional bool network_inherit_xvlan = 77;
+
         /* Deprecated */
         optional bool enable_iproute = 41;
         optional bool enabled = 1 [deprecated=true];

@@ -359,10 +359,10 @@ struct TNetEnv {
     std::vector<TNetDeviceConfig> Devices;
 
     TError Parse(TContainer &ct);
-    TError ParseNet(TMultiTuple &net_settings);
-    TError ParseIp(TMultiTuple &ip_settings);
+    TError ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanSettings);
+    TError ParseIp(const TMultiTuple &ip_settings);
     void FormatIp(TMultiTuple &ip_settings);
-    TError ParseGw(TMultiTuple &gw_settings);
+    TError ParseGw(const TMultiTuple &gw_settings);
 
     TError CheckIpLimit();
 
