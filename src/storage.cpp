@@ -91,6 +91,11 @@ static unsigned getPermission(EStorageType type) {
     }
 }
 
+void dropPlace(const TPath &place) {
+    auto placesLock = LockPlaces();
+    Places.erase(place);
+}
+
 void AsyncRemoveWatchDog() {
     TError error;
 
@@ -105,15 +110,20 @@ void AsyncRemoveWatchDog() {
         placesLock.unlock();
 
         for (const auto &place : places) {
+            bool dropped = false;
+            if (!place.Exists()) {
+                dropPlace(place);
+                continue;
+            }
+
             for (auto type : {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
                 error = TStorage::Cleanup(place, type);
                 if (error) {
-                    L_ERR("Cleanup place {} failed: {}", getStorageBase(place, type), error);
-                    error = TStorage::CheckBaseDirectory(place, type, getPermission(type));
-                    if (error) {
-                        L_ERR("Check place {} failed: {}", getStorageBase(place, type), error);
-                        auto placesLock = LockPlaces();
-                        Places.erase(place);
+                    if (error.Errno != ENOENT)
+                        L_WRN("Cleanup place {} failed: {}", getStorageBase(place, type), error);
+                    if (!dropped) {
+                        dropPlace(place);
+                        dropped = true;
                     }
                 }
                 if (NeedStopHelpers)
@@ -352,12 +362,14 @@ TError TStorage::CheckPlace(const TPath &place) {
     if (IsSystemPath(place))
         return TError(EError::InvalidPath, "Place path {} in system directory", place);
 
-    auto lockPlaces = LockPlaces();
-    auto found = Places.find(place) != Places.end();
-    lockPlaces.unlock();
+    if (place.IsDirectoryFollow()) {
+        auto lockPlaces = LockPlaces();
+        auto found = Places.find(place) != Places.end();
+        lockPlaces.unlock();
 
-    if (found)
-        return OK;
+        if (found)
+            return OK;
+    }
 
     for (auto type : {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
         error = CheckBaseDirectory(place, type, getPermission(type));
@@ -375,7 +387,7 @@ TError TStorage::CheckPlace(const TPath &place) {
             return error;
     }
 
-    lockPlaces = LockPlaces();
+    auto lockPlaces = LockPlaces();
     Places.insert(place);
     lockPlaces.unlock();
 
