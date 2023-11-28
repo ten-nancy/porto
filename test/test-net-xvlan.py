@@ -34,7 +34,8 @@ def TestXvlanInheritance(inherit):
         net="L3 veth;",
         ip="veth 198.51.100.0",
         default_gw="veth 198.51.100.1",
-        command="cat /proc/net/if_inet6"
+        command="cat /proc/net/if_inet6",
+        wait=1
     )
     CheckEthIface(c['stdout'], inherit)
 
@@ -43,7 +44,8 @@ def TestXvlanInheritance(inherit):
         net="L3 veth; ipvlan eth0 eth0;",
         ip="veth 198.51.100.0",
         default_gw="veth 198.51.100.1",
-        command="cat /proc/net/if_inet6"
+        command="cat /proc/net/if_inet6",
+        wait=1
     )
     CheckEthIface(d['stdout'], True) # it should always has eth0
 

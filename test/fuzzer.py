@@ -4,7 +4,6 @@ import os
 import sys
 import pwd
 import grp
-import re
 import string
 import time
 import random
@@ -16,7 +15,7 @@ import functools
 import tarfile
 import porto
 
-from test_common import ConfigurePortod
+from test_common import ConfigurePortod, GetKernelVersion
 
 VERBOSE = False
 ACTIVE = False
@@ -915,20 +914,31 @@ def prepare_fuzzer():
     t.close()
 
     if os.environ.get('USE_PORTO_KERNEL', None) == "ON":
-        modules_dir = os.path.dirname(__file__) + '/module'
-        subprocess.check_call(['apt', 'update'])
-        os.system('apt install -y linux-headers-$(uname -r)')
-        subprocess.check_call(['./build.sh', '.', '.'], cwd=modules_dir)
-        subprocess.call(['insmod', 'porto_kernel.ko'], cwd=modules_dir)
-        PORTO_KERNEL_PID = int(open("/sys/module/porto_kernel/parameters/d_thread_pid").read())
+        # kernel 5.15 is build using Ubuntu 22.04,
+        # so we can't build this module
+        if GetKernelVersion() < (5, 15):
+            modules_dir = os.path.dirname(__file__) + '/module'
+            subprocess.check_call(['apt', 'update'])
+            os.system('apt install -y linux-headers-$(uname -r)')
+            subprocess.check_call(['./build.sh', '.', '.'], cwd=modules_dir)
+            subprocess.call(['insmod', 'porto_kernel.ko'], cwd=modules_dir)
+            PORTO_KERNEL_PID = int(open("/sys/module/porto_kernel/parameters/d_thread_pid").read())
+        else:
+            print("Skip enabled USE_PORTO_KERNEL option on %s" % ".".join(map(str, GetKernelVersion())))
 
     ConfigurePortod('fuzzer', """
 daemon {
     cgroup_remove_timeout_s: 1
 }
+container {
+    enable_sched_idle: false
+}
 """)
 
     ConfigurePortod('fuzzer-core', """
+container {
+    enable_sched_idle: false
+}
 core {
    enable: true
    default_pattern: "/coredumps/%e.%p.%s"

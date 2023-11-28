@@ -8,7 +8,7 @@ from test_common import *
 SIZE = 2048 * 1048576
 EPS = 16 * 1048576
 
-(kmaj, kmin) = get_kernel_maj_min()
+(kmaj, kmin) = GetKernelVersion()
 OLD_KERNEL = kmaj < 4 or (kmaj == 4 and kmin < 3)
 
 DURATION = 60000 #ms

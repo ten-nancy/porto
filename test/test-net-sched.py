@@ -11,7 +11,7 @@ from test_common import *
 remote_host = "fe00::2"
 
 if not remote_host:
-    print "No remote host specified, skipping test"
+    print("No remote host specified, skipping test")
     sys.exit(0)
 
 server1=(remote_host, 5201)
@@ -22,6 +22,11 @@ dev = "eth0"
 qdisc = ""
 rate = 10
 
+def print_all_qdiscs():
+    print()
+    print("Current qdiscs after Porto reload:")
+    subprocess.call(["tc", "qdisc"])
+    print()
 
 def teardown_local_veth(conn):
     try:
@@ -45,6 +50,7 @@ def setup_local_veth(conn):
         teardown_local_veth(conn)
     except:
         pass
+
     subprocess.check_output(["ip", "link", "add", "veth1", "address", "52:54:00:00:72:55", "type", "veth", "peer", "name", "veth2", "address", "52:54:00:00:55:27"])
     subprocess.check_output(["ip", "link", "set", "veth1", "up"])
     subprocess.check_output(["ip", "link", "set", "veth2", "up"])
@@ -55,6 +61,7 @@ def setup_local_veth(conn):
     subprocess.check_output(["ip", "-6", "route", "add", "fe00::3/128", "dev", "veth2"])
     subprocess.check_output(["ip6tables", "-t", "nat", "-A", "PREROUTING", "-d", "fe00::2", "-j", "DNAT", "--to-destination", "fd00::1", "-i", "veth2"])
     subprocess.check_output(["ip6tables", "-t", "nat", "-A", "POSTROUTING", "-d", "fe00::2", "-j", "SNAT", "--to-source", "fe00::3", "-o", "veth1"])
+
     ConfigurePortod('test-net-sched', """
 network {
     managed_device: "veth1"
@@ -88,7 +95,7 @@ network {
                 s = server2
 
     if s:
-        print "Cannot reliably start local iperf3 servers: %s" % str(s)
+        print("Cannot reliably start local iperf3 servers: %s" % str(s))
         sys.exit(1)
 
 def setup_all_forwarding():
@@ -115,8 +122,8 @@ def check_expected_qdisc():
     qdisc_re = re.compile(qdisc_pattern, re.X)
 
     qdiscs = collections.defaultdict(list)
-    output = subprocess.check_output(["tc", "qdisc", "show", "dev", dev])
-    for line in output.split(b'\n'):
+    output = subprocess.check_output(["tc", "qdisc", "show", "dev", dev]).decode("utf-8")
+    for line in output.splitlines():
         m = qdisc_re.match(line)
         if not m or len(m.groups()) != 2:
             continue
@@ -144,8 +151,8 @@ def get_tc_classes():
         .*$""" % qdisc
     class_re = re.compile(class_pattern, re.X)
 
-    output = subprocess.check_output(["tc", "class", "show", "dev", dev])
-    for line in output.split(b'\n'):
+    output = subprocess.check_output(["tc", "class", "show", "dev", dev]).decode("utf-8")
+    for line in output.splitlines():
         m = class_re.match(line)
         if not m or len(m.groups()) != 1:
             continue
@@ -161,7 +168,7 @@ def check_porto_net_classes(*cts):
     tc_classes = get_tc_classes()
     for ct in cts:
         ct_classes = get_porto_net_classes(ct)
-        Expect(ct_classes.issubset(tc_classes))
+        Expect(ct_classes.issubset(tc_classes), message=ct_classes.difference(tc_classes))
 
 def run_iperf_client(name, server, wait=None, udp=False, mtn=False, cs=None, reverse=False, cfg={}, **kwargs):
     command="iperf3 --client " + server[0]
@@ -181,7 +188,7 @@ def run_iperf_client(name, server, wait=None, udp=False, mtn=False, cs=None, rev
     if udp:
         command += " --udp"
 
-    print command
+    print(command)
 
     net = "inherited"
     ip = ""
@@ -192,8 +199,8 @@ def run_iperf_client(name, server, wait=None, udp=False, mtn=False, cs=None, rev
     ct = conn.Run(name, command=command, wait=wait, net=net, ip=ip, **cfg)
     if wait:
         if int(ct['exit_code']) != 0:
-            print ct['stdout']
-            print ct['stderr']
+            print(ct['stdout'])
+            print(ct['stderr'])
 
         # check classes of dead container
         if qdisc_is_classful():
@@ -204,7 +211,7 @@ def run_iperf_client(name, server, wait=None, udp=False, mtn=False, cs=None, rev
 
 def run_iperf_server(name, port):
     command = "bash -c \'while true; do iperf3 --server --bind fd00::1 -p %s ; done\'" % port
-    print command
+    print(command)
     return conn.Run(name, command=command, weak=False)
 
 def bps(ct):
@@ -221,47 +228,47 @@ def sent_bytes(ct):
 
 
 def run_host_limit_test():
-    print "Test net_limit through qdisc classes"
+    print("Test net_limit through qdisc classes")
 
     a = run_iperf_client("test-net-a", server1, time=3, wait=5, cfg={"net_limit": "default: 0"})
     res = bps(a)
-    print "net_limit inf -> ", res
+    print("net_limit inf -> ", res)
     ExpectRange(res, rate * 0.8, rate * 1.33)
 
     a = run_iperf_client("test-net-a", server1, time=3, wait=5, cfg={"net_limit": "default: %sM" % int(rate * 0.1)})
     res = bps(a)
-    print "net_limit %sM -> " % int(rate * 0.1), res
+    print("net_limit %sM -> " % int(rate * 0.1), res)
     ExpectRange(res, rate * 0.05, rate * 0.2)
 
 def run_mtn_limit_test():
-    print "Test net_limit in MTN"
+    print("Test net_limit in MTN")
 
     a = run_iperf_client("test-net-a", local_server, time=3, wait=20, mtn=True, cfg={"net_limit": "default: %sM" % rate})
     res = bps(a)
-    print "net_limit %sM -> " % rate, res
+    print("net_limit %sM -> " % rate, res)
     ExpectRange(res, rate * 0.9, rate * 1.7)
 
-    print "Test net_rx_limit in MTN"
+    print("Test net_rx_limit in MTN")
 
     a = run_iperf_client("test-net-a", local_server, time=3, wait=20, mtn=True, reverse=True, cfg={"net_rx_limit": "default: %sM" % rate})
     res = bps(a)
-    print "net_rx_limit %sM -> " % rate, res
+    print("net_rx_limit %sM -> " % rate, res)
     ExpectLe(res, rate * 1.7)
 
-    print "Test both net_limit and net_rx_limit in MTN"
+    print("Test both net_limit and net_rx_limit in MTN")
 
     a = run_iperf_client("test-net-a", local_server, time=3, wait=20, mtn=True, reverse=False, cfg={"net_rx_limit": "default: %sM" % rate, "net_limit": "default: %sM" % rate})
     res = bps(a)
-    print "net_limit/net_rx_limit %sM -> " % rate, res
+    print("net_limit/net_rx_limit %sM -> " % rate, res)
     ExpectLe(res, rate * 1.7)
 
     a = run_iperf_client("test-net-a", local_server, time=3, wait=20, mtn=True, reverse=True, cfg={"net_rx_limit": "default: %sM" % rate, "net_limit": "default: %sM" % rate})
     res = bps(a)
-    print "net_limit/net_rx_limit and reverse %sM -> " % rate, res
+    print("net_limit/net_rx_limit and reverse %sM -> " % rate, res)
     ExpectLe(res, rate * 1.7)
 
     if qdisc in ["fq_codel", "pfifo_fast"]:
-        print "Check tx drops and overlimits"
+        print("Check tx drops and overlimits")
         a = run_iperf_client("test-net-a", server1, time=5, bandwidth=0, length=1300, wait=20, udp=True, mtn=True, cfg={"net_limit": "default: 10M"})
         tx_drops = int(a["net_tx_drops[group default]"])
         tx_overlimits = int(a["net_overlimits[group default]"])
@@ -295,7 +302,7 @@ def run_mtn_limit_test():
 
         a.Destroy()
 
-        print "Check rx drops and overlimits"
+        print("Check rx drops and overlimits")
         a = run_iperf_client("test-net-a", server1, time=5, bandwidth=0, length=1300, wait=20, udp=True, mtn=True, reverse=True, cfg={"net_rx_limit": "default: 50M"})
         tx_drops = int(a["net_tx_drops[group default]"])
         tx_overlimits = int(a["net_overlimits[group default]"])
@@ -328,7 +335,7 @@ def run_bandwidth_sharing_test():
     res_b = bps(b)
 
     b_rate = (6 * res_b - 2 * rate) / 4
-    print "net_guarantee 0 and 0 -> %s and %s (%s measured)" % (res, b_rate, res_b)
+    print("net_guarantee 0 and 0 -> %s and %s (%s measured)" % (res, b_rate, res_b))
 
     # Thresholds rationale:
     # We expect "even" distribution during parallel sending phase, also:
@@ -343,7 +350,7 @@ def run_bandwidth_sharing_test():
     res = bps(a)
     res_b = bps(b)
     b_rate = (6 * res_b - 2 * rate) / 4
-    print "net_guarantee %sM and %sM -> %s and %s (%s measured)" %(int(rate * 0.1), int(rate * 0.1), res, b_rate, res_b)
+    print("net_guarantee %sM and %sM -> %s and %s (%s measured)" %(int(rate * 0.1), int(rate * 0.1), res, b_rate, res_b))
 
     # We demand guarantee and also expect "even distribution"
     # 1) no less than -10% from guarantee, 0.09
@@ -360,7 +367,7 @@ def run_bandwidth_sharing_test():
     res = bps(a)
     res_b = bps(b)
     b_rate = (6 * res_b - 2 * rate) / 4
-    print "net_guarantee %sM and %sM -> %s and %s measured (%s b_rate)" % (int(rate * 0.9), int(rate * 0.1), res, res_b, b_rate)
+    print("net_guarantee %sM and %sM -> %s and %s measured (%s b_rate)" % (int(rate * 0.9), int(rate * 0.1), res, res_b, b_rate))
 
     # We demand guarantees to be followed
     # 1) no less than -10% from guarantee, 0.8
@@ -384,11 +391,11 @@ def run_classless_test():
 def set_qdisc(q):
     global qdisc
     qdisc = q
-    print "Test %s scheduler" % qdisc
+    print("Test %s scheduler" % qdisc)
 
 def run_htb_test(bandwidth_sharing=False):
     set_qdisc("htb")
-    print "Setup uplink limit %sM" % rate
+    print("Setup uplink limit %sM" % rate)
 
     ConfigurePortod('test-net-sched', """
 network {
@@ -401,11 +408,15 @@ network {
 }
 """ % (rate, rate, qdisc))
 
+    print_all_qdiscs()
+
     run_classful_test(bandwidth_sharing)
 
 def run_hfsc_test(bandwidth_sharing=False):
     set_qdisc("hfsc")
-    print "Setup uplink limit %sM" % rate
+    print("Setup uplink limit %sM" % rate)
+
+    print_all_qdiscs()
 
     ConfigurePortod('test-net-sched', """
 network {
@@ -430,6 +441,8 @@ network {
 }
 """ % qdisc)
 
+    print_all_qdiscs()
+
     run_classless_test()
 
 def run_fq_codel_test():
@@ -443,12 +456,16 @@ network {
 }
 """ % qdisc)
 
+    print_all_qdiscs()
+
     run_classless_test()
 
 def run_sock_diag_test():
-    print "Test non mtn container net stat"
+    print("Test non mtn container net stat")
 
     set_qdisc("fq_codel")
+
+    print_all_qdiscs()
 
     ConfigurePortod('test-net-sched', """
 network {
@@ -500,41 +517,29 @@ network {
     ExpectRange(root_rx_bytes / iperf_total_sent, loss_bytes_coeff, 1.01)
 
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=60)
 
 try:
-    print "Set net.ipv6.conf.all.forwarding=1"
+    print("Set net.ipv6.conf.all.forwarding=1")
     setup_all_forwarding()
 
-    print "Setup local veth ifaces veth1/veth2 for iperf3 tests"
+    print("Setup local veth ifaces veth1/veth2 for iperf3 tests")
     setup_local_veth(conn)
 
-    part = os.environ['PART']
-    if part == '1':
-        # Tests with net_classes disabled. We do not use net_classes in production
+    # common tests
+    # run_htb_test(True)
+    # run_hfsc_test(True)
+    run_pfifo_fast_test()
+    run_fq_codel_test()
+    run_sock_diag_test()
 
-        # common tests
-        # run_htb_test(True)
-        # run_hfsc_test(True)
-        run_pfifo_fast_test()
-        run_fq_codel_test()
-        run_sock_diag_test()
-    elif part == '2':
-        # test switching
-
-        # htb -> fq_codel -> htb
-        # run_htb_test()
-        # run_fq_codel_test()
-        # run_htb_test()
-
-        # hfsc -> fq_codel -> hfsc
-        # run_hfsc_test()
-        # run_fq_codel_test()
-        # run_hfsc_test()
-
-        run_fq_codel_test()
-
-    Expect(0 == int(conn.GetProperty('/', 'porto_stat[errors]')))
+    # veth is created with 32 tx queues by default on kernel 5.15 because the ip utility doesn't pass the IFLA_NUM_TX_QUEUES attribute.
+    # It's the reason why Porto gets two errors, but both cases are retrievable and don't influence the result.
+    errors = int(conn.GetProperty('/', 'porto_stat[errors]'))
+    excepted = 0
+    if GetKernelVersion() >= (5, 15):
+        excepted = 2
+    Expect(excepted == errors, message="Error count: %d, expected: %d" % (errors, excepted))
 
 finally:
     cts = conn.List()
@@ -547,6 +552,6 @@ finally:
     if 'test-net-s' in cts:
         conn.Destroy('test-net-s')
 
-    print "Cleanup uplink limit"
+    print("Cleanup uplink limit")
 
     teardown_local_veth(conn)

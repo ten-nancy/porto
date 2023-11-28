@@ -7,7 +7,7 @@ if not os.path.exists('/sys/fs/cgroup/memory/memory.recharge_on_pgfault'):
     print "Test not applicable"
     sys.exit(0)
 
-may_not_recharge_orphan_locked = get_kernel_maj_min() < (4, 19)
+may_not_recharge_orphan_locked = GetKernelVersion() < (4, 19)
 
 conn = porto.Connection()
 ct = conn.CreateWeakContainer("test-mem-recharge")
@@ -65,7 +65,7 @@ ct.SetProperty("recharge_on_pgfault", True)
 
 print '- recharge recharged'
 Run(ct)
-if get_kernel_maj_min() > (3, 18):
+if GetKernelVersion() > (3, 18):
     ExpectPropLe(ct, "memory_usage", delta)
     ExpectPropGe(ct2, "memory_usage", size)
 else:
@@ -151,7 +151,7 @@ ct.Stop()
 
 print '- mlock orphan'
 Run(ct_mlock)
-if get_kernel_maj_min() > (3, 18):
+if GetKernelVersion() > (3, 18):
     ExpectPropGe(ct_mlock, "memory_usage", size)
 else:
     print 'XFAIL old kernel'

@@ -10,7 +10,7 @@ ct.SetProperty("cwd", vol.path)
 ct.SetProperty("command", "dd if=/dev/zero of=test conv=notrunc bs=1M count=100")
 ct.SetProperty("dirty_limit", "10M")
 
-if get_kernel_maj_min() > (3, 18):
+if GetKernelVersion() > (3, 18):
     dirty = "dirty"
 else:
     dirty = "fs_dirty"

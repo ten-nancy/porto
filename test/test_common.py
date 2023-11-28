@@ -266,7 +266,7 @@ def GetMeminfo(tag):
         if m.find(tag) >= 0:
             return int(m.split()[1]) * 1024
 
-def get_kernel_maj_min():
+def GetKernelVersion():
     kver = re.match("([0-9])\.([0-9]{1,2})", platform.uname()[2]).groups()
     return (int(kver[0]), int(kver[1]))
 

@@ -692,7 +692,7 @@ try:
     def check(ct, state):
         ExpectEq(ct['command'], 'sleep inf')
         ExpectEq(ct['weak'], True)
-        limit = int(ct['memory_limit'])
+        limit = int(ct['memory_guarantee'])
         if limit > 0:
             ExpectEq(limit, 1048576)
         else:
@@ -708,7 +708,7 @@ try:
 
     new_spec = porto.rpc_pb2.TContainerSpec()
     new_spec.name = container_name_a
-    new_spec.memory_limit = 1048576
+    new_spec.memory_guarantee = 1048576
 
     for start, state in ((False, 'stopped'), (True, 'running')):
         a = c.CreateSpec(container=spec, start=start)
@@ -720,6 +720,8 @@ try:
 
     for start1 in (True, False):
         for start2 in (True, False):
+            print("Case:", start1, start2)
+
             a = c.CreateSpec(container=spec, start=start1)
             check(a, 'running' if start1 else 'stopped')
 

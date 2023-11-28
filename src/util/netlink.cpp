@@ -27,6 +27,7 @@ extern "C" {
 #include <netlink/route/cls/cgroup.h>
 #include <netlink/route/cls/u32.h>
 #include <netlink/route/qdisc.h>
+#include <netlink/route/qdisc/prio.h>
 #include <netlink/route/qdisc/fifo.h>
 #include <netlink/route/qdisc/htb.h>
 #include <netlink/route/qdisc/sfq.h>
@@ -1255,6 +1256,12 @@ TError TNlQdisc::Create(const TNl &nl) {
     if (Kind == "bfifo" || Kind == "pfifo") {
         if (Limit)
             rtnl_qdisc_fifo_set_limit(qdisc, Limit);
+    }
+
+    if (Kind == "pfifo_fast") {
+        uint8_t map[] = QDISC_PRIO_DEFAULT_PRIOMAP;
+        rtnl_qdisc_prio_set_bands(qdisc, QDISC_PRIO_DEFAULT_BANDS);
+        rtnl_qdisc_prio_set_priomap(qdisc, map, sizeof(map));
     }
 
     if (Kind == "htb") {

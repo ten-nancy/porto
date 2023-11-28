@@ -1,13 +1,17 @@
 import porto
 from test_common import *
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
-ExpectEq(ProcStatus('self', "CapBnd"), "0000003fffffffff")
+DefaultCapBnd = "0000003fffffffff"
+if GetKernelVersion() >= (5, 15):
+    DefaultCapBnd =  "000001ffffffffff"
+
+ExpectEq(ProcStatus('self', "CapBnd"), DefaultCapBnd)
 
 # root user
 
-a = c.Run("a")
+a = c.Run("a", weak=True)
 pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)
@@ -19,14 +23,14 @@ ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
 
 a.Destroy()
 
-a = c.Run("a", virt_mode='host', command="sleep 10000")
+a = c.Run("a", virt_mode='host', command="sleep 10000", weak=True)
 pid = a['root_pid']
 
 ExpectEq(ProcStatus(pid, "NSpid"), pid)
 ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapPrm"), "0000003fffffffff")
-ExpectEq(ProcStatus(pid, "CapEff"), "0000003fffffffff")
-ExpectEq(ProcStatus(pid, "CapBnd"), "0000003fffffffff")
+ExpectEq(ProcStatus(pid, "CapPrm"), DefaultCapBnd)
+ExpectEq(ProcStatus(pid, "CapEff"), DefaultCapBnd)
+ExpectEq(ProcStatus(pid, "CapBnd"), DefaultCapBnd)
 ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
 
 a.Destroy()
@@ -36,7 +40,7 @@ AsAlice()
 
 c = porto.Connection()
 
-a = c.Run("a")
+a = c.Run("a", weak=True)
 pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)
@@ -48,19 +52,19 @@ ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
 
 a.Destroy()
 
-a = c.Run("a", virt_mode='host', command="sleep 10000")
+a = c.Run("a", virt_mode='host', command="sleep 10000", weak=True)
 pid = a['root_pid']
 
 ExpectEq(ProcStatus(pid, "NSpid"), pid)
 ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
 ExpectEq(ProcStatus(pid, "CapPrm"), "0000000000000000")
 ExpectEq(ProcStatus(pid, "CapEff"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapBnd"), "0000003fffffffff")
+ExpectEq(ProcStatus(pid, "CapBnd"), DefaultCapBnd)
 ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
 
 a.Destroy()
 
-a = c.Run("a", isolate='false', root_volume={"layers": ["ubuntu-precise"]})
+a = c.Run("a", isolate='false', root_volume={"layers": ["ubuntu-precise"]}, weak=True)
 pid = a['root_pid']
 
 ExpectEq(ProcStatus(pid, "NSpid"), pid)
@@ -72,7 +76,7 @@ ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
 
 a.Destroy()
 
-a = c.Run("a", net='none', memory_limit='1G', root_volume={"layers": ["ubuntu-precise"]})
+a = c.Run("a", net='none', memory_limit='1G', root_volume={"layers": ["ubuntu-precise"]}, weak=True)
 pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)
@@ -87,9 +91,14 @@ a.Destroy()
 # virt_mode=host restrictions
 
 a = c.Run("a")
-ExpectEq(Catch(c.Run, "a/b", virt_mode='host'), porto.exceptions.Permission)
+ExpectEq(Catch(c.Run, "a/b", virt_mode='host', weak=True), porto.exceptions.Permission)
 a.Destroy()
 
-ExpectEq(Catch(c.Run, "a", virt_mode='host', isolate='true'), porto.exceptions.InvalidValue)
-ExpectEq(Catch(c.Run, "a", virt_mode='host', root="/a"), porto.exceptions.InvalidValue)
-ExpectEq(Catch(c.Run, "a", virt_mode='host', bind="/a /b"), porto.exceptions.InvalidValue)
+# the order of virt_mode and isolate set may impact to test result, so set property explicitely
+a = c.Create("a", weak=True)
+a.SetProperty('virt_mode', 'host')
+ExpectEq(Catch(a.SetProperty, 'isolate', 'true'), porto.exceptions.InvalidValue)
+a.Destroy()
+
+ExpectEq(Catch(c.Run, "a", virt_mode='host', root="/a", weak=True), porto.exceptions.InvalidValue)
+ExpectEq(Catch(c.Run, "a", virt_mode='host', bind="/a /b", weak=True), porto.exceptions.InvalidValue)

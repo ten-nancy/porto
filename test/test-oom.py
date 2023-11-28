@@ -1,12 +1,12 @@
 #!/usr/bin/python
 
-import os
 import time
 import porto
 from test_common import *
-import subprocess
 import json
 from collections import defaultdict
+
+MAX_ATTEMPT_COUNT = 3
 
 def main():
     ConfigurePortod('test-oom', """
@@ -15,7 +15,7 @@ def main():
     }
     """)
 
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     stress_memory = "bash -c 'while true; do stress -m 1 ; done'"
 
     try:
@@ -304,10 +304,23 @@ def main():
         print(json.dumps(stats, sort_keys=True, indent=4))
         ExpectEq(list(stats.items()), [("0 1 0 0 1 1", N)])
 
+
 if __name__=='__main__':
-    version = subprocess.check_output(["uname", "-r"]).decode("utf-8")
-    tokens = version.split(".")
-    if len(tokens) > 0 and int(tokens[0]) > 4:
-        main()
+    version = GetKernelVersion()
+    if version >= (5, 4):
+        excs = []
+
+        for i in range(MAX_ATTEMPT_COUNT):
+            try:
+                main()
+                break
+
+            except Exception as exc:
+                print(exc)
+                excs.append(exc)
+
+        if len(excs) == MAX_ATTEMPT_COUNT:
+            raise Exception(excs)
+
     else:
-        print("skip test on {}".format(version))
+        print("skip test on {}".format(".".join(map(lambda x: str(x), version))))

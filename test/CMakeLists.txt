@@ -107,22 +107,6 @@ ADD_PYTHON3_TEST(sched-idle)
 
 # ADD_PYTHON_TEST(io-stat)
 
-add_test(NAME net-sched1
-         COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python -uB ${CMAKE_SOURCE_DIR}/test/test-net-sched.py
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-
-add_test(NAME net-sched2
-         COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python -uB ${CMAKE_SOURCE_DIR}/test/test-net-sched.py
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-
-set_tests_properties(net-sched1
-                     PROPERTIES
-                     ENVIRONMENT PART=1)
-
-set_tests_properties(net-sched2
-                     PROPERTIES
-                     ENVIRONMENT PART=2)
-
 ADD_PYTHON_TEST(mem-overcommit)
 ADD_PYTHON_TEST(mem_limit_total)
 ADD_PYTHON_TEST(mem-recharge)
@@ -136,10 +120,11 @@ ADD_PYTHON_TEST(io-limit)
 
 ADD_PYTHON_TEST(uid_handling)
 ADD_PYTHON_TEST(unpriv-cred)
-ADD_PYTHON_TEST(isolation)
+ADD_PYTHON3_TEST(isolation)
 ADD_PYTHON_TEST(security)
 ADD_PYTHON_TEST(hijack)
 ADD_PYTHON_TEST(net)
+ADD_PYTHON3_TEST(net-sched)
 ADD_PYTHON_TEST(tc-classes)
 ADD_PYTHON_TEST(tc-rebuild)
 ADD_PYTHON_TEST(locate-process)

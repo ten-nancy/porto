@@ -25,10 +25,9 @@ part1 = {'uid_handling':2,
          'coredump':2,
          'htb-restore':2,
          'portod_cli':3,
-         'stats':1,
-         'net-sched1':200}
+         'stats':1}
 
-part2 = {'net-sched2':200,
+part2 = {'python3-net-sched':200,
          'mem-overcommit':1,
          'portod_stop':1}
 
@@ -62,7 +61,7 @@ part4 = {'leaks':180,
 
 part5 = {'fuzzer_soft':120,
          'unpriv-cred':1,
-         'isolation':1,
+         'python3-isolation':1,
          'security':11,
          'hijack':1,
          'net':6}
@@ -89,6 +88,7 @@ part7 = {'python3-volume_backends':55,
 part8 = {'spec':4,
          'python3-spec':4,
          'python3-retriability':160,
+         'python3-docker-images':120,
          'docker':30}
 
 for test in part1.keys() + part2.keys() + part3.keys() + part4.keys() + part5.keys() + part6.keys() + part7.keys() + part8.keys():

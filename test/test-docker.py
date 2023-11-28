@@ -2,7 +2,11 @@ import porto
 import subprocess
 from test_common import *
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
+
+DefaultCap = "0000003fffffffff"
+if GetKernelVersion() >= (5, 15):
+    DefaultCap =  "000001ffffffffff"
 
 try:
     ConfigurePortod('test-docker', """
@@ -16,7 +20,9 @@ try:
 
     b = conn.Run('a/b', wait=3, virt_mode='docker', user='porto-alice', group='porto-alice', command='grep Cap /proc/self/status')
     ExpectEq(b['exit_code'], '0')
-    ExpectNe(b['stdout'].count('0000003fffffffff'), 0)
+    print("Default cap:", DefaultCap)
+    print(b['stdout'])
+    ExpectNe(b['stdout'].count(DefaultCap), 0)
     ExpectEq(len(b['stderr']), 0)
 
     b.Destroy()

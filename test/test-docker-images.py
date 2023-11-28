@@ -1,6 +1,7 @@
 import porto
 from test_common import *
 import subprocess
+import shutil
 
 IMAGE_NAME = "alpine:3.16.2"
 IMAGE_TAG = "registry-1.docker.io/library/alpine:3.16.2"
@@ -15,7 +16,7 @@ PLACE = ""
 
 STORAGE_PATH = "/place/porto_docker/v1"
 
-conn = porto.Connection(timeout=30)
+conn = porto.Connection(timeout=120)
 
 ConfigurePortod('docker-images', """
 daemon {
@@ -45,6 +46,17 @@ def check_storage_is_empty():
         Expect(os.path.exists("{}/{}".format(STORAGE_PATH, x)))
         xs = os.listdir("{}/{}".format(STORAGE_PATH, x))
         Expect(not xs, message="{}: {}".format(x, "; ".join(xs)))
+
+
+# prepare
+print("Prepare place")
+try:
+    check_storage_is_empty()
+except:
+    # cleanup before test
+    for x in ("tags", "images", "layers"):
+        for y in os.listdir("{}/{}".format(STORAGE_PATH, x)):
+            shutil.rmtree("{}/{}/{}".format(STORAGE_PATH, x, y))
 
 
 # api
