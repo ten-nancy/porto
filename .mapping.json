@@ -1,4 +1,5 @@
 {
+  ".dir-locals.el":"infra/porto/porto/.dir-locals.el",
   ".gitattributes":"infra/porto/porto/.gitattributes",
   ".github/workflows/cmake.yml":"infra/porto/porto/.github/workflows/cmake.yml",
   ".github/workflows/release.yml":"infra/porto/porto/.github/workflows/release.yml",
