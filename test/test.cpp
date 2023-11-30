@@ -419,10 +419,10 @@ void BootstrapCommand(const std::string &cmd, const TPath &path, bool remove) {
             continue;
         }
 
-	if (StringStartsWith(from.ToString(), "linux-vdso") ||
+        if (StringStartsWith(from.ToString(), "linux-vdso") ||
             StringMatch(from.ToString(), "ld-linux")) {
             continue;
-	}
+        }
 
         TPath dest = path / from.DirName();
         if (!dest.Exists()) {
@@ -503,6 +503,7 @@ void TestDaemon(Porto::Connection &api) {
      * 128 (event pipe)
      * 129 (ack pipe)
      * 130 (rpc socket)
+     * 131 (netlink mcast socket)
      * 2 (stderr)
      * 3 (portod.log)
      * 4 (epoll)
@@ -511,7 +512,7 @@ void TestDaemon(Porto::Connection &api) {
      * /run/portod.socket (FIXME: ???)
      * portod private socket (FIXME: ???)
      */
-    int appFds = 14 + 2;
+    int appFds = 15 + 2;
 
     // ctest leaks log fd
     int ctestFd = 1;

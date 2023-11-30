@@ -103,12 +103,12 @@ public:
 class TVolume : public std::enable_shared_from_this<TVolume>,
                 public TNonCopyable {
 
-    std::unique_ptr<TVolumeBackend> Backend;
     std::mutex InternalMutex;
     TError OpenBackend();
     void CacheQuotaFile();
 
 public:
+    std::unique_ptr<TVolumeBackend> Backend;
     TPath Path;
     TPath InternalPath;
     bool IsAutoPath = false;
@@ -264,6 +264,7 @@ public:
     /* They do not keep data in StoragePath */
     bool RemoteStorage(void) const {
         return BackendType == "rbd" ||
+               BackendType == "nbd" ||
                BackendType == "lvm" ||
                BackendType == "tmpfs" ||
                BackendType == "hugetmpfs" ||
@@ -320,6 +321,7 @@ extern MeasuredMutex VolumesMutex;
 extern std::map<TPath, std::shared_ptr<TVolume>> Volumes;
 extern std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
 extern TPath VolumesKV;
+extern TPath NbdKV;
 
 static inline std::unique_lock<std::mutex> LockVolumes() {
     return VolumesMutex.UniqueLock();
@@ -332,3 +334,7 @@ void StopStatFsLoop();
 
 TError StartAsyncUmounter();
 void StopAsyncUmounter();
+
+TError LoadNbd();
+TError StartNbd();
+void StopNbd();

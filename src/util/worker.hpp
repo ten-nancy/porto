@@ -14,7 +14,6 @@ template<typename T,
 class TWorker : public TLockable {
 protected:
     volatile bool Valid = true;
-    Q Queue;
     std::condition_variable Cv;
     std::vector<std::shared_ptr<std::thread>> Threads;
     size_t Seq = 0;
@@ -57,6 +56,8 @@ protected:
     virtual bool Handle(T &elem) =0;
 
 public:
+    Q Queue;
+
     TWorker(const std::string &name, size_t nr) : Name(name), Nr(nr) {}
 
     void Start() {

@@ -141,6 +141,8 @@ ADD_PYTHON3_TEST(retriability)
 ADD_PYTHON3_TEST(async-cleanup)
 
 ADD_PYTHON3_TEST(volume_list)
+# TODO(ovov): enable this
+# ADD_PYTHON3_TEST(volume-nbd)
 
 # legacy tests
 

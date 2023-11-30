@@ -78,6 +78,7 @@ constexpr uint64_t PORTO_SOCKET_MODE = 0666;
 constexpr int  REAP_EVT_FD = 128;
 constexpr int  REAP_ACK_FD = 129;
 constexpr int  PORTO_SK_FD = 130;
+constexpr int  PORTO_NL_SK_FD = 131;
 
 constexpr const char *PORTO_VERSION_FILE = "/run/portod.version";
 constexpr const char *PORTO_BINARY_PATH = "/run/portod";
@@ -94,6 +95,7 @@ constexpr const char *PORTO_LOG = "/var/log/portod.log";
 
 constexpr const char *PORTO_CONTAINERS_KV = "/run/porto/kvs";
 constexpr const char *PORTO_VOLUMES_KV = "/run/porto/pkvs";
+constexpr const char *PORTO_NBD_KV = "/run/porto/nkvs";
 
 constexpr const char *PORTO_WORKDIR = "/place/porto";
 constexpr const char *PORTO_PLACE = "/place";
@@ -132,3 +134,4 @@ constexpr unsigned PORTO_LABEL_PREFIX_LEN_MAX = 16;
 constexpr unsigned PORTO_LABEL_COUNT_MAX = 100;
 
 extern void AckExitStatus(int pid);
+extern bool PortoNlSocketReused;

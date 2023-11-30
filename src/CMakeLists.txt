@@ -64,17 +64,17 @@ add_subdirectory(fmt)
 include_directories(${libporto_SOURCE_DIR})
 
 add_library(portocore portod.cpp core.cpp cgroup.cpp rpc.cpp container.cpp
-            event.cpp task.cpp env.cpp device.cpp network.cpp
-            filesystem.cpp volume.cpp storage.cpp
-            kvalue.cpp config.cpp property.cpp
-            epoll.cpp client.cpp stream.cpp helpers.cpp waiter.cpp bpf.cpp
-            docker.cpp)
+	    event.cpp task.cpp env.cpp device.cpp nbd.cpp
+	    network.cpp filesystem.cpp volume.cpp storage.cpp
+	    kvalue.cpp config.cpp property.cpp
+	    epoll.cpp client.cpp stream.cpp helpers.cpp waiter.cpp bpf.cpp
+	    docker.cpp)
 
 find_library(LIBTCMALLOC NAMES libtcmalloc_minimal.a)
 target_link_libraries(portocore nlohmann-safe version porto utilbase util config
-			     rpc_proto kv_proto
-			     rt fmt ${PROTOBUF_STATIC_LIBRARY} ${LIBNL} ${LIBNL_ROUTE} ${LIBNL_IDIAG} ${LIBSSL} ${LIBCRYPTO}
-			     ${LIBBPF} ${LIBELF} ${LIBZ} ${LIBTCMALLOC} pthread)
+		      rpc_proto kv_proto
+		      rt fmt ${PROTOBUF_STATIC_LIBRARY} ${LIBNL} ${LIBNL_ROUTE} ${LIBNL_IDIAG} ${LIBSSL} ${LIBCRYPTO}
+		      ${LIBBPF} ${LIBELF} ${LIBZ} ${LIBTCMALLOC} ${LIBNL_GENL} pthread)
 
 add_executable(portod main.cpp)
 target_link_libraries(portod portocore)

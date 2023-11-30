@@ -4,18 +4,21 @@
 #include <future>
 #include <unordered_map>
 #include <unordered_set>
+#include <memory>
 #include <thread>
 
 #include "docker.hpp"
 #include "volume.hpp"
 #include "storage.hpp"
 #include "container.hpp"
+#include "nbd.hpp"
 #include "util/log.hpp"
+#include "util/http.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
-#include "util/worker.hpp"
 #include "util/quota.hpp"
 #include "util/thread.hpp"
+#include "util/worker.hpp"
 #include "config.hpp"
 #include "kvalue.hpp"
 #include "helpers.hpp"
@@ -29,15 +32,20 @@ extern "C" {
 #include <sys/stat.h>
 #include <sys/vfs.h>
 #include <sys/mount.h>
+#include <sys/sysinfo.h>
 #include <linux/falloc.h>
 #include <linux/kdev_t.h>
 #include <linux/loop.h>
 }
 
+TNbdConn NbdConn;
+
 TPath VolumesKV;
+TPath NbdKV;
 MeasuredMutex VolumesMutex("volumes");
 std::map<TPath, std::shared_ptr<TVolume>> Volumes;
 std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
+
 static std::atomic<uint64_t> NextId(1);
 
 static std::condition_variable VolumesCv;
@@ -1487,6 +1495,279 @@ public:
     }
 };
 
+/* TVolumeNbdBackend - fs on NBD */
+static std::unordered_map<int, std::shared_ptr<TVolume>> NbdVolumes;
+
+class TVolumeNbdBackend : public TVolumeBackend {
+    static std::shared_ptr<TVolume> ResolveNbd(int deviceIndex) {
+        auto volumes_lock = LockVolumes();
+        auto it = NbdVolumes.find(deviceIndex);
+        if (it != NbdVolumes.end())
+            return it->second;
+        return nullptr;
+    }
+
+public:
+    TNbdConnParams NbdConnParams;
+    std::string FilesystemType;
+
+
+    TError Configure() override {
+        TError error;
+        TUri u;
+
+        u.Parse(Volume->Storage);
+        NbdConnParams.ReadOnly = Volume->IsReadOnly;
+
+        if (u.Scheme == "unix+tcp") {
+            auto root_path = Volume->VolumeOwnerContainer->RootPath;
+            NbdConnParams.UnixPath = root_path / TPath(u.Path);
+        } else if (u.Scheme == "tcp") {
+            NbdConnParams.Host = u.Host;
+            NbdConnParams.Port = u.Port;
+        } else
+            return TError(EError::InvalidValue, "Invalid uri scheme");
+
+        std::map<std::string, std::string> options;
+
+        for (auto& opt : u.Options)
+            options[opt.first] = opt.second;
+
+        auto parseOptionInt = [&options](const char* name, int& x, int default_x) {
+            auto it = options.find(name);
+            if (it != options.end()) {
+                auto error = StringToInt(it->second, x);
+                if (error)
+                    return error;
+            } else
+                x = default_x;
+
+            return OK;
+        };
+
+        auto it = options.find("export");
+        if (it != options.end())
+            NbdConnParams.ExportName = it->second;
+
+        it = options.find("fs-type");
+        FilesystemType = it != options.end() ? it->second : "ext4";
+
+        if (error = parseOptionInt("timeout", NbdConnParams.BioTimeout, 5))
+            return error;
+        if (error = parseOptionInt("conn-timeout", NbdConnParams.ConnTimeout, 5))
+            return error;
+        if (error = parseOptionInt("reconn-timeout", NbdConnParams.ReconnTimeout, 5))
+            return error;
+        if (error = parseOptionInt("blocksize", NbdConnParams.BlockSize, 512))
+            return error;
+        // before d970958b2d2 ("nbd: enable replace socket if only one connection is configured")
+        // signle-connections nbds do not report sockets shutdown
+        if (error = parseOptionInt("num-connections", NbdConnParams.NumConnections, 2))
+            return error;
+
+        return OK;
+    }
+
+    std::string GetDevice() {
+        if (Volume->DeviceIndex < 0)
+            return "";
+        return fmt::format("/dev/nbd{}", std::to_string(Volume->DeviceIndex));
+    }
+
+    TError Restore() override {
+        auto error = Configure();
+        if (error)
+            return error;
+
+        if (Volume->DeviceIndex >= 0) {
+            VolumesMutex.lock();
+            NbdVolumes[Volume->DeviceIndex] = Volume->shared_from_this();
+            VolumesMutex.unlock();
+
+            if (!Volume->DeviceName.size())
+                Volume->DeviceName = fmt::format("nbd{}", Volume->DeviceIndex);
+        }
+        return OK;
+    }
+
+    TError Build() override {
+        int index;
+
+        L_ACT("nbd connect {}", Volume->Storage);
+        uint64_t deadlineMs = GetCurrentTimeMs() + NbdConnParams.ConnTimeout * 1000;
+        auto error = NbdConn.ConnectDevice(NbdConnParams, deadlineMs, index);
+        if (error)
+            return error;
+
+        Volume->DeviceIndex = index;
+        Volume->DeviceName = fmt::format("nbd{}", index);
+
+        VolumesMutex.lock();
+        NbdVolumes[index] = Volume->shared_from_this();
+        VolumesMutex.unlock();
+
+        return Volume->InternalPath.Mount(GetDevice(), FilesystemType,
+                                          Volume->GetMountFlags(), {});
+    }
+
+    TError Rebuild(int numConnections) {
+        TNbdConnParams params = NbdConnParams;
+        params.NumConnections = numConnections;
+
+        L_ACT("nbd: reconnect nbd{} connections {}", Volume->DeviceIndex, numConnections);
+        uint64_t deadlineMs = GetCurrentTimeMs() + params.ConnTimeout * 1000;
+        return NbdConn.ReconnectDevice(params, deadlineMs, Volume->DeviceIndex);
+    }
+
+    static TError Rebuild(int deviceIndex, int numConnections) {
+        auto volume = ResolveNbd(deviceIndex);
+        if (!volume)
+            return TError(EError::VolumeNotFound);
+        auto backend = static_cast<TVolumeNbdBackend*>(volume->Backend.get());
+        return backend->Rebuild(numConnections);
+    }
+
+    TError Destroy() override {
+        std::string device = GetDevice();
+        TError error;
+
+        if (Volume->DeviceIndex < 0)
+            return OK;
+
+        VolumesMutex.lock();
+        NbdVolumes.erase(Volume->DeviceIndex);
+        VolumesMutex.unlock();
+
+        error = NbdConn.DisconnectDevice(Volume->DeviceIndex);
+        if (error)
+            return error;
+
+        error = Volume->InternalPath.UmountAll();
+        if (error)
+            return error;
+
+        Volume->DeviceIndex = -1;
+
+        error = Volume->InternalPath.UmountAll();
+        if (error)
+            return error;
+
+
+        return error;
+    }
+
+    TError Resize(uint64_t, uint64_t) override {
+        return TError(EError::NotSupported, "nbd backend doesn't suppport resize");
+    }
+
+    std::string ClaimPlace() override {
+        return "nbd";
+    }
+
+    TError StatFS(TStatFS &result) override {
+        return Volume->InternalPath.StatFS(result);
+    }
+};
+
+struct TNbdReconnRequest {
+    TNbdReconnRequest(int deviceIndex, int numConnections, uint64_t dueMs, uint64_t retry = 0)
+        : DeviceIndex(deviceIndex),
+          NumConnections(numConnections),
+          DueMs(dueMs),
+          Retry(retry) { }
+
+    TNbdReconnRequest NextRetry() {
+        uint64_t delay = 1 << (6 + std::min(6UL, Retry));
+        return TNbdReconnRequest(DeviceIndex, NumConnections, GetCurrentTimeMs() + delay, Retry + 1);
+    }
+
+    int DeviceIndex;
+    int NumConnections;
+    uint64_t DueMs;
+    uint64_t Retry;
+
+    bool operator<(const TNbdReconnRequest &rhs) const {
+        return DueMs >= rhs.DueMs;
+    }
+};
+
+class TNbdReconnQueue {
+    std::unordered_map<int, int&> Devices;
+    std::priority_queue<TNbdReconnRequest> Q;
+public:
+    void push(const TNbdReconnRequest &r) {
+        auto it = Devices.find(r.DeviceIndex);
+        if (it != Devices.end()) {
+            it->second += r.NumConnections;
+        } else {
+            Q.push(r);
+            int &nc = const_cast<TNbdReconnRequest&>(Q.top()).NumConnections;
+            Devices.insert(it, {r.DeviceIndex, nc});
+        }
+    }
+
+    bool empty() {
+        return Q.empty();
+    }
+
+    TNbdReconnRequest top() {
+        return Q.top();
+    }
+
+    void pop() {
+        Devices.erase(Q.top().DeviceIndex);
+        Q.pop();
+    }
+};
+
+static class TNbdReconnectWorker : public TWorker<TNbdReconnRequest, TNbdReconnQueue> {
+protected:
+    TNbdReconnRequest Pop() override {
+        auto request = Queue.top();
+        Queue.pop();
+        return request;
+    }
+
+    void Wait(TScopedLock &lock) override {
+        if (!Valid)
+            return;
+
+        if (!Queue.empty()) {
+            auto now = GetCurrentTimeMs();
+            const auto top = Queue.top();
+            if (top.DueMs <= now)
+                return;
+            auto timeout = top.DueMs - now;
+            Cv.wait_for(lock, std::chrono::milliseconds(timeout));
+        } else {
+            TWorker::Wait(lock);
+        }
+    }
+
+public:
+    TNbdReconnectWorker(const std::string &name) : TWorker(name, 0) { }
+
+    void Start(size_t nr) {
+        Nr = nr;
+        TWorker::Start();
+    }
+
+    bool Handle(TNbdReconnRequest& req) override {
+        if (req.DueMs > GetCurrentTimeMs())
+            return false;
+
+        auto error = TVolumeNbdBackend::Rebuild(req.DeviceIndex, req.NumConnections);
+        if (error.Error == EError::VolumeNotFound)
+            return true;
+        if (error) {
+            L_WRN("nbd: failed reconnect nbd{}: {}", req.DeviceIndex, error);
+            Push(req.NextRetry());
+        } else {
+            L("nbd: nbd{} reconnected {} connections", req.DeviceIndex, req.NumConnections);
+        }
+        return true;
+    }
+} NbdReconnectWorker("portod-NR");
 
 /* TVolumeLvmBackend - ext4 on LVM */
 
@@ -1766,6 +2047,8 @@ TError TVolume::OpenBackend() {
         Backend = std::unique_ptr<TVolumeBackend>(new TVolumeLvmBackend());
     else if (BackendType == "rbd")
         Backend = std::unique_ptr<TVolumeBackend>(new TVolumeRbdBackend());
+    else if (BackendType == "nbd")
+        Backend = std::unique_ptr<TVolumeBackend>(new TVolumeNbdBackend());
     else
         return TError(EError::NotSupported, "Unknown volume backend: " + BackendType);
 
@@ -3939,6 +4222,7 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec,
             return error;
     }
 
+    volume->VolumeOwnerContainer = owner;
     error = volume->Configure(target_root);
     if (error)
         return error;
@@ -3967,7 +4251,6 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec,
 
     Volumes[volume->Path] = volume;
 
-    volume->VolumeOwnerContainer = owner;
     owner->OwnedVolumes.push_back(volume);
 
     volume->SetState(EVolumeState::Building);
@@ -4589,4 +4872,105 @@ void TVolume::Dump(rpc::TVolumeSpec &spec, bool full) {
         spec.mutable_inodes()->set_usage(Stat.InodeUsage);
         spec.mutable_inodes()->set_available(Stat.InodeAvail);
     }
+}
+
+TError LoadNbd() {
+    int size;
+    TPath mod("/sys/module/nbd");
+
+    if (mod.Exists()) {
+        TPath("/sys/module/nbd/parameters/nbds_max").ReadInt(size);
+        L("nbd module already loaded with nbd_max={}", size);
+    } else {
+        size = get_nprocs();
+        auto error = RunCommand({"modprobe", "nbd", fmt::format("nbds_max={}", size), "max_parts=1"});
+        if (error)
+            return error;
+        L("nbd module loaded with nbds_max={}", size);
+    }
+
+    return OK;
+}
+
+static constexpr const char NBD_KV_GRACEFUL[] = "graceful";
+
+// must be called AFTER all volumes are restored!
+TError StartNbd() {
+    NbdConn.OnDeadLink([](int index, uint64_t numConnections) {
+        L_ACT("nbd: nbd{} {} disconnections", index, numConnections);
+        NbdReconnectWorker.Push(TNbdReconnRequest(index, numConnections, GetCurrentTimeMs()));
+        return OK;
+    });
+
+    int fd = fcntl(PORTO_NL_SK_FD, F_DUPFD_CLOEXEC, PORTO_NL_SK_FD);
+    if (fd < PORTO_NL_SK_FD)
+        return TError::System("F_DUPFD_CLOEXEC");
+    TError error = NbdConn.Init(fd);
+    if (error)
+        return error;
+
+    auto graceful = NbdKV / NBD_KV_GRACEFUL;
+
+    if (PortoNlSocketReused && graceful.Exists()) {
+        (void)graceful.Unlink();
+        std::list<TKeyValue> nodes;
+
+        error = TKeyValue::ListAll(NbdKV, nodes);
+        if (error)
+            L_ERR("Cannot list nodes: {}", error);
+
+        for (auto &node : nodes) {
+            error = node.Load();
+            if (error) {
+                L_WRN("Cannot load {} removed: {}", node.Path, error);
+                node.Path.Unlink();
+                continue;
+            }
+
+            NbdReconnectWorker.Push(
+                TNbdReconnRequest(
+                    /*.DeviceIndex = */     std::stoi(node.Data["DeviceIndex"]),
+                    /*.NumConnections = */  std::stoi(node.Data["NumConnections"]),
+                    /*.DueMs = */           std::stoul(node.Data["DueMs"]),
+                    /*.Retry = */           std::stoul(node.Data["Retry"])
+                    )
+                );
+        }
+    } else {
+        auto lock = LockVolumes();
+
+        for (const auto &p : NbdVolumes) {
+            const auto &volume = p.second;
+            auto backend = static_cast<TVolumeNbdBackend*>(volume->Backend.get());
+
+            NbdReconnectWorker.Push(
+                TNbdReconnRequest(
+                    /*.DeviceIndex = */     p.first,
+                    /*.NumConnections = */  backend->NbdConnParams.NumConnections,
+                    /*.DueMs = */           0
+                    )
+                );
+        }
+    }
+    (void)NbdKV.ClearDirectory();
+
+    NbdReconnectWorker.Start(2 * config().daemon().vl_threads());
+    return OK;
+}
+
+void StopNbd() {
+    NbdReconnectWorker.Stop();
+    NbdConn.Close();
+
+    while (!NbdReconnectWorker.Queue.empty()) {
+        auto req = NbdReconnectWorker.Queue.top();
+        TKeyValue node(NbdKV / std::to_string(req.DeviceIndex));
+        node.Set("DeviceIndex", std::to_string(req.DeviceIndex));
+        node.Set("NumConnections", std::to_string(req.NumConnections));
+        node.Set("DueMs", std::to_string(req.DueMs));
+        node.Set("Retry", std::to_string(req.Retry));
+        node.Save();
+        NbdReconnectWorker.Queue.pop();
+    }
+    TKeyValue(NbdKV / NBD_KV_GRACEFUL).Save();
 }

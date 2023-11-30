@@ -11,6 +11,7 @@
 #include "config.hpp"
 #include "event.hpp"
 #include "network.hpp"
+#include "nbd.hpp"
 #include "client.hpp"
 #include "epoll.hpp"
 #include "container.hpp"
@@ -71,6 +72,7 @@ static std::map<pid_t, int> Zombies;
 
 bool PortodFrozen = false;
 bool ShutdownPortod = false;
+bool PortoNlSocketReused = false;
 static uint64_t ShutdownStart = 0;
 static uint64_t ShutdownDeadline = 0;
 std::atomic_bool NeedStopHelpers(false);
@@ -188,6 +190,22 @@ static TError CreatePortoSocket() {
     else if (dup2(sock.Fd, PORTO_SK_FD) != PORTO_SK_FD)
         return TError::System("dup2()");
 
+    return OK;
+}
+
+static TError CreatePortoNlSocket() {
+    struct stat st;
+    if (!fstat(PORTO_NL_SK_FD, &st) && S_ISSOCK(st.st_mode)) {
+        time_t now = time(nullptr);
+        L_SYS("Reuse porto nl socket: inode {} age {}",
+              st.st_ino, now - st.st_ctime);
+        PortoNlSocketReused = true;
+    } else {
+        L_SYS("Create new porto nl socket");
+        auto error = TNbdConn::MakeMcastSock(PORTO_NL_SK_FD);
+        if (error)
+            return error;
+    }
     return OK;
 }
 
@@ -395,6 +413,11 @@ static void PortodServer() {
         return;
     }
 
+    error = StartNbd();
+    if (error) {
+        L_ERR("Can't start nbd: {}", error);
+        return;
+    }
     StartStatFsLoop();
     StartRpcQueue();
     EventQueue->Start();
@@ -889,6 +912,11 @@ static int Portod() {
     if (error)
         FatalError("Cannot mount volumes keyvalue", error);
 
+    NbdKV = TPath(PORTO_NBD_KV);
+    error = TKeyValue::Mount(NbdKV);
+    if (error)
+        FatalError("Cannot mount nbd keyvalue", error);
+
     TPath root("/");
     error = root.Chdir();
     if (error)
@@ -1008,9 +1036,14 @@ static int Portod() {
         error = VolumesKV.UmountAll();
         if (error)
             L_ERR("Can't destroy volume key-value storage: {}", error);
+
+        error = NbdKV.UmountAll();
+        if (error)
+            L_ERR("Can't destroy volume key-value storage: {}", error);
     }
 
     StopAsyncUmounter();
+    StopNbd();
 
     PortodPidFile.Remove();
 
@@ -1378,6 +1411,18 @@ static int PortodMaster() {
         return EXIT_FAILURE;
     }
 
+    error = LoadNbd();
+    if (error) {
+        L_ERR("Cannot load nbd module: {}", error);
+        return EXIT_FAILURE;
+    }
+
+    error = CreatePortoNlSocket();
+    if (error) {
+        L_ERR("Cannot create porto netlink socket: {}", error);
+        return EXIT_FAILURE;
+    }
+
     error = TCore::Register(thisBin);
     if (error) {
         L_ERR("Cannot setup core pattern: {}", error);
@@ -1410,6 +1455,7 @@ static int PortodMaster() {
     pathVer.Unlink();
     TPath(PORTO_CONTAINERS_KV).Rmdir();
     TPath(PORTO_VOLUMES_KV).Rmdir();
+    TPath(PORTO_NBD_KV).Rmdir();
     TPath("/run/porto").Rmdir();
     TPath(PORTOD_STAT_FILE).Unlink();
 
@@ -1421,6 +1467,7 @@ static int PortodMaster() {
 static void KvDump() {
     TKeyValue::DumpAll(PORTO_CONTAINERS_KV);
     TKeyValue::DumpAll(PORTO_VOLUMES_KV);
+    TKeyValue::DumpAll(PORTO_NBD_KV);
 }
 
 static void PrintVersion() {

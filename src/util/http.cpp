@@ -19,10 +19,10 @@ TUri::TUri(const std::string &uri) {
 TError TUri::Parse(const std::string &uri) {
     TError error;
     std::string u = uri;
-    std::regex reg("([a-z0-9\\+\\-\\.]+):.*");
+    static std::regex scheme_reg("([a-z0-9\\+\\-\\.]+):.*");
 
     // [<scheme>:][//[<credentials>@]<host>[:<port>]][/<path>][?<option>[&<option>]][#fragment]
-    if (std::regex_match(u, reg)) {
+    if (std::regex_match(u, scheme_reg)) {
         auto schemePos = u.find(":");
         if (schemePos != std::string::npos) {
             Scheme = u.substr(0, schemePos);

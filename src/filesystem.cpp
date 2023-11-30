@@ -856,6 +856,11 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         error = TPath(PORTO_VOLUMES_KV).UmountAll();
         if (error)
             return error;
+
+        error = TPath(PORTO_NBD_KV).UmountAll();
+        if (error)
+            return error;
+
     }
 
     if (Root.IsRoot()) {

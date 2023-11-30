@@ -3,7 +3,9 @@ Maintainer: Porto Team <porto@yandex-team.ru>
 Build-Depends:
  cmake, debhelper (>= 8.0.0), pkg-config, autoconf, libtool,
  protobuf-compiler, libprotobuf-dev, libncurses5-dev,
- libnl-3-dev (>=3.2.27), libnl-route-3-dev (>=3.2.27),
+ libnl-3-dev (>=3.2.27),
+ libnl-genl-3-dev (>=3.2.27),
+ libnl-route-3-dev (>=3.2.27),
  libnl-idiag-3-dev (>=3.2.27),
  libelf-dev, zlib1g-dev,
  g++ (>= 4:4.7) | g++-4.7,
