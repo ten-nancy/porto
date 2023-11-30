@@ -451,7 +451,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
         PlacePolicy = Parent->PlacePolicy;
 
     CpuPolicy = Parent ? Parent->CpuPolicy : "normal";
-    ExtSchedIdle = Parent ? Parent->ExtSchedIdle : false; // inheritance extended SCHED_IDLE flag
+    SetProp(EProperty::CPU_POLICY);
     ChooseSchedPolicy();
 
     CpuPeriod = Parent ? Parent->CpuPeriod : config().container().cpu_period();
@@ -1417,7 +1417,7 @@ TError TContainer::ApplyUlimits() {
     return OK;
 }
 
-static constexpr const char* CPU_POLICE_IDLE = "idle";
+static constexpr const char* CPU_POLICY_IDLE = "idle";
 
 void TContainer::ChooseSchedPolicy() {
     SchedPolicy = SCHED_OTHER;
@@ -1435,7 +1435,7 @@ void TContainer::ChooseSchedPolicy() {
         SchedNice = config().container().high_nice();
     } else if (CpuPolicy == "batch") {
         SchedPolicy = SCHED_BATCH;
-    } else if (CpuPolicy == CPU_POLICE_IDLE) {
+    } else if (CpuPolicy == CPU_POLICY_IDLE) {
         SchedPolicy = SCHED_IDLE;
     } else if (CpuPolicy == "iso") {
         SchedPolicy = 4;
@@ -1470,20 +1470,17 @@ TError TContainer::ApplySchedPolicy() {
 
     L_ACT("Set {} scheduler policy {}", cg, CpuPolicy);
 
-    if (CpuSubsystem.HasIdle) { // Has extending SCHED_IDLE to cgroups (kernel 5.15 and above)
-        bool IsSchedIdle = SchedPolicy == SCHED_IDLE; // cpu_policy=idle
+    // Extention of SCHED_IDLE to cgroups on kernel 5.15 and above. More details:
+    // https://lore.kernel.org/lkml/20210608231132.32012-1-joshdon@google.com
+    if (CpuSubsystem.HasIdle && Controllers & CGROUP_CPU) {
+        auto cpucg = GetCgroup(CpuSubsystem);
 
-        if ((ExtSchedIdle) && (!IsSchedIdle)) { // enabled extended SCHED_IDLE in parent and cpu_policy!=idle
-            return TError(EError::InvalidValue, "cpu_policy must be idle, if parent has cpu_policy=idle and cgroup CPU at kernel 5.15 and above");
-        }
-
-        if ((!ExtSchedIdle) &&         // cpu.idle not set to 1 in parent
-            (IsSchedIdle) &&           // and current cpu_policy=idle
-            (Controllers & CGROUP_CPU) // and has CPU controller
-        ) { // Enable extended SCHED_IDLE for cgroups https://lore.kernel.org/lkml/20210608231132.32012-1-joshdon@google.com/
-            auto cpucg = GetCgroup(CpuSubsystem);
+        if (SchedPolicy == SCHED_IDLE) {
             cpucg.Set(TCpuSubsystem::CPU_IDLE, "1");
             ExtSchedIdle = true;
+        } else {
+            cpucg.Set(TCpuSubsystem::CPU_IDLE, "0");
+            ExtSchedIdle = false;
         }
     }
 
@@ -2561,8 +2558,9 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if (TestClearPropDirty(EProperty::CPU_POLICY) ||
-        TestClearPropDirty(EProperty::CPU_WEIGHT)) {
+    if ((!JobMode) &&
+        (TestClearPropDirty(EProperty::CPU_POLICY) ||
+        TestClearPropDirty(EProperty::CPU_WEIGHT))) {
         error = ApplySchedPolicy();
         if (error) {
             L_ERR("Cannot set scheduler policy: {}", error);
