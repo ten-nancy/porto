@@ -35,11 +35,40 @@ static uint64_t AsyncRemoveWatchDogPeriod;
 
 static unsigned RemoveCounter = 0;
 
-static std::list<TPath> ActivePaths;
+static std::list<std::pair<dev_t, ino_t>> ActiveInodes;
 
-static bool PathIsActive(const TPath &path) {
+static bool InodeIsActive(const TFile &f) {
     PORTO_LOCKED(VolumesMutex);
-    return std::find(ActivePaths.begin(), ActivePaths.end(), path) != ActivePaths.end();
+
+    struct stat st;
+    auto error = f.Stat(st);
+    if (error)
+        return false;
+
+    auto p = std::make_pair(st.st_dev, st.st_ino);
+    return std::find(ActiveInodes.begin(), ActiveInodes.end(), p) != ActiveInodes.end();
+}
+
+static TError AddActiveInode(const TFile &f) {
+    PORTO_LOCKED(VolumesMutex);
+
+    struct stat st;
+    auto error = f.Stat(st);
+    if (error)
+        return error;
+    ActiveInodes.push_back({st.st_dev, st.st_ino});
+    return OK;
+}
+
+static TError RemoveActiveInode(const TFile &f) {
+    PORTO_LOCKED(VolumesMutex);
+
+    struct stat st;
+    auto error = f.Stat(st);
+    if (error)
+        return error;
+    ActiveInodes.remove({st.st_dev, st.st_ino});
+    return OK;
 }
 
 static std::condition_variable StorageCv;
@@ -318,7 +347,7 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type) {
 
         TFile dirent;
         if (!dirent.OpenDir(path)) {
-            if (PathIsActive(dirent.RealPath()))
+            if (InodeIsActive(dirent))
                 continue;
 
             path = dirent.RealPath();
@@ -847,7 +876,7 @@ TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgrou
 
     TFile import_dir;
 
-    while (!import_dir.OpenDir(temp) && PathIsActive(import_dir.RealPath())) {
+    while (!import_dir.OpenDir(temp) && InodeIsActive(import_dir)) {
         if (merge)
             return TError(EError::Busy, Name + " is importing right now");
         StorageCv.wait(lock);
@@ -879,10 +908,14 @@ TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgrou
             return error;
     }
 
-    import_dir.OpenDir(temp);
+    error = import_dir.OpenDir(temp);
+    if (error)
+        return error;
+    error = AddActiveInode(import_dir);
+    if (error)
+        return error;
     temp = import_dir.RealPath();
 
-    ActivePaths.push_back(temp);
     lock.unlock();
 
     IncPlaceLoad(Place);
@@ -944,7 +977,7 @@ TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgrou
     lock.lock();
     error = temp.Rename(Path);
     if (!error)
-        ActivePaths.remove(temp);
+        error = RemoveActiveInode(import_dir);
     lock.unlock();
     if (error)
         goto err;
@@ -963,7 +996,7 @@ err:
     DecPlaceLoad(Place);
 
     lock.lock();
-    ActivePaths.remove(temp);
+    (void)RemoveActiveInode(import_dir);
     lock.unlock();
 
     StorageCv.notify_all();
@@ -1102,10 +1135,8 @@ TError TStorage::Remove(bool weak, bool async) {
     error = Path.Rename(temp);
     if (!error && !async) {
         error = temp_dir.OpenDir(temp);
-        if (!error) {
-            temp = temp_dir.RealPath();
-            ActivePaths.push_back(temp);
-        }
+        if (!error)
+            error = AddActiveInode(temp_dir);
     }
 
     lock.unlock();
@@ -1133,7 +1164,7 @@ TError TStorage::Remove(bool weak, bool async) {
 
     if (!async) {
         lock.lock();
-        ActivePaths.remove(temp);
+        RemoveActiveInode(temp_dir);
         lock.unlock();
     }
 

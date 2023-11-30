@@ -5,8 +5,19 @@ import porto
 import time
 from pathlib import Path
 from test_common import *
+import shutil
+import tarfile
+
+test_path = "/tmp/test-async-cleanup"
 
 STORAGE_TYPES = ["porto_layers", "porto_storage", "porto_volumes"]
+
+def create_tar():
+    with open(os.path.join(test_path, "file.txt"), "w") as f:
+        f.write("Oh shit, here we go again")
+
+    with tarfile.open(name=os.path.join(test_path,  "layer.tar"), mode="w") as t:
+        t.add(os.path.join(test_path, "file.txt"), arcname="file.txt")
 
 
 def TriggerCleanup(conn):
@@ -89,6 +100,46 @@ volumes {
     for deleted_path in GetDeletedPaths():
         assert not PathOrSymlinkExists(deleted_path), "Path '{}' shouldn't exist".format(deleted_path)
 
+def TestSiblingBindImport():
+    script_path =  os.path.join(test_path, "tar.sh")
+    # This script checks memory cgroup of his process
+    with open(script_path, 'w') as f:
+        f.write("""
+        #!/bin/bash
+        sleep 3
+        tar $@
+        """)
+    os.chmod(script_path, 0o755)
+
+    ConfigurePortod("test-sibling-bind-import", """
+    daemon {
+        tar_path: "%s",
+    }
+    volumes {
+        async_remove_watchdog_ms: %d
+    }
+    """ % (script_path, 5))
+    conn = porto.Connection(timeout=10)
+    volumes = []
+
+    def createVolume(*args, **kwargs):
+        vol = conn.CreateVolume(*args, **kwargs)
+        volumes.append(vol)
+        return vol
+
+    try:
+        storage = createVolume(backend='plain')
+
+        vol1 = createVolume(backend='bind', storage=storage.path)
+        vol2 = createVolume(backend='bind', storage=storage.path)
+        vol3 = createVolume(backend='plain', place=vol1.path)
+        vol4 = createVolume(backend='plain', place=vol2.path)
+        create_tar()
+        conn.ImportLayer("layer", os.path.join(test_path, "layer.tar"), place=vol1.path)
+    finally:
+        for vol in volumes[::-1]:
+            conn.UnlinkVolume(vol.path)
+
 try:
     TestAsyncCleanup()
 except Exception as e:
@@ -97,3 +148,15 @@ except Exception as e:
 finally:
     DeleteTestPaths()
     ConfigurePortod('async-cleanup', "")
+
+try:
+    shutil.rmtree(test_path)
+except:
+    pass
+os.mkdir(test_path)
+
+
+try:
+    TestSiblingBindImport()
+finally:
+    shutil.rmtree(test_path)
