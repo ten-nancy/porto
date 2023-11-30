@@ -1,3 +1,17 @@
+porto (5.3.29) unstable; urgency=low
+  [ kndrvt ]
+      container: allow other cpu_policy after idle on 5.15 and above
+      porto: add porto ci for 5.15
+  [ ovov ]
+      volume: add backend=nbd
+      storage: use (dev, ino) instead of realpath for import protection
+      porto: add .dir-locals.el
+  [ dmitrygx ]
+      test: add test for network xvlan settings
+  last commit: 78fa7f9c4794ad31d8041e60adfd7b1e7104f853
+
+ -- Porto Team <porto@yandex-team.ru>  Thu, 30 Nov 2023 15:42:10 -0000
+
 porto (5.3.28) unstable; urgency=low
   [ ovov ]
       storage: dont call TStorage::CheckBaseDirectory during async cleanup
