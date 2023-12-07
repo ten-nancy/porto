@@ -1568,7 +1568,7 @@ public:
             return error;
         // before d970958b2d2 ("nbd: enable replace socket if only one connection is configured")
         // signle-connections nbds do not report sockets shutdown
-        if (error = parseOptionInt("num-connections", NbdConnParams.NumConnections, 2))
+        if (error = parseOptionInt("num-connections", NbdConnParams.NumConnections, 1))
             return error;
 
         return OK;
