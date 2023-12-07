@@ -15,7 +15,7 @@ TError TSocket::Connect(const sockaddr *addr, size_t len) {
     int ret = connect(Fd, addr, len);
     if (ret == 0)
         return OK;
-    return TError("connect socket failed");
+    return TError::System("connect socket failed");
 }
 
 TError TSocket::Connect(const std::string &path) {

@@ -110,6 +110,19 @@ def nbd_server(images):
             yield pid, socket_path
 
 
+@contextlib.contextmanager
+def freezer(pids):
+    stopped = []
+    try:
+        for pid in pids:
+            os.kill(pid, signal.SIGSTOP)
+            stopped.append(pid)
+        yield
+    finally:
+        for pid in stopped:
+            os.kill(pid, signal.SIGCONT)
+
+
 def readall(path):
     with open(path) as f:
         return f.read()
@@ -129,8 +142,11 @@ class TestNbdVolume:
         self.conn = porto.Connection(timeout=10)
 
     def run(self):
-        ExpectException(self.test_non_existent_image, porto.exceptions.Unknown)
-        ExpectException(self.test_invalid_image, porto.exceptions.Unknown)
+        # order matters
+        ExpectException(self.test_invalid_socket, porto.exceptions.NbdSocketUnavaliable);
+        ExpectException(self.test_non_existent_export, porto.exceptions.NbdUnkownExport);
+        ExpectException(self.test_invalid_image, porto.exceptions.InvalidFilesystem)
+        ExpectException(self.test_connection_timeout, porto.exceptions.NbdSocketTimeout)
         vol = self.test_volume_creation()
         self.test_io_timeout(vol)
         self.test_reconnect_read(vol)
@@ -143,32 +159,35 @@ class TestNbdVolume:
         finally:
             self.conn.UnlinkVolume(vol.path)
 
-    def test_non_existent_image(self):
+    def test_invalid_socket(self):
         self.cleanup.enter_context(self.createVolume(
             backend='nbd',
-            storage='unix+tcp:/lol/kek/chebuker?export=image'))
+            storage='unix+tcp:/lol/kek/cheburek?export=image'))
+
+    def test_non_existent_export(self):
+        self.cleanup.enter_context(self.createVolume(
+            backend='nbd',
+            storage='unix+tcp:{path}?export=lol-kek-cheburek'.format(path=self.socket_path)))
 
     def test_invalid_image(self):
         self.cleanup.enter_context(self.createVolume(
             backend='nbd',
             storage='unix+tcp:{path}?export=invalid'.format(path=self.socket_path)))
 
+    def test_connection_timeout(self):
+        with freezer([self.nbd_pid]):
+            self.test_volume_creation()
+
     def test_volume_creation(self):
         uri = 'unix+tcp:{path}?export=image&timeout=1&reconn-timeout=1'.format(path=self.socket_path)
         return self.cleanup.enter_context(self.createVolume(backend='nbd', storage=uri, read_only='true'))
 
     def test_io_timeout(self, vol):
-        for pid in chain([self.nbd_pid], subpids(self.nbd_pid)):
-            os.kill(pid, signal.SIGSTOP)
-
-        try:
+        with freezer([self.nbd_pid] + subpids(self.nbd_pid)):
             start = time.time()
             ExpectException(readall, OSError, os.path.join(vol.path, 'foo'))
             duration = time.time() - start
             ExpectLe(duration, 10)
-        finally:
-            for pid in chain([self.nbd_pid], subpids(self.nbd_pid)):
-                os.kill(pid, signal.SIGCONT)
 
     def test_reconnect_read(self, vol):
         start = time.time()

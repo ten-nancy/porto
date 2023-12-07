@@ -40,6 +40,20 @@ struct TConnParams {
     int dead_conn_timeout;
 };
 
+static TError SockError(const TError &error, const std::string &msg = "") {
+    auto m = msg.empty() ? error.Text : fmt::format("{}: {}", error.Text, msg);
+
+    switch (error.Errno) {
+    case ECONNREFUSED:
+    case ENOENT:
+        return TError(EError::NbdSocketUnavaliable, m);
+    case EAGAIN:
+        return TError(EError::NbdSocketTimeout, m);
+    default:
+        return TError(EError::NbdSocketError, m);
+    }
+}
+
 static std::shared_ptr<struct nl_sock> newNbdSock(int fd) {
     std::shared_ptr<struct nl_sock> sk(
         nl_socket_alloc(),
@@ -187,19 +201,19 @@ static TError negotiate(const TSocket &sock, uint64_t &size, uint16_t &flags,
     uint16_t global_flags;
 
     if (error = sock.Read(&magic, sizeof(magic)))
-        return error;
+        return SockError(error, "read magic failed");
 
     if (be64toh(magic) != nbd_magic)
-        return TError("invalid magic: expected {}, got {}", nbd_magic, be64toh(magic));
+        return TError(EError::NbdProtoError, "invalid magic: expected {}, got {}", nbd_magic, be64toh(magic));
 
     if (error = sock.Read(&magic, sizeof(magic)))
-        return error;
+        return SockError(error, "read opts magic failed");
 
     if (be64toh(magic) != opts_magic)
-        return TError("invalid magic: expected {}, got {}", opts_magic, be64toh(magic));
+        return TError(EError::NbdProtoError, "invalid magic: expected {}, got {}", opts_magic, be64toh(magic));
 
     if (error = sock.Read(&global_flags, sizeof(global_flags)))
-        return TError(error, "read global flags failed");
+        return SockError(error, "read global flags failed");
 
     global_flags = ntohs(global_flags);
 
@@ -209,26 +223,29 @@ static TError negotiate(const TSocket &sock, uint64_t &size, uint16_t &flags,
     client_flags = htonl(client_flags);
 
     if (error = sock.Write(&client_flags, sizeof(client_flags)))
-        return TError(error, "write client flags failed");
+        return SockError(error, "write client flags failed");
 
     if (error = sendExportname(sock, exportname))
-        return TError(error, "send export name failed");
+        return SockError(error, "send export name failed");
 
     if (error = sock.Read(&size, sizeof(size))) {
         if (error.Errno == ECONNRESET)
-            return TError("unknown export '{}'", exportname);
-        return TError(error, "read export size failed");
+            return TError(EError::NbdUnkownExport, "unknown export '{}'", exportname);
+        return SockError(error, "read export size failed");
     }
     size = be64toh(size);
 
     if (error = sock.Read(&flags, sizeof(flags)))
-        return TError(error, "read export flags failed");
+        return SockError(error, "read export flags failed: {}");
     flags = ntohs(flags);
 
     if(!(global_flags & NBD_FLAG_NO_ZEROES)) {
         char buf[124];
-        if (error = sock.Read(buf, 124))
-            return TError(error, "failed read trailing zeroes");
+        if (error = sock.Read(buf, 124)) {
+            if (error.Errno == ECONNRESET)
+                return TError(EError::NbdProtoError, "failed read trailing zeroes");
+            return SockError(error);
+        }
     }
 
     return OK;
@@ -458,7 +475,7 @@ TError MakeConnections(const TNbdConnParams &params, uint64_t deadlineMs, TConnP
             error = sock.Connect( params.Host, params.Port);
 
         if (error)
-            return error;
+            return SockError(error);
 
         error = negotiate(sock, size, flags, NBD_FLAG_FIXED_NEWSTYLE, params.ExportName);
         if (error)

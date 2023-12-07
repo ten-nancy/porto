@@ -882,6 +882,9 @@ public:
             Volume->DeviceIndex = -1;
         }
 
+        if (error.Errno == EINVAL)
+            return TError(EError::InvalidFilesystem);
+
         return error;
     }
 
@@ -1211,8 +1214,11 @@ public:
 
         error = lower.Mount("/dev/loop" + std::to_string(Volume->DeviceIndex),
                             "squashfs", MS_RDONLY | MS_NODEV | MS_NOSUID, {});
-        if (error)
+        if (error) {
+            if (error.Errno == EINVAL)
+                error = TError(EError::InvalidFilesystem);
             goto err;
+        }
 
         /* shortcut for read-only volumes without extra layers */
         if (Volume->IsReadOnly && Volume->Layers.size() == 1) {
@@ -1510,7 +1516,7 @@ class TVolumeNbdBackend : public TVolumeBackend {
 public:
     TNbdConnParams NbdConnParams;
     std::string FilesystemType;
-
+    std::atomic_ulong Reconns;
 
     TError Configure() override {
         TError error;
@@ -1606,14 +1612,20 @@ public:
         NbdVolumes[index] = Volume->shared_from_this();
         VolumesMutex.unlock();
 
-        return Volume->InternalPath.Mount(GetDevice(), FilesystemType,
-                                          Volume->GetMountFlags(), {});
+        error = Volume->InternalPath.Mount(GetDevice(), FilesystemType,
+                                           Volume->GetMountFlags(), {});
+        if (error.Errno == EIO)
+            return TError(Reconns ? EError::NbdSocketTimeout : EError::InvalidFilesystem);
+        else if (error.Errno == EINVAL)
+            return TError(EError::InvalidFilesystem);
+        return error;
     }
 
     TError Rebuild(int numConnections) {
         TNbdConnParams params = NbdConnParams;
         params.NumConnections = numConnections;
 
+        Reconns += numConnections;
         L_ACT("nbd: reconnect nbd{} connections {}", Volume->DeviceIndex, numConnections);
         uint64_t deadlineMs = GetCurrentTimeMs() + params.ConnTimeout * 1000;
         return NbdConn.ReconnectDevice(params, deadlineMs, Volume->DeviceIndex);
