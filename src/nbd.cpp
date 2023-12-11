@@ -1,15 +1,14 @@
 #include <cstdint>
 #include <climits>
 
-
 extern "C" {
-#include <string.h>
 #include <arpa/inet.h>
 #include <linux/nbd-netlink.h>
 #include <netlink/netlink.h>
 #include <netlink/genl/genl.h>
 #include <netlink/genl/ctrl.h>
 #include <poll.h>
+#include <string.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -117,6 +116,25 @@ static struct nl_msg *newMsgConn(int driver_id, uint32_t seq, const TConnParams 
 nla_put_failure:
     free(msg);
     return NULL;
+}
+
+static TError parseConnMsg(struct nl_msg *msg, int &index) {
+    struct genlmsghdr *gnlh = (struct genlmsghdr*)nlmsg_data(nlmsg_hdr(msg));
+    struct nlattr *msg_attr[NBD_ATTR_MAX + 1];
+    int ret;
+
+    if (gnlh->cmd != NBD_CMD_CONNECT)
+        return TError("gnlh->cmd: expected {} got {}", gnlh->cmd, NBD_CMD_CONNECT);
+
+    ret = nla_parse(msg_attr, NBD_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+                    genlmsg_attrlen(gnlh, 0), NULL);
+    if (ret < 0)
+        return TError("failed to parse nl_msg: {}", nl_geterror(ret));
+    if (!msg_attr[NBD_ATTR_INDEX])
+        return TError("missing device index");
+
+    index = (int)nla_get_u32(msg_attr[NBD_ATTR_INDEX]);
+    return OK;
 }
 
 static struct nl_msg *newMsgReconn(int driverId, int index, uint32_t seq, const TConnParams &params) {
@@ -251,37 +269,72 @@ static TError negotiate(const TSocket &sock, uint64_t &size, uint16_t &flags,
     return OK;
 }
 
-int TNbdConn::GenCallback(struct nl_msg *msg, std::mutex &m, TNbdConnCallbacks &callbacks) {
-    struct nlmsghdr *hdr = nlmsg_hdr(msg);
+TError TNlFuture::WaitFor(uint64_t timeoutMs) {
+    auto status = Fut.wait_for(std::chrono::milliseconds(timeoutMs));
+    if (status != std::future_status::ready)
+        return DoCleanup() ? Fut.get() : TError("netlink timeout");
+
+    Cleanup = nullptr;
+    return Fut.get();
+}
+
+TError TNlFuture::WaitUntil(uint64_t deadlineMs) {
+    uint64_t now = GetCurrentTimeMs();
+    if (now >= deadlineMs)
+        return DoCleanup() ? Fut.get() : TError("netlink timeout");
+
+    return WaitFor(deadlineMs - now);
+}
+
+int TNbdConn::GenCallback(struct nl_msg *msg, struct nlmsgerr *err, TNbdConnCallbacks &callbacks) {
+    struct nlmsghdr *hdr = msg ? nlmsg_hdr(msg) : &err->msg;
     uint32_t seq = hdr->nlmsg_seq;
-    struct genlmsghdr *gnlh = (struct genlmsghdr*)nlmsg_data(nlmsg_hdr(msg));
+    struct genlmsghdr *gnlh = (struct genlmsghdr*)nlmsg_data(hdr);
 
     if (gnlh->cmd == NBD_CMD_LINK_DEAD)
         return DeadLinkCallback(msg);
 
-    m.lock();
+    auto lock = callbacks.ScopedLock();
     auto it = callbacks.find(seq);
     if (it != callbacks.end()) {
-        auto f = it->second.second;
-        auto promise = std::move(it->second.first);
+        auto cb = it->second.Callback;
+        auto promise = std::move(it->second.Promise);
 
         callbacks.erase(it);
-        m.unlock();
-        promise.set_value(f(msg));
-    } else
-        m.unlock();
+        lock.unlock();
+        promise.set_value(msg ? cb(msg) : TError("netlink: {}", strerror(-err->error)));
+    } else {
+        lock.unlock();
+
+        // if client timed out on waiting connection
+        // we must disconnect it
+        if (gnlh->cmd == NBD_CMD_CONNECT) {
+            int index;
+            auto error = parseConnMsg(msg, index);
+            if (!error)
+                error = DisconnectDevice(index, false);
+
+            if (error)
+                L_WRN("nbd: failed disconnect rogue device: {}", error);
+        }
+    }
 
     return NL_OK;
 }
 
+int TNbdConn::ErrCallback(struct sockaddr_nl *, struct nlmsgerr *err, void *arg) {
+    TNbdConn *nbdConn = static_cast<TNbdConn*>(arg);
+    return nbdConn->GenCallback(nullptr, err, nbdConn->AckCallbacks);
+}
+
 int TNbdConn::MsgCallback(struct nl_msg *msg, void *arg) {
-    TNbdConn *nbdConn = (TNbdConn*)arg;
-    return nbdConn->GenCallback(msg, nbdConn->MsgMutex, nbdConn->MsgCallbacks);
+    TNbdConn *nbdConn = static_cast<TNbdConn*>(arg);
+    return nbdConn->GenCallback(msg, nullptr, nbdConn->MsgCallbacks);
 }
 
 int TNbdConn::AckCallback(struct nl_msg *msg, void *arg) {
-    TNbdConn *nbdConn = (TNbdConn*)arg;
-    return nbdConn->GenCallback(msg, nbdConn->AckMutex, nbdConn->AckCallbacks);
+    TNbdConn *nbdConn = static_cast<TNbdConn*>(arg);
+    return nbdConn->GenCallback(msg, nullptr, nbdConn->AckCallbacks);
 }
 
 int TNbdConn::DeadLinkCallback(struct nl_msg* msg) {
@@ -307,24 +360,31 @@ int TNbdConn::DeadLinkCallback(struct nl_msg* msg) {
     return NL_OK;
 }
 
-std::future<TError> TNbdConn::RegisterMsg(uint32_t seq, std::function<TError(struct nl_msg*)> f) {
+TNlFuture TNbdConn::RegisterCallback(uint32_t seq, std::function<TError(struct nl_msg*)> cb,
+                                     TNbdConnCallbacks &callbacks) {
     std::promise<TError> promise;
-    auto fut = promise.get_future();
+    TNlFuture fut(
+        promise.get_future(),
+        [seq, &callbacks]() {
+            auto lock = callbacks.ScopedLock();
+            // seq is not in callbacks => pomise was fulfilled
+            return !callbacks.erase(seq);
+        }
+    );
+    {
+        auto lock = callbacks.ScopedLock();
+        callbacks[seq] = {std::move(promise), cb};
+    }
 
-    MsgMutex.lock();
-    MsgCallbacks[seq] = std::make_pair(std::move(promise), f);
-    MsgMutex.unlock();
     return fut;
 }
 
-std::future<TError> TNbdConn::RegisterAck(uint32_t seq, std::function<TError(struct nl_msg*)> f) {
-    std::promise<TError> promise;
-    auto fut = promise.get_future();
+TNlFuture TNbdConn::RegisterMsg(uint32_t seq, std::function<TError(struct nl_msg*)> cb) {
+    return RegisterCallback(seq, cb, MsgCallbacks);
+}
 
-    AckMutex.lock();
-    AckCallbacks[seq] = std::make_pair(std::move(promise), f);
-    AckMutex.unlock();
-    return fut;
+TNlFuture TNbdConn::RegisterAck(uint32_t seq, std::function<TError(struct nl_msg*)> cb) {
+    return RegisterCallback(seq, cb, AckCallbacks);
 }
 
 inline uint32_t TNbdConn::NextSeq() {
@@ -375,6 +435,7 @@ TError TNbdConn::Init(int mcastFd) {
         return TError("failed set socket non-blocking: {}", nl_geterror(ret));
 
     nl_socket_disable_seq_check(sock.get());
+    nl_socket_modify_err_cb(sock.get(), NL_CB_CUSTOM, TNbdConn::ErrCallback, this);
     nl_socket_modify_cb(sock.get(), NL_CB_VALID, NL_CB_CUSTOM, TNbdConn::MsgCallback, this);
     nl_socket_modify_cb(sock.get(), NL_CB_ACK,   NL_CB_CUSTOM, TNbdConn::AckCallback, this);
 
@@ -520,36 +581,20 @@ TError TNbdConn::ConnectDevice(const TNbdConnParams &params, uint64_t deadlineMs
     if (!msg)
         return TError("failed create msg");
 
-    auto msgFut = RegisterMsg(seq, [&index](struct nl_msg *msg) {
-        struct genlmsghdr *gnlh = (struct genlmsghdr*)nlmsg_data(nlmsg_hdr(msg));
-        struct nlattr *msg_attr[NBD_ATTR_MAX + 1];
-        int ret;
-
-        if (gnlh->cmd != NBD_CMD_CONNECT)
-            return TError("gnlh->cmd: export {} got {}", gnlh->cmd, NBD_CMD_CONNECT);
-
-        ret = nla_parse(msg_attr, NBD_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
-                        genlmsg_attrlen(gnlh, 0), NULL);
-        if (ret < 0)
-            return TError("failed to parse nl_msg");
-        if (!msg_attr[NBD_ATTR_INDEX])
-            return TError("missing device index");
-
-        index = (int)nla_get_u32(msg_attr[NBD_ATTR_INDEX]);
-        return OK;
-    });
     auto ackFut = RegisterAck(seq, [](struct nl_msg*) { return OK; });
+    auto msgFut = RegisterMsg(seq, [&index](struct nl_msg *msg) {
+        return parseConnMsg(msg, index);
+    });
 
     int ret = nl_send_auto(sk.get(), msg);
     nlmsg_free(msg);
     if (ret < 0)
         return TError("nl_send failed");
 
-    error = msgFut.get();
+    error = ackFut.WaitUntil(deadlineMs);
     if (error)
         return error;
-
-    return ackFut.get();
+    return msgFut.WaitUntil(deadlineMs);
 }
 
 TError TNbdConn::ReconnectDevice(const TNbdConnParams& params, uint64_t deadlineMs, int index) {
@@ -579,10 +624,10 @@ TError TNbdConn::ReconnectDevice(const TNbdConnParams& params, uint64_t deadline
     if (ret < 0)
         return TError("nl_send failed");
 
-    return fut.get();
+    return fut.WaitUntil(deadlineMs);
 }
 
-TError TNbdConn::DisconnectDevice(int index) {
+TError TNbdConn::DisconnectDevice(int index, bool wait) {
     auto sk = Sock;
     if (!sk)
         return TError("nbd connection is closed");
@@ -597,5 +642,7 @@ TError TNbdConn::DisconnectDevice(int index) {
     if (ret < 0)
         return TError("nl_send failed");
 
-    return fut.get();
+    if (wait)
+        return fut.WaitFor(5000);
+    return OK;
 }
