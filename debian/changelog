@@ -1,3 +1,12 @@
+porto (5.3.30) unstable; urgency=low
+  [ ovov ]
+      nbd: better netlink error handling
+      volume, nbd: num-connections=1 by default
+      nbd: add error codes specific to nbd/squash/loop backends
+  last commit: 5a0f0af202d21a10caa367bc83bf4a71de36418c
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 11 Dec 2023 18:14:15 -0000
+
 porto (5.3.29) unstable; urgency=low
   [ kndrvt ]
       container: allow other cpu_policy after idle on 5.15 and above
