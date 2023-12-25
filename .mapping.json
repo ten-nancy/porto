@@ -276,6 +276,7 @@
   "test/test-mem_limit_total.py":"infra/porto/porto/test/test-mem_limit_total.py",
   "test/test-mount.py":"infra/porto/porto/test/test-mount.py",
   "test/test-net-ifup.py":"infra/porto/porto/test/test-net-ifup.py",
+  "test/test-net-props.py":"infra/porto/porto/test/test-net-props.py",
   "test/test-net-sched.py":"infra/porto/porto/test/test-net-sched.py",
   "test/test-net-xvlan.py":"infra/porto/porto/test/test-net-xvlan.py",
   "test/test-net.py":"infra/porto/porto/test/test-net.py",

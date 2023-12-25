@@ -133,6 +133,7 @@ ADD_PYTHON3_TEST(oom)
 ADD_PYTHON_TEST(hugetlb)
 ADD_PYTHON_TEST(coredump)
 ADD_PYTHON_TEST(net-ifup)
+ADD_PYTHON3_TEST(net-props)
 ADD_PYTHON3_TEST(net-xvlan)
 
 ADD_PYTHON_TEST(volume-restore)

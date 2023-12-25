@@ -6164,6 +6164,78 @@ TNetProperty NetLimit(P_NET_LIMIT, &TNetClass::TxLimit, EProperty::NET_LIMIT,
 TNetProperty NetRxLimit(P_NET_RX_LIMIT, &TNetClass::RxLimit, EProperty::NET_RX_LIMIT,
         "Maximum ingress bandwidth: <interface>|default: <Bps>;...");
 
+class TNetLimitBound : public TProperty {
+public:
+    TNetLimitBound() : TProperty(P_NET_LIMIT_BOUND, EProperty::NONE,
+                                 "Net limits for container netns")
+    {
+        IsReadOnly = true;
+    }
+    TError Get(std::string &value) const override {
+        auto ct = CT;
+        while (ct) {
+            if (ct->NetIsolate && !ct->NetInherit) {
+                auto lock = TNetwork::LockNetState();
+                return UintMapToString(ct->NetClass.TxLimit, value);
+            }
+            ct = ct->Parent.get();
+        }
+        return OK;
+    }
+
+    void Dump(rpc::TContainerStatus &status) const override {
+        auto ct = CT;
+        while (ct) {
+            if (ct->NetIsolate && !ct->NetInherit) {
+                auto lock = TNetwork::LockNetState();
+                auto map = status.mutable_net_limit_bound();
+                for (auto &it: ct->NetClass.TxLimit) {
+                    auto kv = map->add_map();
+                    kv->set_key(it.first);
+                    kv->set_val(it.second);
+                }
+            }
+            ct = ct->Parent.get();
+        }
+    }
+} static NetLimitBound;
+
+class TNetRxLimitBound : public TProperty {
+public:
+    TNetRxLimitBound() : TProperty(P_NET_RX_LIMIT_BOUND, EProperty::NONE,
+                                 "Net rx limits for container netns")
+    {
+        IsReadOnly = true;
+    }
+    TError Get(std::string &value) const override {
+        auto ct = CT;
+        while (ct) {
+            if (ct->NetIsolate && !ct->NetInherit) {
+                auto lock = TNetwork::LockNetState();
+                return UintMapToString(ct->NetClass.RxLimit, value);
+            }
+            ct = ct->Parent.get();
+        }
+        return OK;
+    }
+
+    void Dump(rpc::TContainerStatus &status) const override {
+        auto ct = CT;
+        while (ct) {
+            if (ct->NetIsolate && !ct->NetInherit) {
+                auto lock = TNetwork::LockNetState();
+                auto map = status.mutable_net_rx_limit_bound();
+                for (auto &it: ct->NetClass.RxLimit) {
+                    auto kv = map->add_map();
+                    kv->set_key(it.first);
+                    kv->set_val(it.second);
+                }
+            }
+            ct = ct->Parent.get();
+        }
+    }
+} static NetRxLimitBound;
+
 class TNetL3StatProperty : public TProperty {
 public:
     TNetL3StatProperty(std::string name, std::string desc) : TProperty(name, EProperty::NONE, desc) {

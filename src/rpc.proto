@@ -562,6 +562,8 @@ message TContainerStatus {
     optional TUintMap net_netstat = 163;       // out
     optional TUintMap net_snmp = 263;          // out
     optional TUintMap net_snmp6 = 264;         // out
+    optional TUintMap net_limit_bound = 500;   // out
+    optional TUintMap net_rx_limit_bound = 501;   // out
 
     optional TContainerVolumeLinks volumes_linked = 64; // out
     optional TContainerVolumes volumes_owned = 65;
