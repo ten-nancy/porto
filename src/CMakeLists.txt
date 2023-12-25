@@ -103,8 +103,8 @@ install(
 
 add_custom_command(
 	OUTPUT porto.8
-	DEPENDS ${CMAKE_SOURCE_DIR}/porto.md
-	COMMAND pandoc ${CMAKE_SOURCE_DIR}/porto.md -s -t man > ${CMAKE_CURRENT_BINARY_DIR}/porto.8
+	DEPENDS ${CMAKE_SOURCE_DIR}/doc/porto.md
+	COMMAND pandoc ${CMAKE_SOURCE_DIR}/doc/porto.md -s -t man > ${CMAKE_CURRENT_BINARY_DIR}/porto.8
 	VERBATIM)
 
 add_custom_target(man ALL

@@ -1681,3 +1681,5 @@ Vsevolod Velichko <torkve@yandex-team.ru>
 Maxim Samoylov <max7255@yandex-team.ru>  
 Dmitry Yakunin <zeil@yandex-team.ru>  
 Alexander Kuznetsov <wwfq@yandex-team.ru>
+Alexander Ovechkin <ovov@yandex-team.ru>
+Lev Pantiukhin <kndrvt@yandex-team.ru>

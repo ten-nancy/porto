@@ -87,4 +87,4 @@ portoctl exec hello command='echo "Hello, world!"'
 ```
 
 ## Documentation
-* [Porto manpage](porto.md)
+* [Porto manpage](doc/porto.md)
