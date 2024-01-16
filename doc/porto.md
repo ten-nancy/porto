@@ -1399,6 +1399,8 @@ Like for container volume configuration is a set of key-value pairs.
 
 * **read\_only**    - true or false, default: false
 
+* **fs\_type**      - filsystem type of image (backend=loop) or network device (backend=nbd)
+
 * **containers**    - initial links, syntax: container \[target\] \[ro\] \[!\];...  default: "self"
 
     Target defines path inside container root, flag "ro" makes link read-only, "!" - adds into **volumes\_required**.

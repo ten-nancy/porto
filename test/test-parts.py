@@ -124,6 +124,17 @@ def run_test(test_name, timeout):
             else:
                 raise e
 
+try:
+    pkgs = ['nbd-server', 'procps', 'squashfs-tools']
+    subprocess.check_call(['apt', 'install', '-y'] + pkgs)
+except subprocess.CalledProcessError:
+    try:
+        subprocess.check_call(['apt', 'update'])
+        subprocess.check_call(['apt', 'install', '-y'] + pkgs)
+    except subprocess.CalledProcessError as e:
+        print('Failed install packages:', e)
+
+
 for test, timeout in eval('part{}.items()'.format(sys.argv[1])):
     run_test(test, timeout)
     if test not in ['portod_stop', 'cleanup_portod']:

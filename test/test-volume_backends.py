@@ -523,9 +523,7 @@ def backend_overlay(c):
     os.rmdir(TMPDIR)
 
 def backend_loop(c):
-    args = dict()
-    args["backend"] = "loop"
-    args["space_limit"] = "1M"
+    args = {"backend": "loop"}
 
     TMPDIR = DIR + "/" + args["backend"]
     os.mkdir(TMPDIR)
@@ -540,6 +538,8 @@ def backend_loop(c):
         args["space_limit"] = "1G"
         check_layers(c, path, **args)
 
+    ExpectException(c.CreateVolume, porto.exceptions.InvalidValue, **args, fs_type="squashfs")
+
     args["space_limit"] = "512M"
     v = c.CreateVolume(**args)
     args["storage"] = os.path.abspath(v.path + "/../loop/loop.img")
@@ -553,6 +553,16 @@ def backend_loop(c):
     subprocess.check_call(["mkfs.ext4", "-F", "-q", DIR + "/loop.img"])
     args["storage"] = os.path.abspath(DIR + "/loop.img")
     v = c.CreateVolume(**args)
+    assert Catch(c.CreateVolume, **args) == porto.exceptions.Busy
+    v.Unlink("/")
+
+    subprocess.check_call(["mksquashfs", TMPDIR, DIR + "/loop.squash"])
+    args["storage"] = os.path.abspath(DIR + "/loop.squash")
+    ExpectException(c.CreateVolume, porto.exceptions.InvalidFilesystem,
+                    **args, fs_type="ext4", read_only="true")
+    ExpectException(c.CreateVolume, porto.exceptions.InvalidValue,
+                    **args, fs_type="squashfs")
+    v = c.CreateVolume(**args, fs_type="squashfs", read_only="true")
     assert Catch(c.CreateVolume, **args) == porto.exceptions.Busy
     v.Unlink("/")
 

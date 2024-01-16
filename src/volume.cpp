@@ -720,12 +720,20 @@ TError PutLoopDev(const int loopNr) {
     return error;
 }
 
-/* TVolumeLoopBackend - ext4 image + loop device */
+/* TVolumeLoopBackend - fs image + loop device */
+
+static const std::list<std::string> ReadOnlyFs{"squashfs", "erofs"};
 
 class TVolumeLoopBackend : public TVolumeBackend {
     static constexpr const char *AutoImage = "loop.img";
 
 public:
+
+    static std::string FsType(const TVolume &volume) {
+        if (volume.FilesystemType.empty())
+            return "ext4";
+        return volume.FilesystemType;
+    }
 
     static TPath ImagePath(const TPath &storage) {
         if (storage.IsRegularFollow())
@@ -761,7 +769,8 @@ public:
         return TPath("/dev/loop" + std::to_string(Volume->DeviceIndex));
     }
 
-    static TError MakeImage(TFile &file, const TFile &dir, TPath &path, off_t size, off_t guarantee) {
+    static TError MakeExt4Image(TFile &file, const TFile &dir, TPath &path,
+                            off_t size, off_t guarantee) {
         TError error;
 
         L_ACT("Allocate loop image with size {} guarantee {}", size, guarantee);
@@ -823,6 +832,7 @@ public:
         TError error;
         TFile file;
         bool file_storage = false;
+        auto fsType = FsType(*Volume);
 
         if (Volume->StorageFd.IsRegular()) {
             error = file.Dup(Volume->StorageFd);
@@ -832,11 +842,14 @@ public:
                                 (Volume->IsReadOnly ? O_RDONLY : O_RDWR) |
                                 O_CLOEXEC | O_NOCTTY | O_NOFOLLOW, 0);
         } else {
+            if (fsType != "ext4")
+                return TError(EError::InvalidValue, "image generation supported only for ext4");
+
             error = file.OpenAt(Volume->StorageFd, AutoImage,
                                 O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
             if (!error) {
                 Volume->KeepStorage = false; /* New storage */
-                error = MakeImage(file, Volume->StorageFd, path, Volume->SpaceLimit, Volume->SpaceGuarantee);
+                error = MakeExt4Image(file, Volume->StorageFd, path, Volume->SpaceLimit, Volume->SpaceGuarantee);
                 if (error)
                     Volume->StorageFd.UnlinkAt(AutoImage);
             }
@@ -858,6 +871,9 @@ public:
                 return error;
         }
 
+        if (std::find(ReadOnlyFs.begin(), ReadOnlyFs.end(), fsType) != ReadOnlyFs.end() && !Volume->IsReadOnly)
+            return TError(EError::InvalidValue, "{} filesystem requires read_only", fsType);
+
         if (!Volume->SpaceLimit) {
             Volume->SpaceLimit = st.st_size;
         } else if (!Volume->IsReadOnly && (uint64_t)st.st_size != Volume->SpaceLimit) {
@@ -876,7 +892,9 @@ public:
         if (error)
             return error;
 
-        error = Volume->InternalPath.Mount(GetLoopDevice(), "ext4",
+        Volume->DeviceName = fmt::format("loop{}", Volume->DeviceIndex);
+
+        error = Volume->InternalPath.Mount(GetLoopDevice(), fsType,
                                            Volume->GetMountFlags(), {});
         if (error) {
             PutLoopDev(Volume->DeviceIndex);
@@ -889,13 +907,17 @@ public:
         return error;
     }
 
-    TError Destroy() override {
-        TPath loop = GetLoopDevice();
+    TError Restore() override {
+        if (Volume->DeviceIndex >= 0 && Volume->DeviceName.empty())
+            Volume->DeviceName = fmt::format("loop{}", Volume->DeviceIndex);
+        return OK;
+    }
 
+    TError Destroy() override {
         if (Volume->DeviceIndex < 0)
             return OK;
 
-        L_ACT("Destroy loop {}", loop);
+        L_ACT("Destroy loop {}", GetLoopDevice());
         TError error = Volume->InternalPath.UmountAll();
         TError error2 = PutLoopDev(Volume->DeviceIndex);
         if (!error)
@@ -1615,8 +1637,12 @@ public:
         if (it != options.end())
             NbdConnParams.ExportName = it->second;
 
-        it = options.find("fs-type");
-        FilesystemType = it != options.end() ? it->second : "ext4";
+        if (!Volume->FilesystemType.empty())
+            FilesystemType = Volume->FilesystemType;
+        else if ((it = options.find("fs-type")) != options.end())
+            FilesystemType = it->second;
+        else
+            FilesystemType = "ext4";
 
         if (error = parseOptionInt("timeout", NbdConnParams.BioTimeout, 5))
             return error;
@@ -1650,7 +1676,7 @@ public:
             NbdVolumes[Volume->DeviceIndex] = Volume->shared_from_this();
             VolumesMutex.unlock();
 
-            if (!Volume->DeviceName.size())
+            if (Volume->DeviceName.empty())
                 Volume->DeviceName = fmt::format("nbd{}", Volume->DeviceIndex);
         }
         return OK;
@@ -4194,6 +4220,7 @@ std::vector<TVolumeProperty> VolumeProperties = {
     { V_PERMISSIONS, "directory permissions (default - 0775)", false },
     { V_CREATOR,     "container user group (ro)", true },
     { V_READ_ONLY,   "true|false (default - false)", false },
+    { V_FILESYSTEM_TYPE,   "ext4|squashfs|erofs...", false },
     { V_CONTAINERS,  "container [target] [ro] [!];... - initial links (default - self)", false },
     { V_IMAGE,       "[<registry>/][<repository>/]<name>[:<tag>][@<digest>] - docker image", false },
     { V_LAYERS,      "top-layer;...;bottom-layer - overlayfs layers", false },
@@ -4751,7 +4778,9 @@ TError TVolume::ParseConfig(const TStringMap &cfg, rpc::TVolumeSpec &spec) {
             bool v;
             error = StringToBool(val, v);
             spec.set_read_only(v);
-        } else if (key == V_IMAGE) {
+        } else if (key == V_FILESYSTEM_TYPE) {
+            spec.set_filesystem_type(val);
+        }else if (key == V_IMAGE) {
             spec.set_image(val);
         } else if (key == V_LAYERS) {
             for (auto &l: SplitEscapedString(val, ';'))
@@ -4843,6 +4872,9 @@ TError TVolume::Load(const rpc::TVolumeSpec &spec, bool full) {
 
     if (spec.has_read_only())
         IsReadOnly = spec.read_only();
+
+    if (spec.has_filesystem_type())
+        FilesystemType = spec.filesystem_type();
 
     if (spec.has_image())
         Image = spec.image();

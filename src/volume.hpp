@@ -37,6 +37,7 @@ constexpr const char *V_PERMISSIONS = "permissions";
 
 constexpr const char *V_STORAGE = "storage";
 constexpr const char *V_READ_ONLY = "read_only";
+constexpr const char *V_FILESYSTEM_TYPE = "fs_type";
 constexpr const char *V_IMAGE = "image";
 constexpr const char *V_LAYERS = "layers";
 
@@ -135,6 +136,7 @@ public:
     std::string DeviceName;
     int DeviceIndex = -1;
     bool IsReadOnly = false;
+    std::string FilesystemType;
 
     bool HasDependentContainer = false;
 

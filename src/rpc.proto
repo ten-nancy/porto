@@ -765,6 +765,7 @@ message TVolumeSpec {
     optional string image = 52;
     repeated string layers = 13;
     optional bool read_only = 14;
+    optional string filesystem_type = 15;
 
     // defines root directory user, group and permissions
     optional TCred cred = 20;               // default: self task cred

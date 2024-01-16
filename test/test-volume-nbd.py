@@ -201,13 +201,6 @@ class TestNbdVolume:
                     time.sleep(0.1)
 
 
-pkgs = ['nbd-server', 'procps']
-try:
-    subprocess.check_call(['apt', 'install', '-y'] + pkgs)
-except subprocess.CalledProcessError:
-    subprocess.check_call(['apt', 'update'])
-    subprocess.check_call(['apt', 'install', '-y'] + pkgs)
-
 with contextlib.ExitStack() as cleanup:
     test = TestNbdVolume(cleanup)
     test.setup()
