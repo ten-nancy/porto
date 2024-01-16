@@ -85,29 +85,10 @@ TError TKeyValue::Save() {
 }
 
 TError TKeyValue::Mount(const TPath &root) {
-    TError error;
-    TMount mount;
-
-    if (!root.IsDirectoryStrict()) {
-        if (root.Exists())
-            (void)root.Unlink();
-        error = root.MkdirAll(0755);
-        if (error)
-            return error;
-    }
-
-    error = root.FindMount(mount);
-    if (error || mount.Target != root) {
-        error = root.Mount("tmpfs", "tmpfs",
-                           MS_NOEXEC | MS_NOSUID | MS_NODEV,
-                           { "size=" + std::to_string(config().keyvalue_size()),
-                             "mode=0750",
-                             "uid=" + std::to_string(RootUser),
-                             "gid=" + std::to_string(PortoGroup) });
-        if (error)
-            return error;
-    } else if (mount.Type != "tmpfs")
-        return TError("KeyValue: found non-tmpfs mount at " + root.ToString());
+    auto error = root.SecureTmpfsMount(TCred(RootUser, PortoGroup),
+                                       config().keyvalue_size());
+    if (error)
+        return error;
 
     std::vector<std::string> names;
     error = root.ReadDirectory(names);

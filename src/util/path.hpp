@@ -4,6 +4,7 @@
 #include <vector>
 #include <list>
 #include <atomic>
+#include <functional>
 
 #include "util/error.hpp"
 #include "util/cred.hpp"
@@ -211,6 +212,7 @@ public:
 
     TError Mount(const TPath &source, const std::string &type, uint64_t flags,
                  const std::vector<std::string> &options) const;
+    TError SecureTmpfsMount(const TCred &cred, size_t size) const;
     TError Bind(const TPath &source, uint64_t flags = 0) const;
     TError MoveMount(const TPath &target) const;
     TError Remount(uint64_t flags) const;
@@ -267,6 +269,8 @@ private:
     TFile(const TFile&) = delete;
     TFile& operator=(const TFile&) = delete;
 
+    TError Access(const TPath &root, const TCred &cred,
+                  std::function<TError(const TCred&)> check) const;
 public:
     union {
         const int Fd;
@@ -342,6 +346,8 @@ public:
     TError Stat(struct stat &st) const;
     TError StatAt(const TPath &path, bool follow, struct stat &st) const;
     bool ExistsAt(const TPath &path) const;
+    TError Bind(const TFile &target) const;
+    TError BindLegacy(const TFile &target) const;
 
     uint32_t FsType() const;
     TError StatFS(TStatFS &result) const;
@@ -354,7 +360,16 @@ public:
         W   = 002,
         R   = 004,
     };
+
     static bool Access(const struct stat &st, const TCred &cred, enum AccessMode mode);
+
+    TError ReadAccess(const TPath &root, const TCred &cred) const {
+        return Access(root, cred, [this](const TCred &cred) { return ReadAccess(cred); });
+    }
+    TError WriteAccess(const TPath &root, const TCred &cred) const {
+        return Access(root, cred, [this](const TCred &cred) { return WriteAccess(cred); });
+    }
+
     TError ReadAccess(const TCred &cred) const;
     TError WriteAccess(const TCred &cred) const;
 };

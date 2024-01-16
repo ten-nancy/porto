@@ -322,6 +322,7 @@ extern std::map<TPath, std::shared_ptr<TVolume>> Volumes;
 extern std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
 extern TPath VolumesKV;
 extern TPath NbdKV;
+extern TPath SecureBinds;
 
 static inline std::unique_lock<std::mutex> LockVolumes() {
     return VolumesMutex.UniqueLock();

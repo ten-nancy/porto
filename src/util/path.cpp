@@ -8,6 +8,7 @@
 
 extern "C" {
 #include <unistd.h>
+#include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/sysmacros.h>
 #include <sys/stat.h>
@@ -21,11 +22,41 @@ extern "C" {
 #include <linux/falloc.h>
 #include <linux/fs.h>
 #include <sys/syscall.h>
+#include <syscall.h>
 #include <dirent.h>
 }
 
 #ifndef FALLOC_FL_COLLAPSE_RANGE
 #define FALLOC_FL_COLLAPSE_RANGE        0x08
+#endif
+
+#if defined(SYS_open_tree) && defined(SYS_move_mount)
+#define PORTO_FSOPEN
+
+static bool FsOpenSupport = false;
+
+static int porto_open_tree(int dirfd, const char *pathname, unsigned int flags) {
+    return syscall(SYS_open_tree, dirfd, pathname, flags);
+}
+
+static int porto_move_mount(int from_dirfd, const char *from_pathname,
+                      int to_dirfd, const char *to_pathname,
+                      unsigned int flags) {
+    return syscall(SYS_move_mount, from_dirfd, from_pathname,
+                   to_dirfd, to_pathname, flags);
+}
+
+__attribute__((constructor))
+static void initialize_fsopen() {
+    int ret = porto_open_tree(-1, "", 0);
+    if (ret < 0 && errno == ENOSYS)
+        return;
+    ret = porto_move_mount(-1, "", -1, "", 0);
+    if (ret < 0 && errno == ENOSYS)
+        return;
+
+    FsOpenSupport = true;
+}
 #endif
 
 constexpr off_t ROTATE_OFFSET_LIMIT = 16384; // 16Kb
@@ -891,6 +922,31 @@ TError TPath::Mount(const TPath &source, const std::string &type, uint64_t mnt_f
         return TError::System("mount({}, {}, {}, {}, {}", source, Path, type, TMount::FormatFlags(mnt_flags), data);
 
     return OK;
+}
+
+TError TPath::SecureTmpfsMount(const TCred &cred, size_t size) const {
+    TError error;
+    TMount mount;
+
+    if (!IsDirectoryStrict()) {
+        (void)Unlink();
+        error = MkdirAll(0755);
+        if (error)
+            return error;
+    }
+
+    error = FindMount(mount);
+    if (error || mount.Target != *this) {
+        return Mount("tmpfs", "tmpfs",
+                     MS_NOEXEC | MS_NOSUID | MS_NODEV,
+                     { "size=" + std::to_string(size),
+                       "mode=0750",
+                       "uid=" + std::to_string(cred.GetUid()),
+                       "gid=" + std::to_string(cred.GetGid()) });
+    } else if (mount.Type != "tmpfs")
+        return TError("found non-tmpfs mount at {}", *this);
+
+    return error;
 }
 
 TError TPath::MoveMount(const TPath &target) const {
@@ -1811,6 +1867,58 @@ TError TFile::StatAt(const TPath &path, bool follow, struct stat &st) const {
 bool TFile::ExistsAt(const TPath &path) const {
     struct stat st;
     return !StatAt(path, false, st);
+}
+
+TError TFile::Bind(const TFile &target) const {
+#ifdef PORTO_FSOPEN
+    if (FsOpenSupport) {
+        L_ACT("mount bind file {} {}", RealPath(), target.RealPath());
+        int fd = porto_open_tree(Fd, "", OPEN_TREE_CLONE|OPEN_TREE_CLOEXEC|AT_EMPTY_PATH);
+        if (fd < 0)
+            return TError::System("open_tree");
+        int ret = porto_move_mount(fd, "", target.Fd, "",
+                                   MOVE_MOUNT_F_EMPTY_PATH|MOVE_MOUNT_T_EMPTY_PATH);
+        close(fd);
+        if (ret)
+            return TError::System("move_mount");
+        return OK;
+    }
+#endif
+    return BindLegacy(target);
+}
+
+// legacy, needed for kernels < 5.2
+// racy, users must not have access to target
+TError TFile::BindLegacy(const TFile &target) const {
+    auto targetPath = target.RealPath();
+    auto error = targetPath.Bind(RealPath());
+    if (error)
+        return error;
+
+    // check that original file was bound
+    TFile target1;
+    error = target1.OpenRead(targetPath);
+    if (error)
+        goto umount;
+
+    struct stat st1, st2;
+    error = Stat(st1);
+    if (error)
+        goto umount;
+    error = target1.Stat(st2);
+    if (error)
+        goto umount;
+    if (st1.st_dev != st2.st_dev || st1.st_ino != st2.st_dev) {
+        error = TError("source path have been changed");
+        goto umount;
+    }
+    return OK;
+
+umount:
+    auto error2 = targetPath.Umount(UMOUNT_NOFOLLOW|MNT_DETACH);
+    if (error2)
+        L_WRN("Failed to umount {}: {}", targetPath, error2);
+    return error;
 }
 
 TError TFile::StatFS(TStatFS &result) const {

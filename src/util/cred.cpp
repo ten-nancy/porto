@@ -662,6 +662,21 @@ bool TFile::Access(const struct stat &st, const TCred &cred, enum AccessMode mod
     return cred.IsRootUser() || (st.st_mode & mask) == mask;
 }
 
+TError TFile::Access(const TPath &root, const TCred &cred,
+                     std::function<TError(const TCred&)> check) const {
+    if (!root.IsRoot()) {
+        /* Check that real path is inside chroot */
+        auto path = RealPath();
+        if (!path.IsInside(root))
+            return TError(EError::Permission, "Path out of chroot " + path.ToString());
+
+        /* Inside chroot everybody gain root access but fs might be read-only */
+        return check(TCred(RootUser, RootGroup));
+    }
+    /* Without chroot access to file is enough */
+    return check(cred);
+}
+
 TError TFile::ReadAccess(const TCred &cred) const {
     struct stat st;
     TError error = Stat(st);

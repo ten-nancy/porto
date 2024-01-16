@@ -917,6 +917,12 @@ static int Portod() {
     if (error)
         FatalError("Cannot mount nbd keyvalue", error);
 
+    SecureBinds = TPath(PORTO_SECURE_BINDS);
+    error = SecureBinds.SecureTmpfsMount(TCred(RootUser, PortoGroup),
+                                         config().keyvalue_size());
+    if (error)
+        FatalError("Cannot mount secure binds", error);
+
     TPath root("/");
     error = root.Chdir();
     if (error)
@@ -1036,6 +1042,10 @@ static int Portod() {
         error = VolumesKV.UmountAll();
         if (error)
             L_ERR("Can't destroy volume key-value storage: {}", error);
+
+        error = SecureBinds.UmountAll();
+        if (error)
+            L_ERR("Can't destroy secure binds storage: {}", error);
 
         error = NbdKV.UmountAll();
         if (error)

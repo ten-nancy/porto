@@ -96,6 +96,7 @@ constexpr const char *PORTO_LOG = "/var/log/portod.log";
 constexpr const char *PORTO_CONTAINERS_KV = "/run/porto/kvs";
 constexpr const char *PORTO_VOLUMES_KV = "/run/porto/pkvs";
 constexpr const char *PORTO_NBD_KV = "/run/porto/nkvs";
+constexpr const char *PORTO_SECURE_BINDS = "/run/porto/secure_binds";
 
 constexpr const char *PORTO_WORKDIR = "/place/porto";
 constexpr const char *PORTO_PLACE = "/place";

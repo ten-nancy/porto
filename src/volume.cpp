@@ -42,6 +42,7 @@ TNbdConn NbdConn;
 
 TPath VolumesKV;
 TPath NbdKV;
+TPath SecureBinds;
 MeasuredMutex VolumesMutex("volumes");
 std::map<TPath, std::shared_ptr<TVolume>> Volumes;
 std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
@@ -1504,13 +1505,63 @@ public:
 /* TVolumeNbdBackend - fs on NBD */
 static std::unordered_map<int, std::shared_ptr<TVolume>> NbdVolumes;
 
+class TSecureBind {
+    TFile Pin;
+public:
+    ~TSecureBind() {
+        if (!Pin)
+            return;
+
+        auto path = Pin.RealPath();
+        auto error = path.Umount(MNT_DETACH);
+        if (!error)
+            error = path.Unlink();
+        if (error)
+            L_WRN("Failed cleanup secure bind {}: {}", path, error);
+    }
+
+    TError Bind(const TPath &path, std::function<TError(const TFile&)> validate) {
+        TFile file;
+        auto error = file.OpenPath(path);
+        if (error) {
+            if (error.Errno == ENOENT)
+                return TError(EError::NbdSocketUnavaliable);
+            return error;
+        }
+        error = validate(file);
+        if (error)
+            return error;
+        TPath tmp = SecureBinds / "bind.XXXXXX";
+        error = Pin.CreateTemporary(tmp);
+        if (error)
+            return error;
+
+        return file.Bind(Pin);
+    }
+
+    TPath Path() const {
+        return Pin.RealPath();
+    }
+};
+
 class TVolumeNbdBackend : public TVolumeBackend {
+    TPath Root;
+    TCred Cred;
+
     static std::shared_ptr<TVolume> ResolveNbd(int deviceIndex) {
         auto volumes_lock = LockVolumes();
         auto it = NbdVolumes.find(deviceIndex);
         if (it != NbdVolumes.end())
             return it->second;
         return nullptr;
+    }
+
+    TError SecureUnixPathBind(TSecureBind &secureBind, TPath &path) {
+        auto validate = [this](const TFile &f) { return f.WriteAccess(Root, Cred); };
+        auto error = secureBind.Bind(path, validate);
+        if (!error)
+            path = secureBind.Path();
+        return error;
     }
 
 public:
@@ -1522,12 +1573,21 @@ public:
         TError error;
         TUri u;
 
+        if (CL && CL->ClientContainer != Volume->VolumeOwnerContainer)
+            return TError(EError::InvalidValue, "nbd volume must be owned by creator");
+
+        Root = Volume->VolumeOwnerContainer->RootPath;
+        Cred = Volume->VolumeOwnerContainer->TaskCred;
+
         u.Parse(Volume->Storage);
         NbdConnParams.ReadOnly = Volume->IsReadOnly;
 
         if (u.Scheme == "unix+tcp") {
-            auto root_path = Volume->VolumeOwnerContainer->RootPath;
-            NbdConnParams.UnixPath = root_path / TPath(u.Path);
+            auto path = TPath(u.Path);
+            if (!path.IsAbsolute())
+                return TError(EError::InvalidValue, "path to socket must be absolute");
+
+            NbdConnParams.UnixPath = Root / path;
         } else if (u.Scheme == "tcp") {
             NbdConnParams.Host = u.Host;
             NbdConnParams.Port = u.Port;
@@ -1597,11 +1657,19 @@ public:
     }
 
     TError Build() override {
+        TSecureBind secureBind;
         int index;
+        auto params = NbdConnParams;
+
+        if (params.UnixPath) {
+            auto error = SecureUnixPathBind(secureBind, params.UnixPath);
+            if (error)
+                return error;
+        }
 
         L_ACT("nbd connect {}", Volume->Storage);
         uint64_t deadlineMs = GetCurrentTimeMs() + NbdConnParams.ConnTimeout * 1000;
-        auto error = NbdConn.ConnectDevice(NbdConnParams, deadlineMs, index);
+        auto error = NbdConn.ConnectDevice(params, deadlineMs, index);
         if (error)
             return error;
 
@@ -1622,7 +1690,14 @@ public:
     }
 
     TError Rebuild(int numConnections) {
-        TNbdConnParams params = NbdConnParams;
+        TSecureBind secureBind;
+        auto params = NbdConnParams;
+
+        if (params.UnixPath) {
+            auto error = SecureUnixPathBind(secureBind, params.UnixPath);
+            if (error)
+                return error;
+        }
         params.NumConnections = numConnections;
 
         Reconns += numConnections;
