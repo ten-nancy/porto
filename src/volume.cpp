@@ -1546,7 +1546,7 @@ public:
 
         auto path = Pin.RealPath();
         auto error = path.Umount(MNT_DETACH);
-        if (!error)
+        if (!error || error.Error == EError::NotFound)
             error = path.Unlink();
         if (error)
             L_WRN("Failed cleanup secure bind {}: {}", path, error);

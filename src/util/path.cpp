@@ -1897,7 +1897,7 @@ TError TFile::BindLegacy(const TFile &target) const {
 
     // check that original file was bound
     TFile target1;
-    error = target1.OpenRead(targetPath);
+    error = target1.OpenPath(targetPath);
     if (error)
         goto umount;
 
@@ -1908,7 +1908,7 @@ TError TFile::BindLegacy(const TFile &target) const {
     error = target1.Stat(st2);
     if (error)
         goto umount;
-    if (st1.st_dev != st2.st_dev || st1.st_ino != st2.st_dev) {
+    if (st1.st_dev != st2.st_dev || st1.st_ino != st2.st_ino) {
         error = TError("source path have been changed");
         goto umount;
     }
