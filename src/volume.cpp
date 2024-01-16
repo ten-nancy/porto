@@ -56,6 +56,13 @@ bool NeedStopStatFsLoop(false);
 std::condition_variable StatFsCv;
 std::mutex StatFsLock;
 
+static const std::set<std::string> FsTypes = {
+    "erofs",
+    "ext3",
+    "ext4",
+    "squashfs"
+};
+
 void SleepStatFsLoop(std::unique_lock<std::mutex>& locker, const uint64_t sleepTime) {
     auto now = GetCurrentTimeMs();
     auto deadline = now + sleepTime;
@@ -833,6 +840,9 @@ public:
         TFile file;
         bool file_storage = false;
         auto fsType = FsType(*Volume);
+
+        if (FsTypes.find(fsType) == FsTypes.end())
+            return TError(EError::InvalidValue, "Unsupported filesystem type: {}", fsType);
 
         if (Volume->StorageFd.IsRegular()) {
             error = file.Dup(Volume->StorageFd);
@@ -1643,6 +1653,9 @@ public:
             FilesystemType = it->second;
         else
             FilesystemType = "ext4";
+
+        if (FsTypes.find(FilesystemType) == FsTypes.end())
+            return TError(EError::InvalidValue, "Unsupported filesystem type: {}", FilesystemType);
 
         if (error = parseOptionInt("timeout", NbdConnParams.BioTimeout, 5))
             return error;
