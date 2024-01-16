@@ -1,3 +1,16 @@
+porto (5.3.31) unstable; urgency=low
+  [ ovov ]
+      volume: add fs_type property
+      volume, nbd: connect UNIX socket to verified bind
+      volume: add fs-type whitelist for nbd and loop backends
+  [ kndrvt ]
+      doc: add doc directory and scheme of processes and threads in Porto
+  [ warwish ]
+      property: add net_limit_bound and net_rx_limit_bound props
+  last commit: 21d929bf5b6ccb318004b7929596c7b68c3ce116
+
+ -- Porto Team <porto@yandex-team.ru>  Tue, 16 Jan 2024 03:01:06 -0000
+
 porto (5.3.30) unstable; urgency=low
   [ ovov ]
       nbd: better netlink error handling
