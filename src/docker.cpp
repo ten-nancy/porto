@@ -528,8 +528,8 @@ void TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClien
 
     CL = client;
 
-    error = archivePath.DirName().MkdirAll(0755);
-    if (error && error.Errno != EEXIST)
+    error = archivePath.DirName().MkdirAll(0755, true);
+    if (error)
         L_ERR("Cannot create directory {}: {}", archivePath.DirName(), error);
 
     auto layerLock = TFileMutex::MakeDirLock(archivePath.DirName());
@@ -611,8 +611,8 @@ TError TDockerImage::LinkTag(const TPath &place) const {
     TPath digestPath = DigestPath(place);
     TPath tagPath = TagPath(place);
 
-    error = tagPath.DirName().MkdirAll(0755);
-    if (error && error.Errno != EEXIST)
+    error = tagPath.DirName().MkdirAll(0755, true);
+    if (error)
         L_ERR("Cannot create directory {}: {}", tagPath.DirName(), error);
 
     auto tagLock = TFileMutex::MakeDirLock(tagPath.DirName());
@@ -934,8 +934,8 @@ TError TDockerImage::Pull(const TPath &place) {
         return error;
     }
 
-    error = digestPath.MkdirAll(0755);
-    if (error && error.Errno != EEXIST)
+    error = digestPath.MkdirAll(0755, true);
+    if (error)
         L_ERR("Cannot create directory {}: {}", digestPath, error);
 
     error = LinkTag(place);

@@ -613,7 +613,7 @@ TError TPath::Mkdir(unsigned int mode) const {
     return OK;
 }
 
-TError TPath::MkdirAll(unsigned int mode) const {
+TError TPath::MkdirAll(unsigned int mode, bool ignore) const {
     std::vector<TPath> paths;
     TPath path(Path);
     TError error;
@@ -628,7 +628,7 @@ TError TPath::MkdirAll(unsigned int mode) const {
 
     for (auto path = paths.rbegin(); path != paths.rend(); path++) {
         error = path->Mkdir(mode);
-        if (error)
+        if (error && (!ignore || error.Errno != EEXIST))
             return error;
     }
 

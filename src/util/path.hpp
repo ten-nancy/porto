@@ -186,7 +186,7 @@ public:
     TError Mknod(unsigned int mode, unsigned int dev) const;
     TError Mkfile(unsigned int mode) const;
     TError Mkdir(unsigned int mode) const;
-    TError MkdirAll(unsigned int mode) const;
+    TError MkdirAll(unsigned int mode, bool ignore = false) const;
     TError MkdirTmp(const TPath &parent, const std::string &prefix, unsigned int mode);
     TError Rmdir() const;
     TError Unlink() const;
