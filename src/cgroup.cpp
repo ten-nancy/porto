@@ -142,12 +142,17 @@ TError TCgroup::RemoveOne() {
         uint64_t deadline = GetCurrentTimeMs() + config().daemon().cgroup_remove_timeout_s() * 1000;
         uint64_t interval = 1;
         do {
-            (void)KillAll(SIGKILL);
+            error = KillAll(SIGKILL);
+            if (error)
+                L_WRN("Cannot kill tasks of cgroup {}: {}", *this, error);
+
             error = Path().Rmdir();
             if (!error || error.Errno != EBUSY)
                 break;
+
             if (interval < 1000)
                 interval *= 10;
+
         } while (!WaitDeadline(deadline, interval));
     }
 
@@ -422,6 +427,7 @@ void TCgroup::FinishRestore() {
     prevAttachedPidsMap.clear();
     IsRestore = false;
 }
+
 TError TCgroup::KillAll(int signal) const {
     std::vector<pid_t> tasks, killed;
     TError error, error2;
@@ -443,6 +449,7 @@ TError TCgroup::KillAll(int signal) const {
             else
                 frozen = true;
         }
+
         error = GetTasks(tasks);
         if (error)
             break;
@@ -467,8 +474,18 @@ TError TCgroup::KillAll(int signal) const {
         killed = tasks;
     } while (retry);
 
-    if (frozen)
-        (void)FreezerSubsystem.Thaw(*this, false);
+    // There is case when a child cgroup is frozen and tasks cannot be killed.
+    // Cgroups are walked from leaves to root so it does not have to walk children in that case.
+    // It is enough to thaw on its own.
+    if (FreezerSubsystem.IsBound(*this) &&
+        FreezerSubsystem.IsFrozen(*this)) {
+        if (!frozen)
+            L_TAINT(fmt::format("Rogue freeze in cgroup {}", *this));
+
+        error = FreezerSubsystem.Thaw(*this, false);
+        if (error)
+            L_WRN("Cannot thaw cgroup {}: {}", *this, error);
+    }
 
     return error;
 }

@@ -102,6 +102,7 @@ ADD_PYTHON_TEST(self-container)
 ADD_PYTHON_TEST(portoctl-attach)
 #ADD_PYTHON3_TEST(portoctl-bind)
 ADD_PYTHON3_TEST(sched-idle)
+ADD_PYTHON3_TEST(freezer)
 
 # limits test
 

@@ -3715,9 +3715,6 @@ TError TContainer::Terminate(uint64_t deadline) {
     if (cg.IsEmpty())
         return OK;
 
-    if (FreezerSubsystem.IsFrozen(cg) && !JobMode)
-        return cg.KillAll(SIGKILL);
-
     if (Task.Pid && deadline && !IsMeta()) {
         int sig = SIGTERM;
 

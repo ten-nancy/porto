@@ -260,6 +260,7 @@
   "test/test-docker-images.py":"infra/porto/porto/test/test-docker-images.py",
   "test/test-docker.py":"infra/porto/porto/test/test-docker.py",
   "test/test-extra_properties.py":"infra/porto/porto/test/test-extra_properties.py",
+  "test/test-freezer.py":"infra/porto/porto/test/test-freezer.py",
   "test/test-hijack.py":"infra/porto/porto/test/test-hijack.py",
   "test/test-htb-restore.py":"infra/porto/porto/test/test-htb-restore.py",
   "test/test-hugetlb.py":"infra/porto/porto/test/test-hugetlb.py",
