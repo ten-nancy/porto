@@ -12,6 +12,9 @@ K8S_IMAGE_TAG = "registry.k8s.io/pause:3.7"
 K8S_IMAGE_DIGEST = "221177c6082a88ea4f6240ab2450d540955ac6f4d5454f0e15751b653ebda165"
 K8S_IMAGE_ALT_TAG = "registry-1.docker.io/kndrvt/pause:latest"
 
+UBUNTU_JAMMY_IMAGE_TAG = "registry-1.docker.io/library/ubuntu:jammy"
+UBUNTU_JAMMY_IMAGE_DIGEST = "e34e831650c1bb0be9b6f61c6755749cb8ea2053ba91c6cda27fded9e089811f"
+
 PLACE = ""
 
 STORAGE_PATH = "/place/porto_docker/v1"
@@ -158,4 +161,16 @@ conn.RemoveDockerImage(K8S_IMAGE_DIGEST, place=PLACE)
 ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_TAG, place=PLACE)
 ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_ALT_TAG, place=PLACE)
 ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, K8S_IMAGE_DIGEST, place=PLACE)
+check_storage_is_empty()
+
+
+# OCI mediatypes
+print("Check OCI mediatypes")
+check_storage_is_empty()
+
+conn.PullDockerImage(UBUNTU_JAMMY_IMAGE_TAG, place=PLACE)
+image = conn.DockerImageStatus(UBUNTU_JAMMY_IMAGE_DIGEST, place=PLACE)
+check_image(image, UBUNTU_JAMMY_IMAGE_DIGEST, [UBUNTU_JAMMY_IMAGE_TAG])
+conn.RemoveDockerImage(UBUNTU_JAMMY_IMAGE_DIGEST, place=PLACE)
+
 check_storage_is_empty()

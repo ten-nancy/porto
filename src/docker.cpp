@@ -227,9 +227,14 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
     }
 
     THttpClient::THeaders headers = {
+        // docker
         { "Accept", "application/vnd.docker.distribution.manifest.v2+json" },
         { "Accept", "application/vnd.docker.distribution.manifest.list.v2+json" },
         { "Accept", "application/vnd.docker.distribution.manifest.v1+json" },
+
+        // oci
+        { "Accept", "application/vnd.oci.image.manifest.v1+json" },
+        { "Accept", "application/vnd.oci.image.index.v1+json" },
     };
 
     if (!AuthToken.empty())
@@ -289,9 +294,11 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
         if (error)
             return TError("Failed to get mediaType from manifest: {}", error);
 
-        if (mediaType == "application/vnd.docker.distribution.manifest.v2+json") {
+        if ((mediaType == "application/vnd.docker.distribution.manifest.v2+json") ||
+            (mediaType == "application/vnd.oci.image.manifest.v1+json")) {
             Manifest = manifests;
-        } else if (mediaType == "application/vnd.docker.distribution.manifest.list.v2+json") {
+        } else if ((mediaType == "application/vnd.docker.distribution.manifest.list.v2+json") ||
+                   (mediaType == "application/vnd.oci.image.index.v1+json")) {
             const std::string targetArch = "amd64";
             const std::string targetOs = "linux";
             bool found = false;
@@ -431,7 +438,8 @@ TError TDockerImage::ParseManifest() {
             if (error)
                 return TError("Failed to get mediaType: {}", error);
 
-            if (mediaType != "application/vnd.docker.image.rootfs.diff.tar.gzip")
+            if (!StringStartsWith(mediaType, "application/vnd.docker.image.rootfs") &&
+                !StringStartsWith(mediaType, "application/vnd.oci.image.layer.v1.tar"))
                 return TError(EError::Docker, "Unknown layer mediaType: {}", mediaType);
 
             std::string digest;
