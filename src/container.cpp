@@ -4795,6 +4795,8 @@ bool TContainer::RecvOomEvents() {
         Statistics->ContainersOOM += val;
         L_EVT("OOM Event in CT{}:{}", Id, Name);
         CollectOomKills();
+        // counter increments after event, so recheck it after 3s
+        EventQueue->Add(3000, {EEventType::CollectOOM, shared_from_this()});
         return true;
     }
 
@@ -4812,6 +4814,13 @@ void TContainer::Event(const TEvent &event) {
     {
         if (ct && !CL->LockContainer(ct) && ct->OomIsFatal)
             ct->Exit(SIGKILL, true);
+        break;
+    }
+
+    case EEventType::CollectOOM:
+    {
+        if (ct)
+            ct->CollectOomKills();
         break;
     }
 

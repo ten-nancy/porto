@@ -14,6 +14,7 @@ enum class EEventType {
     RotateLogs,
     Respawn,
     OOM,
+    CollectOOM,
     WaitTimeout,
     DestroyAgedContainer,
     DestroyWeakContainer,
