@@ -1,3 +1,15 @@
+porto (5.3.32) unstable; urgency=low
+  [ kndrvt ]
+      test: fix digest in test-docker-images
+      docker: add oci mediatypes
+      path: MkdirAll ignores EEXIST
+      cgroup: thaw freezer cgroup before KillAll
+  [ ovov ]
+      container: recollect oom kills 3s after OOM event
+  last commit: 1842d6e668d9b43c9ee8bee9b7a5ece930606ee1
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 05 Feb 2024 15:03:26 -0000
+
 porto (5.3.31) unstable; urgency=low
   [ ovov ]
       volume: add fs_type property
