@@ -9,7 +9,19 @@ from itertools import chain
 import signal
 import time
 
-from test_common import ExpectEq, ExpectException, ExpectLe
+from test_common import ExpectEq, ExpectException, ExpectLe, ConfigurePortod
+
+
+def disable_nbd():
+    ConfigurePortod('test-volume-nbd', """
+daemon {
+   enable_nbd: false
+}
+""")
+
+
+def enable_nbd():
+    ConfigurePortod('test-volume-nbd', "")
 
 
 def subpids(pid):
@@ -151,13 +163,22 @@ class TestNbdVolume:
         self.test_io_timeout(vol)
         self.test_reconnect_read(vol)
 
+        disable_nbd()
+        # volume was destroyed during reload
+        ExpectException(self.test_volume_creation, porto.exceptions.InvalidValue)
+        enable_nbd()
+        vol = self.test_volume_creation()
+
     @contextlib.contextmanager
     def createVolume(self, *args, **kwargs):
         vol = self.conn.CreateVolume(*args, **kwargs)
         try:
             yield vol
         finally:
-            self.conn.UnlinkVolume(vol.path)
+            try:
+                self.conn.UnlinkVolume(vol.path)
+            except porto.exceptions.VolumeNotFound:
+                pass
 
     def test_invalid_socket(self):
         self.cleanup.enter_context(self.createVolume(
@@ -179,7 +200,7 @@ class TestNbdVolume:
             self.test_volume_creation()
 
     def test_volume_creation(self):
-        uri = 'unix+tcp:{path}?export=image&timeout=1&reconn-timeout=1'.format(path=self.socket_path)
+        uri = 'unix+tcp:{path}?export=image&timeout=1&reconn-timeout=1&num-connections=2'.format(path=self.socket_path)
         return self.cleanup.enter_context(self.createVolume(backend='nbd', storage=uri, read_only='true'))
 
     def test_io_timeout(self, vol):

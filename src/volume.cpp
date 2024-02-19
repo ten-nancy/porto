@@ -1605,6 +1605,9 @@ public:
         TError error;
         TUri u;
 
+        if (!config().daemon().enable_nbd())
+            return TError(EError::InvalidValue, "nbd backend is not supported due to enable_nbd option of config");
+
         if (CL && CL->ClientContainer != Volume->VolumeOwnerContainer)
             return TError(EError::InvalidValue, "nbd volume must be owned by creator");
 

@@ -81,6 +81,7 @@ bool SupportCgroupNs = false;
 bool EnableOsModeCgroupNs = false;
 bool EnableRwCgroupFs = false;
 bool EnableDockerMode = false;
+bool EnableNbd = false;
 uint32_t RequestHandlingDelayMs = 0;
 
 extern std::vector<ExtraProperty> ExtraProperties;
@@ -413,10 +414,12 @@ static void PortodServer() {
         return;
     }
 
-    error = StartNbd();
-    if (error) {
-        L_ERR("Can't start nbd: {}", error);
-        return;
+    if (EnableNbd) {
+        error = StartNbd();
+        if (error) {
+            L_ERR("Can't start nbd: {}", error);
+            return;
+        }
     }
     StartStatFsLoop();
     StartRpcQueue();
@@ -852,6 +855,21 @@ static int Portod() {
             ExtraProperties.emplace_back(properties);
     }
 
+    EnableNbd = config().daemon().enable_nbd();
+    if (EnableNbd) {
+        error = LoadNbd();
+        if (error) {
+            L_ERR("Cannot load nbd module: {}", error);
+            return EXIT_FAILURE;
+        }
+
+        error = CreatePortoNlSocket();
+        if (error) {
+            L_ERR("Cannot create porto netlink socket: {}", error);
+            return EXIT_FAILURE;
+        }
+    }
+
     InitPortoGroups();
     InitCapabilities();
     InitIpcSysctl();
@@ -912,10 +930,12 @@ static int Portod() {
     if (error)
         FatalError("Cannot mount volumes keyvalue", error);
 
-    NbdKV = TPath(PORTO_NBD_KV);
-    error = TKeyValue::Mount(NbdKV);
-    if (error)
-        FatalError("Cannot mount nbd keyvalue", error);
+    if (EnableNbd) {
+        NbdKV = TPath(PORTO_NBD_KV);
+        error = TKeyValue::Mount(NbdKV);
+        if (error)
+            FatalError("Cannot mount nbd keyvalue", error);
+    }
 
     SecureBinds = TPath(PORTO_SECURE_BINDS);
     error = SecureBinds.SecureTmpfsMount(TCred(RootUser, PortoGroup),
@@ -1047,13 +1067,16 @@ static int Portod() {
         if (error)
             L_ERR("Can't destroy secure binds storage: {}", error);
 
-        error = NbdKV.UmountAll();
-        if (error)
-            L_ERR("Can't destroy volume key-value storage: {}", error);
+        if (EnableNbd) {
+            error = NbdKV.UmountAll();
+            if (error)
+                L_ERR("Can't destroy volume key-value storage: {}", error);
+        }
     }
 
     StopAsyncUmounter();
-    StopNbd();
+    if (EnableNbd)
+        StopNbd();
 
     PortodPidFile.Remove();
 
@@ -1421,18 +1444,6 @@ static int PortodMaster() {
         return EXIT_FAILURE;
     }
 
-    error = LoadNbd();
-    if (error) {
-        L_ERR("Cannot load nbd module: {}", error);
-        return EXIT_FAILURE;
-    }
-
-    error = CreatePortoNlSocket();
-    if (error) {
-        L_ERR("Cannot create porto netlink socket: {}", error);
-        return EXIT_FAILURE;
-    }
-
     error = TCore::Register(thisBin);
     if (error) {
         L_ERR("Cannot setup core pattern: {}", error);
@@ -1465,7 +1476,8 @@ static int PortodMaster() {
     pathVer.Unlink();
     TPath(PORTO_CONTAINERS_KV).Rmdir();
     TPath(PORTO_VOLUMES_KV).Rmdir();
-    TPath(PORTO_NBD_KV).Rmdir();
+    if (EnableNbd)
+        TPath(PORTO_NBD_KV).Rmdir();
     TPath("/run/porto").Rmdir();
     TPath(PORTOD_STAT_FILE).Unlink();
 
@@ -1477,7 +1489,8 @@ static int PortodMaster() {
 static void KvDump() {
     TKeyValue::DumpAll(PORTO_CONTAINERS_KV);
     TKeyValue::DumpAll(PORTO_VOLUMES_KV);
-    TKeyValue::DumpAll(PORTO_NBD_KV);
+    if (EnableNbd)
+        TKeyValue::DumpAll(PORTO_NBD_KV);
 }
 
 static void PrintVersion() {

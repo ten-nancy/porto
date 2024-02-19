@@ -199,6 +199,7 @@ message TConfig {
         optional uint32 debug_hung_tasks_count = 28;
         optional uint32 request_handling_delay_ms = 29;  // for retriability test
         optional bool docker_images_support = 30;
+        optional bool enable_nbd = 31;
     }
 
     message TContainerCfg {
