@@ -12,7 +12,7 @@ K8S_IMAGE_TAG = "registry.k8s.io/pause:3.7"
 K8S_IMAGE_DIGEST = "221177c6082a88ea4f6240ab2450d540955ac6f4d5454f0e15751b653ebda165"
 K8S_IMAGE_ALT_TAG = "registry-1.docker.io/kndrvt/pause:latest"
 
-UBUNTU_JAMMY_IMAGE_TAG = "registry-1.docker.io/library/ubuntu:jammy"
+UBUNTU_JAMMY_IMAGE_TAG = "registry-1.docker.io/library/ubuntu:jammy-20240125"
 UBUNTU_JAMMY_IMAGE_DIGEST = "fd1d8f58e8aedc22ec0a3a7ce1a33de544a596eaa6cdb842f1af7c5e081d453f"
 
 PLACE = ""
