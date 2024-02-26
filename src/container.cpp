@@ -4955,7 +4955,7 @@ TTuple TContainer::Taint() {
         taint.push_back("Property bind_dns is deprecated and will be removed soon.");
 
     if (!OomIsFatal)
-        taint.push_back("Containers with oom_is_fatal=false oftern stuck in broken state after OOM, you have been warned.");
+        taint.push_back("Containers with oom_is_fatal=false often stuck in broken state after OOM, you have been warned.");
 
     if (OsMode && Isolate && HasProp(EProperty::COMMAND) && Command != "/sbin/init")
         taint.push_back("Containers virt_mode=os and custom command often infected with zombies, use virt_mode=app user=root group=root.");
