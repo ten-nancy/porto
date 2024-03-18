@@ -1,3 +1,14 @@
+porto (5.3.33) unstable; urgency=low
+  [ kndrvt ]
+      container: terminate fuse connections and mounts in virt_mode=fuse
+      test: fix version of ubuntu jammy image
+      config: add enable_nbd option to disable nbd volume backend
+  [ babenko ]
+      Fix typo
+  last commit: 5af1be76a7900a8f13a1a535799f04a58fac29a0
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 18 Mar 2024 11:16:44 -0000
+
 porto (5.3.32) unstable; urgency=low
   [ kndrvt ]
       test: fix digest in test-docker-images
