@@ -208,7 +208,9 @@ public:
     static std::string UmountFlagsToString(uint64_t flags);
 
     TError FindMount(TMount &mount, bool exact = false) const;
-    static TError ListAllMounts(std::vector<TMount> &list);
+    static TError ListMountsByFilter(std::vector<TMount> &list, pid_t pid, std::function<bool(const TMount&)> filter = [](const TMount &) { return true; });
+    static TError ListFuseMounts(std::vector<TMount> &list, pid_t pid = 0);
+    static TError ListAllMounts(std::vector<TMount> &list, pid_t pid = 0);
 
     TError Mount(const TPath &source, const std::string &type, uint64_t flags,
                  const std::vector<std::string> &options) const;
@@ -243,6 +245,7 @@ struct TMount {
     TPath Target;
     std::string Type;
     std::string Options;
+    std::unordered_map<std::string, int> OptionalFields;
 
     int MountId;
     int ParentId;

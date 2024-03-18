@@ -1169,26 +1169,11 @@ public:
     TVirtMode() : TProperty(P_VIRT_MODE, EProperty::VIRT_MODE,
             "Virtualization mode: os|app|job|host") {}
 
-    TError Start(void) override {
-        if (CT->HasProp(EProperty::USERNS)) {
-            if (CT->UserNs && (CT->HostMode || CT->JobMode))
-                return TError(EError::InvalidValue, "userns=true incompatible with virt_mode");
-            else if (!CT->UserNs && CT->DockerMode)
-                return TError(EError::InvalidValue, "userns=false incompatible with virt_mode");
-        } else if (CT->DockerMode || CT->FuseMode) {
-            CT->UserNs = true;
-            CT->UnshareOnExec = true;
-            CT->SetProp(EProperty::USERNS);
-        }
-        return OK;
-    }
-
     TError Get(std::string &value) const override {
         value = CT->OsMode ? "os" :
                 CT->JobMode ? "job" :
                 CT->HostMode ? "host" :
-                CT->DockerMode ? "docker" :
-                CT->FuseMode ? "fuse" : "app";
+                CT->DockerMode ? "docker" : "app";
         return OK;
     }
 
@@ -1198,6 +1183,7 @@ public:
                 value != "job" &&
                 (value != "docker" || !EnableDockerMode) &&
                 value != "host" &&
+                // TODO: remove this value later
                 value != "fuse")
             return TError(EError::InvalidValue, "Unknown: {}", value);
 
@@ -1205,7 +1191,6 @@ public:
         CT->JobMode = false;
         CT->HostMode = false;
         CT->DockerMode = false;
-        CT->FuseMode = false;
 
         if (value == "os")
             CT->OsMode = true;
@@ -1215,8 +1200,13 @@ public:
             CT->HostMode = true;
         else if (value == "docker")
             CT->DockerMode = true;
-        else if (value == "fuse")
-            CT->FuseMode = true;
+        // TODO: it needs to backward compability, remove it later
+        else if (value == "fuse") {
+            L_TAINT("virt_mode=fuse is deprecated. Please use devices property explicitly and enable_fuse property");
+            if (!config().daemon().enable_fuse())
+                return TError(EError::InvalidValue, "virt_mode={} is disabled due to Porto config", value);
+            CT->EnableFuse = true;
+        }
 
         if (CT->HostMode || CT->JobMode)
             CT->Isolate = false;
@@ -1324,6 +1314,48 @@ public:
         return Set(spec.unshare_on_exec());
     }
 } static UnshareOnExec;
+
+class TEnableFuse : public TProperty {
+public:
+    TEnableFuse() : TProperty(P_ENABLE_FUSE, EProperty::ENABLE_FUSE, "Aborts fuse connections and unmounts fuse filesystems") {}
+
+    TError Start() override {
+        IsSupported = config().daemon().enable_fuse();
+        return OK;
+    }
+
+    TError Get(std::string &value) const override {
+        value = BoolToString(CT->EnableFuse);
+        return OK;
+    }
+
+    TError Set(bool value) {
+        CT->EnableFuse = value;
+        CT->SetProp(EProperty::ENABLE_FUSE);
+        return OK;
+    }
+
+    TError Set(const std::string &value) override {
+        bool val;
+        TError error = StringToBool(value, val);
+        if (error)
+            return error;
+        return Set(val);
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        spec.set_enable_fuse(CT->EnableFuse);
+    }
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_enable_fuse();
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        return Set(spec.enable_fuse());
+    }
+
+} static EnableFuse;
 
 class TCgroupFs : public TProperty {
 public:
@@ -2716,19 +2748,11 @@ public:
         IsDynamic = true;
     }
 
-    TError Start(void) override {
-        if (!CT->HasProp(EProperty::DEVICE_CONF)) {
-            if (CT->FuseMode)
-                return Set("/dev/fuse rw");
-        }
-
-        return OK;
-    }
-
     TError Get(std::string &value) const override {
         value = CT->Devices.Format();
         return OK;
     }
+
     TError Set(const std::string &value) override {
         TDevices devices;
 

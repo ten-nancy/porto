@@ -82,6 +82,7 @@ bool EnableOsModeCgroupNs = false;
 bool EnableRwCgroupFs = false;
 bool EnableDockerMode = false;
 bool EnableNbd = false;
+bool EnableFuse = false;
 uint32_t RequestHandlingDelayMs = 0;
 
 extern std::vector<ExtraProperty> ExtraProperties;
@@ -866,6 +867,15 @@ static int Portod() {
         error = CreatePortoNlSocket();
         if (error) {
             L_ERR("Cannot create porto netlink socket: {}", error);
+            return EXIT_FAILURE;
+        }
+    }
+
+    EnableFuse = config().daemon().enable_fuse();
+    if (EnableFuse) {
+        error = RunCommand({"modprobe", "fuse"});
+        if (error) {
+            L_ERR("Cannot load fuse module: {}", error);
             return EXIT_FAILURE;
         }
     }

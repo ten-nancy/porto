@@ -3076,7 +3076,8 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
                           EtcHosts.size() ||
                           !TaskEnv.Mnt.Root.IsRoot() ||
                           TaskEnv.Mnt.RootRo ||
-                          !TaskEnv.Mnt.Systemd.empty();
+                          !TaskEnv.Mnt.Systemd.empty() ||
+                          EnableFuse;
 
     if (TaskEnv.NewMountNs && (HostMode || JobMode))
         return TError(EError::InvalidValue, "Cannot change mount-namespace in this virt_mode");
@@ -3394,6 +3395,37 @@ TError TContainer::PrepareStart() {
 
     if (JobMode && IsMeta())
         return TError(EError::InvalidValue, "Job container without command considered useless");
+
+    if (HasProp(EProperty::USERNS)) {
+        if (UserNs && (HostMode || JobMode))
+            return TError(EError::InvalidValue, "userns=true incompatible with virt_mode");
+        else if (!UserNs && DockerMode)
+            return TError(EError::InvalidValue, "userns=false incompatible with virt_mode");
+    // TODO: perhaps remove EnableFuse here later
+    } else if (DockerMode || EnableFuse) {
+        LockStateWrite();
+        UserNs = true;
+        UnshareOnExec = true;
+        SetProp(EProperty::USERNS);
+        UnlockState();
+    }
+
+    // add /dev/fuse device for fuse before start
+    if (EnableFuse) {
+        LockStateWrite();
+        error = EnableControllers(CGROUP_DEVICES);
+        if (error)
+            return error;
+
+        TDevices devices;
+        error = devices.Parse("/dev/fuse rw", CL->Cred);
+        if (error)
+            return error;
+
+        Devices.Merge(devices, true, true);
+        SetProp(EProperty::DEVICE_CONF);
+        UnlockState();
+    }
 
     if (CapLimit.Permitted & ~CapBound.Permitted) {
         TCapabilities cap = CapLimit;
@@ -3751,7 +3783,7 @@ TError TContainer::Terminate(uint64_t deadline) {
     if (cg.IsEmpty())
         return OK;
 
-    error = cg.KillAll(SIGKILL);
+    error = cg.KillAll(SIGKILL, EnableFuse);
     if (error)
         return error;
 
@@ -3806,6 +3838,7 @@ TError TContainer::Stop(uint64_t timeout) {
         }
 
         ct->SetState(EContainerState::Stopping);
+
         error = ct->Terminate(deadline);
         if (error)
             L_ERR("Cannot terminate tasks in CT{}:{}: {}", ct->Id, ct->Name, error);

@@ -200,6 +200,10 @@ message TConfig {
         optional uint32 request_handling_delay_ms = 29;  // for retriability test
         optional bool docker_images_support = 30;
         optional bool enable_nbd = 31;
+        // fuse
+        optional bool enable_fuse = 32;
+        optional uint32 fuse_termination_timeout_s = 33;
+        optional uint32 fuse_termination_sleep_ms = 34;
     }
 
     message TContainerCfg {

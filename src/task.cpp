@@ -473,10 +473,11 @@ TError TTaskEnv::ConfigureChild() {
     UserFd.Close();
 
     if (CT->UserNs) {
-        int unshareFlags = CLONE_NEWUSER;
+        int unshareFlags = CLONE_NEWUSER | CLONE_NEWNET;
 
-        if (!CT->FuseMode || !CT->NetInherit)
-            unshareFlags |= CLONE_NEWNET;
+        // TODO: remove it later
+        if (CT->EnableFuse && CT->NetInherit)
+            unshareFlags &= ~CLONE_NEWNET;
 
         if (SupportCgroupNs)
             unshareFlags |= CLONE_NEWCGROUP;

@@ -15,6 +15,7 @@ struct TTask {
                 const std::atomic_bool &disconnected = false);
     static bool Deliver(pid_t pid, int code, int status);
 
+    static bool Exists(pid_t pid);
     bool Exists() const;
     bool IsZombie() const;
     pid_t GetPPid() const;

@@ -2,7 +2,6 @@
 
 #include <string>
 
-#include "common.hpp"
 #include "config.hpp"
 #include "util/path.hpp"
 
@@ -119,7 +118,8 @@ public:
     TError Remove();
     TError RemoveOne();
 
-    TError KillAll(int signal) const;
+    static TError AbortFuse(pid_t pid);
+    TError KillAll(int signal, bool abortFuse = false) const;
 
     TError GetProcesses(std::vector<pid_t> &pids) const {
         return GetPids("cgroup.procs", pids);

@@ -17,7 +17,11 @@ extern "C" {
 #endif
 
 bool TTask::Exists() const {
-    return Pid && (!kill(Pid, 0) || errno != ESRCH);
+    return Exists(Pid);
+}
+
+bool TTask::Exists(pid_t pid) {
+    return pid && (!kill(pid, 0) || errno != ESRCH);
 }
 
 TError TTask::Kill(int signal) const {

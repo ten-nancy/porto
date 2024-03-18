@@ -244,7 +244,8 @@ Porto provides API for label lookup, atomic compare-and-set, atomic increment an
     - **user** and **group** must be not "root"
     - parent must be with **virt_mode**="os"
 
-    Side effects of **virt\_mode**=*fuse*
+    [//]: <> (TODO: remove this part later)
+    Side effects of **virt\_mode**=*fuse* (**deprecated**)
     - set default **devices**="/dev/fuse rw"
     - join mount namespaces
     - join user namespaces with direct mapping

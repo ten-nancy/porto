@@ -93,6 +93,10 @@ static void DefaultConfig() {
     daemon->set_client_idle_timeout(60);
     daemon->set_debug_hung_tasks_count(10);
 
+    daemon->set_enable_fuse(true);
+    daemon->set_fuse_termination_timeout_s(60);
+    daemon->set_fuse_termination_sleep_ms(1000);
+
     auto* container = cfg.mutable_container();
 
     container->set_default_aging_time_s(60 * 60 * 24);

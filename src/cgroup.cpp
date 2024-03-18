@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cmath>
-#include <csignal>
 #include <unordered_set>
 #include <mutex>
 
@@ -10,6 +9,7 @@
 #include "util/log.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
+#include "util/task.hpp"
 
 extern "C" {
 #include <fcntl.h>
@@ -428,7 +428,44 @@ void TCgroup::FinishRestore() {
     IsRestore = false;
 }
 
-TError TCgroup::KillAll(int signal) const {
+TError TCgroup::AbortFuse(pid_t pid) {
+    TError error;
+    std::vector<TMount> mounts;
+    uint64_t deadline = GetCurrentTimeMs() + config().daemon().fuse_termination_timeout_s() * 1000;
+    uint64_t sleep = config().daemon().fuse_termination_sleep_ms();
+
+    if (!TTask::Exists(pid))
+        return OK;
+
+    do {
+        error = TPath::ListFuseMounts(mounts, pid);
+        if (error && error.Errno != ENOENT)
+            return error;
+
+        if (mounts.empty() || !TTask::Exists(pid))
+            break;
+
+        for (const TMount &m: mounts) {
+            if (m.OptionalFields.size() > 0)
+                continue;
+
+            TPath connPath = "/sys/fs/fuse/connections/" + std::to_string(m.Device) + "/abort";
+
+            L_ACT("Terminate via {} due to mount {} {} {} {}", connPath, m.Device, m.Source, m.Target, m.Type);
+
+            error = connPath.WriteAll("1");
+            if (error)
+                return TError(error, "Cannot close fuse connections");
+        }
+
+        mounts.clear();
+
+    } while (!WaitDeadline(deadline, sleep));
+
+    return OK;
+}
+
+TError TCgroup::KillAll(int signal, bool abortFuse) const {
     std::vector<pid_t> tasks, killed;
     TError error, error2;
     bool retry;
@@ -441,11 +478,13 @@ TError TCgroup::KillAll(int signal) const {
         return TError(EError::Permission, "Bad idea");
 
     do {
-        if (++iteration > 10 && !frozen && FreezerSubsystem.IsBound(*this) &&
-                !FreezerSubsystem.IsFrozen(*this)) {
+        if (++iteration > 10 && !frozen &&
+            FreezerSubsystem.IsBound(*this) &&
+            !FreezerSubsystem.IsFrozen(*this))
+        {
             error = FreezerSubsystem.Freeze(*this, false);
             if (error)
-                L_ERR("Cannot freeze cgroup for killing {} : {}", *this, error);
+                L_ERR("Cannot freeze cgroup for killing {}: {}", *this, error);
             else
                 frozen = true;
         }
@@ -453,6 +492,7 @@ TError TCgroup::KillAll(int signal) const {
         error = GetTasks(tasks);
         if (error)
             break;
+
         retry = false;
         for (auto pid: tasks) {
             std::unique_lock<std::mutex> lock(TidsMutex);
@@ -463,10 +503,17 @@ TError TCgroup::KillAll(int signal) const {
                 L_TAINT(fmt::format("Cannot kill portod thread {}", pid));
                 continue;
             }
+
+            if (iteration > 10 && abortFuse) {
+                error = TCgroup::AbortFuse(pid);
+                if (error)
+                    L_ERR("Cannot abort fuse for {} of {}: {}", pid, *this, error);
+            }
+
             if (std::find(killed.begin(), killed.end(), pid) == killed.end()) {
                 if (kill(pid, signal) && errno != ESRCH && !error) {
                     error = TError::System("kill");
-                    L_ERR("Cannot kill process {} : {}", pid, error);
+                    L_ERR("Cannot kill process {}: {}", pid, error);
                 }
                 retry = true;
             }

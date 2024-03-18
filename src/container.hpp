@@ -185,11 +185,11 @@ public:
     bool HostMode = false;      /* Preserve host capabilites */
     bool JobMode = false;       /* Process group */
     bool DockerMode = false;
-    bool FuseMode = false;
     bool UserNs = false;
     TCred UserNsCred;
     bool UnshareOnExec = false;
     ECgroupFs CgroupFs = ECgroupFs::None;
+    bool EnableFuse = false;
 
     TMultiTuple NetProp;
     bool NetIsolate;            /* Create new network namespace */
@@ -199,10 +199,11 @@ public:
     std::string Hostname;
     std::string EnvCfg;
     std::string EnvSecret;
+
     std::vector<TBindMount> BindMounts;
     std::map<TPath, TPath> Symlink;
-    TMultiTuple IpList;
 
+    TMultiTuple IpList;
     TMultiTuple IpLimit;
     std::string IpPolicy;
 

@@ -1271,10 +1271,11 @@ TError TPath::FindMount(TMount &mount, bool exact) const {
     return OK;
 }
 
-TError TPath::ListAllMounts(std::vector<TMount> &list) {
+TError TPath::ListMountsByFilter(std::vector<TMount> &list, pid_t pid, std::function<bool(const TMount&)> filter) {
+    TError error;
     std::vector<std::string> lines;
 
-    TError error = TPath("/proc/self/mountinfo").ReadLines(lines, MOUNT_INFO_LIMIT);
+    error = TPath("/proc/" + (pid ? std::to_string(pid) : "self") + "/mountinfo").ReadLines(lines, MOUNT_INFO_LIMIT);
     if (error)
         return error;
 
@@ -1285,10 +1286,19 @@ TError TPath::ListAllMounts(std::vector<TMount> &list) {
         if (error)
             return error;
 
-        list.push_back(mount);
+        if (filter(mount))
+            list.push_back(mount);
     }
 
     return OK;
+}
+
+TError TPath::ListFuseMounts(std::vector<TMount> &list, pid_t pid) {
+    return ListMountsByFilter(list, pid, [](const TMount &m) { return StringStartsWith(m.Type, "fuse."); });
+}
+
+TError TPath::ListAllMounts(std::vector<TMount> &list, pid_t pid) {
+    return ListMountsByFilter(list, pid);
 }
 
 std::string TMount::Demangle(const std::string &s) {
@@ -1342,9 +1352,17 @@ TError TMount::ParseMountinfo(const std::string &line) {
     std::string opt;
     std::stringstream ss(tokens[6]);
 
-    while (std::getline(ss, opt, ' '))
+    while (std::getline(ss, opt, ' ')) {
         if (opt == "-")
             break;
+
+        auto pos = opt.find(':');
+        int value = 0;
+        if (pos != std::string::npos)
+            (void)StringToInt(opt.substr(pos + 1), value);
+
+        OptionalFields[opt.substr(0, pos)] = value;
+    }
 
     if (opt != "-")
         return TError("optional delimiter not found");

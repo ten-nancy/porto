@@ -130,6 +130,7 @@ constexpr const char *P_UNSHARE_ON_EXEC = "unshare_on_exec";
 constexpr const char *P_CGROUPFS = "cgroupfs";
 constexpr const char *P_AGING_TIME = "aging_time";
 constexpr const char *P_ENABLE_PORTO = "enable_porto";
+constexpr const char *P_ENABLE_FUSE = "enable_fuse";
 constexpr const char *P_RESOLV_CONF = "resolv_conf";
 constexpr const char *P_ETC_HOSTS = "etc_hosts";
 constexpr const char *P_WEAK = "weak";
@@ -275,6 +276,7 @@ enum class EProperty {
     CGROUPFS,
     AGING_TIME,
     ENABLE_PORTO,
+    ENABLE_FUSE,
     RESOLV_CONF,
     ETC_HOSTS,
     WEAK,
