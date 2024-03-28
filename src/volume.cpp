@@ -42,7 +42,6 @@ TNbdConn NbdConn;
 
 TPath VolumesKV;
 TPath NbdKV;
-TPath SecureBinds;
 MeasuredMutex VolumesMutex("volumes");
 std::map<TPath, std::shared_ptr<TVolume>> Volumes;
 std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
@@ -1537,45 +1536,6 @@ public:
 /* TVolumeNbdBackend - fs on NBD */
 static std::unordered_map<int, std::shared_ptr<TVolume>> NbdVolumes;
 
-class TSecureBind {
-    TFile Pin;
-public:
-    ~TSecureBind() {
-        if (!Pin)
-            return;
-
-        auto path = Pin.RealPath();
-        auto error = path.Umount(MNT_DETACH);
-        if (!error || error.Error == EError::NotFound)
-            error = path.Unlink();
-        if (error)
-            L_WRN("Failed cleanup secure bind {}: {}", path, error);
-    }
-
-    TError Bind(const TPath &path, std::function<TError(const TFile&)> validate) {
-        TFile file;
-        auto error = file.OpenPath(path);
-        if (error) {
-            if (error.Errno == ENOENT)
-                return TError(EError::NbdSocketUnavaliable);
-            return error;
-        }
-        error = validate(file);
-        if (error)
-            return error;
-        TPath tmp = SecureBinds / "bind.XXXXXX";
-        error = Pin.CreateTemporary(tmp);
-        if (error)
-            return error;
-
-        return file.Bind(Pin);
-    }
-
-    TPath Path() const {
-        return Pin.RealPath();
-    }
-};
-
 class TVolumeNbdBackend : public TVolumeBackend {
     TPath Root;
     TCred Cred;
@@ -1587,15 +1547,6 @@ class TVolumeNbdBackend : public TVolumeBackend {
             return it->second;
         return nullptr;
     }
-
-    TError SecureUnixPathBind(TSecureBind &secureBind, TPath &path) {
-        auto validate = [this](const TFile &f) { return f.WriteAccess(Root, Cred); };
-        auto error = secureBind.Bind(path, validate);
-        if (!error)
-            path = secureBind.Path();
-        return error;
-    }
-
 public:
     TNbdConnParams NbdConnParams;
     std::string FilesystemType;
@@ -1607,9 +1558,6 @@ public:
 
         if (!config().daemon().enable_nbd())
             return TError(EError::InvalidValue, "nbd backend is not supported due to enable_nbd option of config");
-
-        if (CL && CL->ClientContainer != Volume->VolumeOwnerContainer)
-            return TError(EError::InvalidValue, "nbd volume must be owned by creator");
 
         Root = Volume->VolumeOwnerContainer->RootPath;
         Cred = Volume->VolumeOwnerContainer->TaskCred;
@@ -1699,14 +1647,17 @@ public:
     }
 
     TError Build() override {
-        TSecureBind secureBind;
+        TFile pin;
         int index;
         auto params = NbdConnParams;
 
         if (params.UnixPath) {
-            auto error = SecureUnixPathBind(secureBind, params.UnixPath);
+            auto error = pin.OpenPath(params.UnixPath);
+            if (!error)
+                error = pin.WriteAccess(Root, Cred);
             if (error)
                 return error;
+            params.UnixPath = pin.ProcPath();
         }
 
         L_ACT("nbd connect {}", Volume->Storage);
@@ -1732,13 +1683,16 @@ public:
     }
 
     TError Rebuild(int numConnections) {
-        TSecureBind secureBind;
+        TFile pin;
         auto params = NbdConnParams;
 
         if (params.UnixPath) {
-            auto error = SecureUnixPathBind(secureBind, params.UnixPath);
+            auto error = pin.OpenPath(params.UnixPath);
+            if (!error)
+                error = pin.WriteAccess(Root, Cred);
             if (error)
                 return error;
+            params.UnixPath = pin.ProcPath();
         }
         params.NumConnections = numConnections;
 
@@ -1776,11 +1730,6 @@ public:
             return error;
 
         Volume->DeviceIndex = -1;
-
-        error = Volume->InternalPath.UmountAll();
-        if (error)
-            return error;
-
 
         return error;
     }
@@ -1821,7 +1770,7 @@ struct TNbdReconnRequest {
 };
 
 class TNbdReconnQueue {
-    std::unordered_map<int, int&> Devices;
+    std::unordered_map<int, int> Devices;
     std::priority_queue<TNbdReconnRequest> Q;
 public:
     void push(const TNbdReconnRequest &r) {
@@ -1830,8 +1779,7 @@ public:
             it->second += r.NumConnections;
         } else {
             Q.push(r);
-            int &nc = const_cast<TNbdReconnRequest&>(Q.top()).NumConnections;
-            Devices.insert(it, {r.DeviceIndex, nc});
+            Devices.insert(it, {r.DeviceIndex, r.NumConnections});
         }
     }
 
@@ -1840,7 +1788,9 @@ public:
     }
 
     TNbdReconnRequest top() {
-        return Q.top();
+        auto r = Q.top();
+        r.NumConnections = Devices[r.DeviceIndex];
+        return r;
     }
 
     void pop() {
