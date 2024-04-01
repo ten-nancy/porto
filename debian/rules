@@ -6,6 +6,7 @@ SBINDIR=$(DESTDIR)/usr/sbin
 BUILD_TYPE?=Release
 OPENSSL_TGZ_URL?=https://github.com/openssl/openssl/archive/refs/tags/OpenSSL_1_1_1o.tar.gz
 LIBBPF_TGZ_URL?=https://github.com/libbpf/libbpf/archive/refs/tags/v0.7.0.tar.gz
+PORTO_INSTALL_ADDON?=
 
 sedpkgprefix:=sed -e "s/PKGPREFIX/$(PKGPREFIX)/gI"
 
@@ -35,6 +36,7 @@ override_dh_shlibdeps:
 
 override_dh_install:
 	dh_install
+	$(PORTO_INSTALL_ADDON)
 	dh_bash-completion
 	$(SBINDIR)/portoctl --help
 

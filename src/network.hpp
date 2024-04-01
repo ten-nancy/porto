@@ -16,6 +16,8 @@
 #include "util/hgram.hpp"
 #include "util/mutex.hpp"
 
+#include "netlimitsoft.hpp"
+
 class TContainer;
 class TNetwork;
 struct TNetDeviceConfig;
@@ -146,6 +148,10 @@ class TNetwork : public TNonCopyable {
     /* Protects netink socket operaions and external state */
     MeasuredMutex NetMutex;
 
+    TNetLimitSoftOfNet NetLimitSoftOfNet;
+    std::shared_ptr<TBpfProgram> NetLimitSoftProgram;
+    uint64_t NetLimitSoftValue;
+
     /* Containers, parent before childs. Protected with NetStateMutex. */
     std::list<TNetClass *> NetClasses;
 
@@ -235,6 +241,10 @@ public:
 
     void StartRepair();
     TError WaitRepair();
+
+    TError SetupNetLimitSoft();
+    TError UpdateNetLimitSoft(uint32_t kbs);
+    TError SetupNetLimitSoftInterface(int ifindex);
 
     TError SetupQueue(TNetDevice &dev, bool force);
 

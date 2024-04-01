@@ -65,7 +65,7 @@ include_directories(${libporto_SOURCE_DIR})
 
 add_library(portocore portod.cpp core.cpp cgroup.cpp rpc.cpp container.cpp
 	    event.cpp task.cpp env.cpp device.cpp nbd.cpp
-	    network.cpp filesystem.cpp volume.cpp storage.cpp
+	    network.cpp netlimitsoft.cpp filesystem.cpp volume.cpp storage.cpp
 	    kvalue.cpp config.cpp property.cpp
 	    epoll.cpp client.cpp stream.cpp helpers.cpp waiter.cpp bpf.cpp
 	    docker.cpp)

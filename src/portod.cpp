@@ -28,6 +28,7 @@
 #include "property.hpp"
 #include "portod.hpp"
 #include "libporto.hpp"
+#include "netlimitsoft.hpp"
 
 extern "C" {
 #include <fcntl.h>
@@ -82,6 +83,8 @@ bool EnableOsModeCgroupNs = false;
 bool EnableRwCgroupFs = false;
 bool EnableDockerMode = false;
 uint32_t RequestHandlingDelayMs = 0;
+
+TNetLimitSoft NetLimitSoft;
 
 extern std::vector<ExtraProperty> ExtraProperties;
 extern std::unordered_set<std::string> SupportedExtraProperties;
@@ -969,6 +972,18 @@ static int Portod() {
     }
 
     SystemClient.StartRequest();
+
+    if(config().network().network_limit_soft_bpf_elf_path().empty()) {
+        L_SYS("Setting up netlimit soft... no `network {{ network_limit_soft_bpf_elf_path: <value> }}` set in the portod config");
+    } else {
+        const std::string path = config().network().network_limit_soft_bpf_elf_path();
+
+        L_SYS("Setting up netlimit soft... bpf elf path '{}'", path);
+        error = NetLimitSoft.Setup(path);
+        if (error) {
+            FatalError("Cannot setup netlimit soft", error);
+        }
+    }
 
     error = CreateRootContainer();
     if (error)

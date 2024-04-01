@@ -353,7 +353,7 @@ bool TNetwork::NamespaceSysctl(const std::string &key) {
         if (pair.first == key)
             return true;
     }
-    for (auto& namespacedNetSysctl: NamespacedNetSysctls) {
+    for (auto &namespacedNetSysctl: NamespacedNetSysctls) {
         if (namespacedNetSysctl == key)
             return true;
     }
@@ -612,6 +612,7 @@ void TNetwork::Register(std::shared_ptr<TNetwork> &net, ino_t inode) {
     net->NetInode = inode;
     net->StatTime = GetCurrentTimeMs();
     net->StatGen =  GlobalStatGen.load();
+    net->SetupNetLimitSoft();
 }
 
 TError TNetwork::GetSockets(const std::vector<pid_t> &pids, std::unordered_set<ino_t> &sockets) {
@@ -892,6 +893,12 @@ TError TNetwork::SetupShaper(TNetDevice &dev) {
             L_ERR("Cannot create egress leaf qdisc: {}", error);
             return error;
         }
+    }
+
+    error = SetupNetLimitSoftInterface(dev.Index);
+    if (error) {
+        L_ERR("Cannot setup network soft limit: {}", error);
+        return error;
     }
 
     return OK;
@@ -3970,3 +3977,92 @@ TError TNetEnv::OpenNetwork(TContainer &ct) {
 
     return TError("Unknown network configuration");
 }
+
+extern TNetLimitSoft NetLimitSoft;
+
+TError TNetwork::SetupNetLimitSoft() {
+    if (NetLimitSoftOfNet.IsDisabled())
+        return OK;
+
+    TError error;
+    std::vector<uint8_t> prog_code;
+    auto netid = NetInode;
+
+    error = NetLimitSoftOfNet.BakeBpfProgCode(netid, prog_code);
+    if (error)
+        return TError(EError::Unknown, "TNetwork::SetupNetLimitSoft() -- network {} -- failed to bake prog", netid);
+
+    if (NetLimitSoftProgram)
+        return TError(EError::Unknown, "Trying to install new netlimit soft program on network {} while already having one", netid);
+
+    auto new_program = std::make_shared<TBpfProgram>();
+    error = new_program->Open("netlimit_soft", prog_code);
+    if (error)
+        return TError(EError::Unknown, "TNetwork::SetupNetLimitSoft() -- network {} -- failed to open prog", netid);
+
+    NetLimitSoftProgram = new_program;
+
+    auto &tag = NetLimitSoftProgram->Tag;
+    L_NET("TNetwork::SetupNetLimitSoft() for network {} netlimit_soft bpf program tag {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        netid, tag[0], tag[1], tag[2], tag[3], tag[4], tag[5], tag[6], tag[7]);
+    return OK;
+}
+
+TError TNetwork::UpdateNetLimitSoft(uint32_t kbs) {
+    if (NetLimitSoft.IsDisabled() || NetLimitSoftOfNet.IsDisabled())
+        return OK;
+
+    TError error;
+
+    auto netid = NetInode;
+
+    NetLimitSoftValue = kbs;
+
+    error = NetLimitSoft.SetupNet(netid, NetLimitSoftValue);
+    if (error)
+        return error;
+
+    if (!NetLimitSoftProgram)
+        return TError(EError::Unknown, "Can not UpdateNetLimitSoft({}), net {} has no netlimit_soft bpf program", NetLimitSoftValue, netid);
+
+    auto &tag = NetLimitSoftProgram->Tag;
+    L_NET("TNetwork::UpdateNetLimitSoft({}) for network {} netlimit_soft bpf program tag {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        NetLimitSoftValue, netid, tag[0], tag[1], tag[2], tag[3], tag[4], tag[5], tag[6], tag[7]);
+    return OK;
+}
+
+TError TNetwork::SetupNetLimitSoftInterface(int ifindex) {
+    if (NetLimitSoftOfNet.IsDisabled())
+        return OK;
+
+    auto netid = NetInode;
+
+    if (!NetLimitSoftProgram)
+        return TError(EError::Unknown, "can not setup net limit soft for network {} on interface {}, no bpf program for the net", netid, ifindex);
+
+    TError error;
+
+    L_NET("Network {} with netlimit_soft bpf program, setting up interface {}", netid, ifindex);
+
+    TNlQdisc qdisc(ifindex, TC_H_CLSACT, TC_H_MAJ(TC_H_CLSACT));
+    qdisc.Kind = "clsact";
+
+    TNlBpfFilter filter(ifindex);
+    filter.FilterPrio = NetLimitSoftOfNet.Prio();
+    filter.Egress = true;
+    filter.DirectAction = true;
+    filter.Program = NetLimitSoftProgram.get();
+
+    (void)qdisc.Delete(*Nl);
+    error = qdisc.Create(*Nl);
+    if (error && error.Errno != ENODEV && error.Errno != ENOENT)
+        return TError(EError::Unknown, "Cannot create egress qdisc: {}", error);
+
+    (void)filter.Delete(*Nl);
+    error = filter.Create(*Nl);
+    if (error)
+        return TError(EError::Unknown, "Cannot create egress bpf filter: {}", error);
+
+    return OK;
+}
+

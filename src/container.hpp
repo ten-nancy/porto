@@ -337,6 +337,8 @@ public:
     /* Protected with NetStateMutex and container lock */
     TNetClass NetClass;
 
+    uint64_t NetLimitSoftValue;
+
     TNetStat SockStat;
     std::unordered_map<ino_t, TSockStat> SocketsStats;
 
@@ -526,6 +528,9 @@ public:
     };
 
     static TJailCpuState GetJailCpuState();
+
+private:
+    TError SetupNetLimitSoft(uint64_t kbs);
 };
 
 extern MeasuredMutex ContainersMutex;

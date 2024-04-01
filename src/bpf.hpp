@@ -100,6 +100,7 @@ public:
 
     TError Open(uint32_t id);
     TError Open(const TPath &path);
+    TError Open(const std::string &prog_name, const std::vector<uint8_t> &prog_code);
 
     TError GetInfo(struct bpf_prog_info &info);
 

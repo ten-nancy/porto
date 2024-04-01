@@ -6045,6 +6045,36 @@ public:
     }
 } NetClassId;
 
+
+class TNetLimitSoftProp : public TProperty {
+public:
+    TNetLimitSoftProp() : TProperty(P_NET_LIMIT_SOFT, EProperty::NET_LIMIT_SOFT,
+            "Network soft limit: int (kb/s)")
+    {
+        IsDynamic = true;
+    }
+    TError Get(std::string &value) const override {
+        value = std::to_string(CT->NetLimitSoftValue);
+        return OK;
+    }
+
+    TError Set(uint64_t val) {
+        CT->NetLimitSoftValue = val;
+        CT->SetProp(EProperty::NET_LIMIT_SOFT);
+        return OK;
+    }
+
+    TError Set(const std::string &value) override {
+        uint64_t val;
+        TError error = StringToSize(value, val);
+        if (error)
+            return error;
+
+        return Set(val);
+    }
+} static NetLimitSoftProp;
+
+
 class TNetTos : public TProperty {
 public:
     TNetTos() : TProperty(P_NET_TOS, EProperty::NET_TOS,

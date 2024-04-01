@@ -1916,7 +1916,7 @@ TError TNlBpfFilter::Create(const TNl &nl) {
     tchdr.tcm_ifindex = Index;
     tchdr.tcm_handle = 0;
     tchdr.tcm_parent = TC_H_MAKE(TC_H_CLSACT, Egress ? TC_H_MIN_EGRESS : TC_H_MIN_INGRESS);
-    tchdr.tcm_info = TC_H_MAKE(FilterPrio << 16, htons(ETH_P_ALL));
+    tchdr.tcm_info = TC_H_MAKE(((uint32_t)FilterPrio) << 16, htons(ETH_P_ALL));
 
     msg = nlmsg_alloc_simple(RTM_NEWTFILTER, NLM_F_EXCL | NLM_F_CREATE);
     if (!msg)

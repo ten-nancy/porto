@@ -131,6 +131,8 @@ message TConfig {
 
         optional bool network_inherit_xvlan = 77;
 
+        optional string network_limit_soft_bpf_elf_path = 78;
+
         /* Deprecated */
         optional bool enable_iproute = 41;
         optional bool enabled = 1 [deprecated=true];

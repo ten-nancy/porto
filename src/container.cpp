@@ -399,7 +399,9 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     Parent(parent), Level(parent ? parent->Level + 1 : 0), Id(id), Name(name),
     FirstName(!parent ? "" : parent->IsRoot() ? name : name.substr(parent->Name.length() + 1)),
     Stdin(0), Stdout(1), Stderr(2),
-    ClientsCount(0), ContainerRequests(0), OomEvents(0)
+    ClientsCount(0), ContainerRequests(0), OomEvents(0),
+    NetLimitSoftValue(0)
+
 {
     Statistics->ContainersCount++;
 
@@ -2578,6 +2580,13 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
+    if (TestClearPropDirty(EProperty::NET_LIMIT_SOFT)) {
+        if (Net) {
+            error = Net->UpdateNetLimitSoft(NetLimitSoftValue);
+            if (error)
+                return error;
+        }
+    }
 
     if ((Controllers & CGROUP_NETCLS) &&
             TestClearPropDirty(EProperty::NET_TOS)) {

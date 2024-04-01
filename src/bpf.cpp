@@ -1,6 +1,10 @@
 #include "bpf.hpp"
 
+#include <unistd.h>
+#include <fcntl.h>
 #include <linux/version.h>
+
+#include <libbpf.h>
 
 // FIXME: required linux-headers from 5.8
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
@@ -123,6 +127,39 @@ TError TBpfMap::Del(TBpfMap::TBufferView key)
         return TError::System("failed to delete element");
 
     return OK;
+}
+
+TError TBpfProgram::Open(const std::string &prog_name, const std::vector<uint8_t> &prog_code)
+{
+    if (File.Fd >= 0)
+        return TError("program already opened");
+
+    struct bpf_object *obj = bpf_object__open_mem(prog_code.data(), prog_code.size(), NULL);
+
+    struct bpf_program *prog = bpf_object__find_program_by_name(obj, prog_name.c_str());
+    if (!prog) {
+        bpf_object__close(obj);
+        return TError(EError::Unknown, "Failed to load program '{}' -- failed to find bpf program in the loaded object", prog_name);
+    }
+
+    bpf_program__set_sched_cls(prog);
+
+    if (bpf_object__load(obj)) {
+        bpf_object__close(obj);
+        return TError(EError::Unknown, "Failed to load program '{}' -- failed to load bpf object", prog_name);
+    }
+
+    int fd = bpf_program__fd(prog);
+    int nfd = dup(fd);
+    fcntl(nfd, F_SETFD, FD_CLOEXEC);
+    bpf_object__close(obj);
+
+    if (nfd < 0) {
+        return TError(EError::Unknown, "Failed to load program '{}' -- failed to obtain bpf program file descriptor", prog_name);
+    }
+
+    File.SetFd = nfd;
+    return Prepare();
 }
 
 TError TBpfProgram::Open(uint32_t id)

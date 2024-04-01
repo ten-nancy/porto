@@ -98,6 +98,7 @@ constexpr const char *P_IO_TIME = "io_time";
 constexpr const char *P_IO_PRESSURE = "io_pressure";
 
 constexpr const char *P_NET_GUARANTEE = "net_guarantee";
+constexpr const char *P_NET_LIMIT_SOFT = "net_limit_soft";
 constexpr const char *P_NET_LIMIT = "net_limit";
 constexpr const char *P_NET_RX_LIMIT = "net_rx_limit";
 constexpr const char *P_NET_LIMIT_BOUND = "net_limit_bound";
@@ -251,6 +252,7 @@ enum class EProperty {
     IO_OPS_LIMIT,
     IO_OPS_GUARANTEE,
     NET_GUARANTEE,
+    NET_LIMIT_SOFT,
     NET_LIMIT,
     RESPAWN,
     RESPAWN_LIMIT,
