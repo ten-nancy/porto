@@ -1,3 +1,12 @@
+porto (5.3.34) unstable; urgency=low
+  [ ivan42 ]
+      network: add support of configurable bpf clsact filter program for container interfaces
+  [ ovov ]
+      volume, nbd: bug fixes
+  last commit: 02c107343d3e4f0d09cec3141945b4303bcef2e8
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 01 Apr 2024 10:35:05 -0000
+
 porto (5.3.33) unstable; urgency=low
   [ kndrvt ]
       container: terminate fuse connections and mounts in virt_mode=fuse
