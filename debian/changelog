@@ -1,3 +1,12 @@
+porto (5.3.35) unstable; urgency=low
+  [ kndrvt ]
+      property: add taint log for deprecated names
+  [ ovov ]
+      seccomp: add seccomp profiles
+  last commit: 913b6b8e8d3eea954cbd4aa002df47b15dc11599
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 08 Apr 2024 10:59:13 -0000
+
 porto (5.3.34) unstable; urgency=low
   [ ivan42 ]
       network: add support of configurable bpf clsact filter program for container interfaces
