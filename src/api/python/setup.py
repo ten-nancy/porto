@@ -18,19 +18,20 @@ def readme():
 
 if __name__ == '__main__':
 
-    if not os.path.exists("porto/rpc.proto"):
-        with open("../../rpc.proto", 'r') as src, open("porto/rpc.proto", 'w') as dst:
-            dst.write(src.read())
+    for x in ['rpc', 'seccomp']:
+        if not os.path.exists("porto/{}.proto".format(x)):
+            with open("../../{}.proto".format(x), 'r') as src, open("porto/{}.proto".format(x), 'w') as dst:
+                dst.write(src.read())
 
-    try:
-        import subprocess
-        subprocess.check_call(['protoc', '--python_out=porto', '--proto_path=porto', 'porto/rpc.proto'])
-    except Exception as e:
-        sys.stderr.write("Cannot compile rpc.proto: {}\n".format(e))
+        try:
+            import subprocess
+            subprocess.check_call(['protoc', '--python_out=porto', '--proto_path=porto', 'porto/{}.proto'.format(x)])
+        except Exception as e:
+            sys.stderr.write("Cannot compile {}.proto: {}\n".format(x, e))
 
-    if not os.path.exists("porto/rpc_pb2.py"):
-        sys.stderr.write("Compiled rpc.proto not found\n")
-        sys.exit(-1)
+        if not os.path.exists("porto/{}_pb2.py".format(x)):
+            sys.stderr.write("Compiled {}.proto not found\n".format(x))
+            sys.exit(-1)
 
     setup(name='portopy',
           version=version(),
@@ -41,6 +42,6 @@ if __name__ == '__main__':
           maintainer_email='porto@yandex-team.ru',
           license='GNU LGPL v3 License',
           packages=['porto'],
-          package_data={'porto': ['rpc.proto']},
+          package_data={'porto': ['rpc.proto', 'seccomp.proto']},
           install_requires=['protobuf'],
           zip_safe=False)

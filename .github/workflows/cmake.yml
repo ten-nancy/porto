@@ -23,6 +23,7 @@ env:
         libelf-dev \
         zlib1g-dev \
         pandoc \
+        libseccomp-dev \
         libbpf-dev
 
 jobs:

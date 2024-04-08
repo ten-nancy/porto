@@ -1,3 +1,4 @@
 doc/porto.md
 src/rpc.proto
 src/config.proto
+src/seccomp.proto

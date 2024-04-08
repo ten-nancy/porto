@@ -5,6 +5,7 @@
 #include "client.hpp"
 #include "rpc.hpp"
 #include "container.hpp"
+#include "util/error.hpp"
 #include "volume.hpp"
 #include "network.hpp"
 #include "util/log.hpp"
@@ -13,6 +14,9 @@
 #include "util/proc.hpp"
 #include "util/cred.hpp"
 #include "util/md5.hpp"
+
+#include <google/protobuf/text_format.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
 
 extern "C" {
 #include <sys/sysinfo.h>
@@ -1043,6 +1047,87 @@ public:
         return Set(spec.command());
     }
 } static Command;
+
+class TSeccomp : public TProperty {
+public:
+    TSeccomp() : TProperty(P_SECCOMP, EProperty::SECCOMP,
+            "Seccomp profile rules") {}
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_seccomp();
+    }
+
+    TError Get(std::string &value) const override {
+        google::protobuf::TextFormat::Printer printer;
+        seccomp::TProfile profile;
+
+        CT->Seccomp.Dump(profile);
+        printer.SetSingleLineMode(true);
+        printer.PrintToString(profile, &value);
+        return OK;
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        if (!CT->Seccomp.Empty())
+            CT->Seccomp.Dump(*spec.mutable_seccomp());
+    }
+
+    TError CanSet() const override {
+        auto error = TProperty::CanSet();
+        if (error)
+            return error;
+        return CT->CanSetSeccomp();
+    }
+
+    TError Set(const std::string &value) override {
+        seccomp::TProfile profile;
+
+        auto ok = google::protobuf::TextFormat::ParseFromString(value, &profile);
+        if (!ok)
+            return TError(EError::InvalidValue, "invalid seccomp profile");
+
+        return CT->SetSeccomp(profile);
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        return CT->SetSeccomp(spec.seccomp());
+    }
+} static Seccomp;
+
+class TSeccompName : public TProperty {
+public:
+    TSeccompName() : TProperty(P_SECCOMP_NAME, EProperty::SECCOMP_NAME,
+            "Seccomp profile") {}
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_seccomp_name();
+    }
+
+    TError Get(std::string &value) const override {
+        value = CT->SeccompName;
+        return OK;
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        if (!CT->SeccompName.empty())
+            spec.set_seccomp_name(CT->SeccompName);
+    }
+
+    TError CanSet() const override {
+        auto error = TProperty::CanSet();
+        if (error)
+            return error;
+        return CT->CanSetSeccomp();
+    }
+
+    TError Set(const std::string &value) override {
+        return CT->SetSeccomp(value);
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        return Set(spec.seccomp_name());
+    }
+} static SeccompName;
 
 class TCommandArgv : public TProperty {
 public:

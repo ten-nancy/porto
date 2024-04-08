@@ -1,0 +1,48 @@
+syntax = "proto2";
+
+package seccomp;
+option go_package = "seccomp/";
+
+enum EAction {
+     Allow = 0;
+     Errno = 1;
+     Trace = 2;
+     Notify = 3;
+     Log = 4;
+     Trap = 5;
+     KillProcess = 6;
+     Kill = 7;
+}
+
+enum ECompare {
+     Ne = 0;
+     Lt = 1;
+     Le = 2;
+     Eq = 3;
+     Ge = 4;
+     Gt = 5;
+     MaskedEq = 6;
+}
+
+message TArg {
+    required uint64   index   = 1;
+    required ECompare compare = 2;
+    required uint64   value   = 3;
+}
+
+message TAction {
+    required EAction action  = 1;
+    optional uint64   value  = 2;
+}
+
+message TRule {
+    required string  syscall = 1;
+    repeated TArg args    = 2;
+    required TAction action  = 3;
+}
+
+message TProfile {
+    optional string  name           = 1;
+    optional TAction default_action = 2;
+    repeated TRule   rules          = 3;
+}

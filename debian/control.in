@@ -13,7 +13,7 @@ Build-Depends:
  dh-python, python-all, python-setuptools, python3-setuptools,
  bash-completion, pandoc,
  libgoogle-perftools-dev (>= 2.4),
- automake
+ automake, libseccomp-dev
 Standards-Version: 3.9.2
 X-Python-Version: >= 2.6
 X-Python3-Version: >= 3.2

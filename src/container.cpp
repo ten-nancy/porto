@@ -55,6 +55,7 @@ std::map<std::string, std::shared_ptr<TContainer>> Containers;
 TPath ContainersKV;
 TIdMap ContainerIdMap(1, CONTAINER_ID_MAX);
 std::vector<ExtraProperty> ExtraProperties;
+std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 
 std::unordered_set<std::string> SupportedExtraProperties = {
     "cgroupfs",
@@ -2263,6 +2264,51 @@ TError TContainer::ApplyExtraProperties() {
         SetProp(EProperty::EXTRA_PROPS);
     return OK;
 }
+
+TError TContainer::CanSetSeccomp() const {
+    for (auto ct = CT->Parent.get(); ct; ct = ct->Parent.get()) {
+        if (!ct->Seccomp.Empty())
+            return TError(EError::InvalidState, "seccomp already set for ancestor");
+    }
+    std::list<const TContainer*> subtree{this};
+    for (auto it = subtree.begin(); it != subtree.end(); ) {
+        for (const auto &child: (*it)->Children) {
+            if (!child->Seccomp.Empty())
+                return TError(EError::InvalidState, "seccomp already set for descendant");
+            subtree.push_back(child.get());
+        }
+        subtree.erase(it++);
+    }
+    return OK;
+}
+
+TError TContainer::SetSeccomp(const seccomp::TProfile &profile) {
+    TSeccompProfile p;
+    TError error = p.Parse(profile);
+    if (error)
+        return error;
+
+    CT->Seccomp = std::move(p);
+    CT->SeccompName.clear();
+
+    CT->SetProp(EProperty::SECCOMP);
+    CT->ClearProp(EProperty::SECCOMP_NAME);
+    return OK;
+}
+
+TError TContainer::SetSeccomp(const std::string &name) {
+    auto it = SeccompProfiles.find(name);
+    if (it == SeccompProfiles.end())
+        return TError(EError::InvalidValue, "unkown seccomp profile {}", name);
+
+    CT->Seccomp = it->second;
+    CT->SeccompName = name;
+
+    CT->SetProp(EProperty::SECCOMP_NAME);
+    CT->ClearProp(EProperty::SECCOMP);
+    return OK;
+}
+
 
 TError TContainer::SetCpuLimit(uint64_t limit) {
     auto cpucg = GetCgroup(CpuSubsystem);

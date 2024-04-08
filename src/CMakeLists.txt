@@ -2,22 +2,30 @@ project(porto)
 
 include_directories(${CURSES_INCLUDE_DIR})
 
-function(PORTO_PROTOBUF_GENERATE_CPP SRC HDR FIL)
-		get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
-		get_filename_component(ABS_PATH ${ABS_FIL} PATH)
-		get_filename_component(FIL_WE ${FIL} NAME_WE)
+function(PORTO_PROTOBUF_GENERATE_CPP SRCS HDRS)
+	set(${SRCS})
+	set(${HDRS})
 
-		set(${SRC} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.cc" PARENT_SCOPE)
-		set(${HDR} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.h" PARENT_SCOPE)
+	foreach(_file ${ARGN})
+		get_filename_component(_abs_file ${_file} ABSOLUTE)
+		get_filename_component(_abs_path ${_abs_file} DIRECTORY)
+		get_filename_component(_file_we ${_file} NAME_WE)
 
+		set(_src "${CMAKE_CURRENT_BINARY_DIR}/${_file_we}.pb.cc")
+		set(_hdr "${CMAKE_CURRENT_BINARY_DIR}/${_file_we}.pb.h")
 		add_custom_command(
-			OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.cc"
-			"${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.h"
+			OUTPUT "${_src}" "${_hdr}"
 			COMMAND  ${PORTO_PROTOC_EXECUTABLE}
-			ARGS --cpp_out  ${CMAKE_CURRENT_BINARY_DIR} -I ${ABS_PATH} ${ABS_FIL}
-			DEPENDS ${ABS_FIL}
-			COMMENT "Running C++ protocol buffer compiler (custom) on ${FIL}"
+			ARGS --cpp_out ${CMAKE_CURRENT_BINARY_DIR} -I ${_abs_path} ${_abs_file}
+			DEPENDS ${_abs_file}
+			COMMENT "Running C++ protocol buffer compiler (custom) on ${_file}"
 			VERBATIM)
+		list(APPEND ${SRCS} ${_src})
+		list(APPEND ${HDRS} ${_hdr})
+	endforeach()
+
+	set(${SRCS} ${${SRCS}} PARENT_SCOPE)
+	set(${HDRS} ${${HDRS}} PARENT_SCOPE)
 endfunction()
 
 macro(protobuf_gen_cpp_choose)
@@ -28,7 +36,7 @@ macro(protobuf_gen_cpp_choose)
 	endif()
 endmacro()
 
-protobuf_gen_cpp_choose(RPC_PROTO_SRCS RPC_PROTO_HDRS rpc.proto)
+protobuf_gen_cpp_choose(RPC_PROTO_SRCS RPC_PROTO_HDRS rpc.proto seccomp.proto)
 add_library(rpc_proto STATIC ${RPC_PROTO_SRCS})
 add_dependencies(rpc_proto libprotobuf)
 set_source_files_properties(${RPC_PROTO_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-unused-variable")
@@ -38,7 +46,7 @@ add_library(kv_proto STATIC ${KV_PROTO_SRCS})
 add_dependencies(kv_proto libprotobuf)
 set_source_files_properties(${KV_PROTO_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-unused-variable")
 
-protobuf_gen_cpp_choose(CONFIG_PROTO_SRCS CONFIG_PROTO_HDRS config.proto)
+protobuf_gen_cpp_choose(CONFIG_PROTO_SRCS CONFIG_PROTO_HDRS config.proto seccomp.proto)
 add_library(config STATIC ${CONFIG_PROTO_SRCS} config.cpp)
 add_dependencies(config rpc_proto) # rpc.pp.h -> error.hpp -> config.hpp
 set_source_files_properties(${CONFIG_PROTO_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-unused-variable")
@@ -62,19 +70,20 @@ add_subdirectory(util)
 add_subdirectory(fmt)
 
 include_directories(${libporto_SOURCE_DIR})
+find_library(LIBSECCOMP NAMES libseccomp.a)
 
 add_library(portocore portod.cpp core.cpp cgroup.cpp rpc.cpp container.cpp
 	    event.cpp task.cpp env.cpp device.cpp nbd.cpp
 	    network.cpp netlimitsoft.cpp filesystem.cpp volume.cpp storage.cpp
 	    kvalue.cpp config.cpp property.cpp
 	    epoll.cpp client.cpp stream.cpp helpers.cpp waiter.cpp bpf.cpp
-	    docker.cpp)
+	    docker.cpp seccomp.cpp)
 
 find_library(LIBTCMALLOC NAMES libtcmalloc_minimal.a)
 target_link_libraries(portocore nlohmann-safe version porto utilbase util config
 		      rpc_proto kv_proto
 		      rt fmt ${PROTOBUF_STATIC_LIBRARY} ${LIBNL} ${LIBNL_ROUTE} ${LIBNL_IDIAG} ${LIBSSL} ${LIBCRYPTO}
-		      ${LIBBPF} ${LIBELF} ${LIBZ} ${LIBTCMALLOC} ${LIBNL_GENL} pthread)
+		      ${LIBBPF} ${LIBELF} ${LIBZ} ${LIBTCMALLOC} ${LIBNL_GENL} ${LIBSECCOMP} pthread)
 
 add_executable(portod main.cpp)
 target_link_libraries(portod portocore)

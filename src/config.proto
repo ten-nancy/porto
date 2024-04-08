@@ -2,6 +2,8 @@ syntax = "proto2";
 
 package cfg;
 
+import "seccomp.proto";
+
 message TConfig {
     message TNetworkCfg {
 
@@ -209,6 +211,11 @@ message TConfig {
     }
 
     message TContainerCfg {
+        message TSeccompProfile {
+	    optional string           name    = 1;
+	    required seccomp.TProfile profile = 2;
+   	}
+
         optional uint32 max_log_size = 1 [deprecated=true];
         optional string tmp_dir = 2 [deprecated=true];
         optional uint32 default_aging_time_s = 3;
@@ -311,6 +318,7 @@ message TConfig {
         optional uint32 default_coredump_filter = 66;
 
         optional bool enable_sched_idle = 67; // Enable extending SCHED_IDLE to cgroups (only if exists {CG}/cpu.idle), default True
+        repeated TSeccompProfile seccomp_profiles = 68;
     }
 
     message TPrivilegesCfg {

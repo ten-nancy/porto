@@ -262,6 +262,16 @@ TError TTaskEnv::ChildExec() {
             return TError::System("unshare(CLONE_NEWNS)");
     }
 
+    TSeccompContext seccompContext;
+    for (auto ct = CT.get(); ct; ct = ct->Parent.get()) {
+        if (!ct->Seccomp.Empty()) {
+            error = seccompContext.Apply(ct->Seccomp);
+            if (error)
+                return error;
+            break;
+        }
+    }
+
     L("Exec '{}'", argv[0]);
     execvpe(argv[0], (char *const *)argv.data(), envp);
 

@@ -17,6 +17,7 @@
 #include "property.hpp"
 #include "network.hpp"
 #include "device.hpp"
+#include "seccomp.hpp"
 
 class TEpollSource;
 class TCgroup;
@@ -190,6 +191,8 @@ public:
     bool UnshareOnExec = false;
     ECgroupFs CgroupFs = ECgroupFs::None;
     bool EnableFuse = false;
+    TSeccompProfile Seccomp;
+    std::string SeccompName;
 
     TMultiTuple NetProp;
     bool NetIsolate;            /* Create new network namespace */
@@ -394,6 +397,10 @@ public:
         return true;
     }
 
+    TError CanSetSeccomp() const;
+    TError SetSeccomp(const seccomp::TProfile &profile);
+    TError SetSeccomp(const std::string &name);
+
     std::string GetPortoNamespace(bool write = false) const;
 
     TError LockAction(std::unique_lock<std::mutex> &containers_lock, bool shared = false);
@@ -538,6 +545,7 @@ extern std::shared_ptr<TContainer> RootContainer;
 extern std::map<std::string, std::shared_ptr<TContainer>> Containers;
 extern TPath ContainersKV;
 extern TIdMap ContainerIdMap;
+extern std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 
 static inline std::unique_lock<std::mutex> LockContainers() {
     return ContainersMutex.UniqueLock();

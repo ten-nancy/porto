@@ -37,6 +37,8 @@ constexpr const char *P_STDIN_PATH = "stdin_path";
 constexpr const char *P_STDOUT_PATH = "stdout_path";
 constexpr const char *P_STDERR_PATH = "stderr_path";
 constexpr const char *P_STDOUT_LIMIT = "stdout_limit";
+constexpr const char *P_SECCOMP = "seccomp";
+constexpr const char *P_SECCOMP_NAME = "seccomp_name";
 
 constexpr const char *P_MEM_GUARANTEE = "memory_guarantee";
 constexpr const char *P_MEM_LIMIT = "memory_limit";
@@ -300,6 +302,8 @@ enum class EProperty {
     CORE_COMMAND,
     REQUIRED_VOLUMES,
     COREDUMP_FILTER,
+    SECCOMP,
+    SECCOMP_NAME,
     NR_PROPERTIES,
 };
 
@@ -320,7 +324,7 @@ public:
     std::string GetDesc() const;
 
     TError CanGet() const;
-    TError CanSet() const;
+    virtual TError CanSet() const;
     TProperty(std::string name, EProperty prop, std::string desc);
 
     virtual void Init(void) {}

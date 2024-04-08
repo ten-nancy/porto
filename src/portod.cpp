@@ -832,6 +832,16 @@ static int Portod() {
 
     ReadConfigs();
 
+    for (const auto &seccompProfile : config().container().seccomp_profiles()) {
+        TSeccompProfile p;
+        auto error = p.Parse(seccompProfile.profile());
+        if (error) {
+            L_ERR("Failed parse {} seccomp profile", seccompProfile.name());
+            continue;
+        }
+        SeccompProfiles[seccompProfile.name()] = std::move(p);
+    }
+
     SupportCgroupNs = CompareVersions(config().linux_version(), "4.6") >= 0;
     if (SupportCgroupNs) {
         EnableRwCgroupFs = config().container().enable_rw_cgroupfs();

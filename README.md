@@ -40,6 +40,7 @@ sudo apt install -y \
     libelf-dev \
     zlib1g-dev \
     pandoc \
+    libseccomp-dev \
     libbpf-dev # for focal or newer
 
 # dependencies for deb package building

@@ -6,6 +6,8 @@ syntax = "proto2";
 package rpc;
 option go_package = "rpc/";
 
+import "seccomp.proto";
+
 // List of error codes
 enum EError {
     // Request executed successfully. No errors occured.
@@ -686,6 +688,9 @@ message TContainerSpec {
     optional TContainerVolumes volumes_required = 75;
 
     optional uint32 coredump_filter = 83;
+
+    optional seccomp.TProfile seccomp      = 86;
+    optional string           seccomp_name = 87;
 }
 
 message TContainer {
@@ -693,7 +698,6 @@ message TContainer {
     optional TContainerStatus status = 2;
     optional TError error = 3;
 }
-
 
 // Volumes
 
