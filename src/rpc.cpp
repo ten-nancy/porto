@@ -839,6 +839,7 @@ noinline TError SetContainerProperty(const rpc::TContainerSetPropertyRequest &re
 
     /* legacy kludge */
     if (property.find('.') != std::string::npos) {
+        L_TAINT("Using deprecated property name: " + property);
         if (property == "cpu.smart") {
             if (value == "0") {
                 property = P_CPU_POLICY;
