@@ -553,6 +553,36 @@ exit:
     TStorage::StopAsyncRemover();
 }
 
+static TError NetLimitSoftInitializeUlimit(TUlimit &ulimit) {
+    TError error;
+
+    if (config().network().network_limit_soft_bpf_elf_path().empty())
+        return OK;
+
+    // we need to bump MEMLOCK for older kernels for bpf to work
+
+    const uint64_t minimum_memlock = 80 * 1024 * 1024;
+
+    uint64_t soft, hard;
+    if (ulimit.Get(RLIMIT_MEMLOCK, soft, hard)) {
+        if (soft >= minimum_memlock && hard >= minimum_memlock)
+            return OK;
+    }
+
+    L_SYS("Bumping RLIMIT_MEMLOCK to {} to make bpf machinery work", minimum_memlock);
+    ulimit.Set(RLIMIT_MEMLOCK, minimum_memlock, minimum_memlock);
+
+    error = ulimit.Apply();
+    if (error)
+        return error;
+
+    error = ulimit.Load();
+    if (error)
+        return error;
+
+    return OK;
+}
+
 static TError TuneLimits() {
     TUlimit ulimit;
     TError error;
@@ -587,6 +617,10 @@ static TError TuneLimits() {
         return error;
 
     error = ulimit.Load();
+    if (error)
+        return error;
+
+    error = NetLimitSoftInitializeUlimit(ulimit);
     if (error)
         return error;
 
@@ -810,6 +844,21 @@ static void DestroyContainers(bool weak) {
     TVolume::DestroyUnlinked(unlinked);
 }
 
+
+static void NetLimitSoftInitialize() {
+    if (config().network().network_limit_soft_bpf_elf_path().empty()) {
+        L_SYS("Setting up netlimit soft... no `network {{ network_limit_soft_bpf_elf_path: <value> }}` set in the portod config");
+        return;
+    }
+
+    const std::string path = config().network().network_limit_soft_bpf_elf_path();
+
+    L_SYS("Setting up netlimit soft... bpf elf path '{}'", path);
+    TError error = NetLimitSoft.Setup(path);
+    if (error)
+        L_ERR("Cannot setup netlimit soft {}", error);
+}
+
 static int Portod() {
     TError error;
 
@@ -983,17 +1032,7 @@ static int Portod() {
 
     SystemClient.StartRequest();
 
-    if(config().network().network_limit_soft_bpf_elf_path().empty()) {
-        L_SYS("Setting up netlimit soft... no `network {{ network_limit_soft_bpf_elf_path: <value> }}` set in the portod config");
-    } else {
-        const std::string path = config().network().network_limit_soft_bpf_elf_path();
-
-        L_SYS("Setting up netlimit soft... bpf elf path '{}'", path);
-        error = NetLimitSoft.Setup(path);
-        if (error) {
-            FatalError("Cannot setup netlimit soft", error);
-        }
-    }
+    NetLimitSoftInitialize();
 
     error = CreateRootContainer();
     if (error)

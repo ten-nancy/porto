@@ -27,7 +27,7 @@ TError TEnv::GetEnv(const std::string &name, std::string &value) const {
             return OK;
         }
     }
-    return TError(EError::InvalidValue, "Environment variable {} not defined", name);;
+    return TError(EError::InvalidValue, "Environment variable {} not defined", name);
 }
 
 TError TEnv::SetEnv(const std::string &name, const std::string &value,
@@ -306,4 +306,15 @@ void TUlimit::Set(int type, uint64_t soft, uint64_t hard, bool overwrite) {
 void TUlimit::Merge(const TUlimit &ulimit, bool overwrite) {
     for (const auto &res: ulimit.Resources)
         Set(res.Type, res.Soft, res.Hard, overwrite);
+}
+
+TError TUlimit::Get(int type, uint64_t &soft, uint64_t &hard) {
+    for (const auto &res: Resources) {
+        if (res.Type == type) {
+            soft = res.Soft;
+            hard = res.Hard;
+            return OK;
+        }
+    }
+    return TError(EError::NotFound, "Requested limit {} is not set in TUlimit object", GetName(type));
 }

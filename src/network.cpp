@@ -612,7 +612,10 @@ void TNetwork::Register(std::shared_ptr<TNetwork> &net, ino_t inode) {
     net->NetInode = inode;
     net->StatTime = GetCurrentTimeMs();
     net->StatGen =  GlobalStatGen.load();
-    net->SetupNetLimitSoft();
+
+    TError error = net->SetupNetLimitSoft();
+    if (error)
+        L_ERR("Cannot setup network {} soft limit: {}", inode, error);
 }
 
 TError TNetwork::GetSockets(const std::vector<pid_t> &pids, std::unordered_set<ino_t> &sockets) {
@@ -3981,12 +3984,17 @@ TError TNetEnv::OpenNetwork(TContainer &ct) {
 extern TNetLimitSoft NetLimitSoft;
 
 TError TNetwork::SetupNetLimitSoft() {
-    if (NetLimitSoftOfNet.IsDisabled())
+    auto netid = NetInode;
+
+    if (NetLimitSoft.IsDisabled()) {
+        L_NET("TNetwork::SetupNetLimitSoft() for network {} net limit soft is disabled", netid);
         return OK;
+    }
+
+    NetLimitSoft.SetupNetLimitSoftOfNet(NetLimitSoftOfNet);
 
     TError error;
     std::vector<uint8_t> prog_code;
-    auto netid = NetInode;
 
     error = NetLimitSoftOfNet.BakeBpfProgCode(netid, prog_code);
     if (error)

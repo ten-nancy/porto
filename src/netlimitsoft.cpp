@@ -47,7 +47,8 @@ bool TNetLimitSoft::IsDisabled() {
 }
 
 TError TNetLimitSoft::Setup(const std::string &bpf_program_elf_path) {
-    PORTO_ASSERT(!Impl->BpfObject);
+    if (Impl->BpfObject)
+        return OK; // already initialized
 
     TError error;
 
@@ -152,7 +153,7 @@ TError TNetLimitSoftOfNet::BakeBpfProgCode(uint64_t key, std::vector<uint8_t> &p
     uint8_t *bytes = prog_code.data();
 
     int replaces = 0;
-    for(;;) {
+    for (;;) {
         uint32_t *p = (uint32_t *)memmem(bytes, prog_code.size(), magic, MAGIC_SIZE);
         if (!p)
             break;

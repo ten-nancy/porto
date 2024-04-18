@@ -50,6 +50,7 @@ struct TUlimit {
     TError Load(pid_t pid = 0);
     TError Apply(pid_t pid = 0) const;
     void Clear() { Resources.clear(); }
+    TError Get(int type, uint64_t &soft, uint64_t &hard); // returns EError::NotFound if RLIMIT_type is not set in TUlimit
     void Set(int type, uint64_t soft, uint64_t hard, bool overwrite = true);
     void Merge(const TUlimit &ulimit, bool owerwrite = true);
 };
