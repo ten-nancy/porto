@@ -3,16 +3,18 @@ from test_common import *
 import subprocess
 import shutil
 
+REGISTRY = "mirror.gcr.io"
+
 IMAGE_NAME = "alpine:3.16.2"
-IMAGE_TAG = "registry-1.docker.io/library/alpine:3.16.2"
+IMAGE_TAG = REGISTRY + "/library/alpine:3.16.2"
 IMAGE_DIGEST = "9c6f0724472873bb50a2ae67a9e7adcb57673a183cea8b06eb778dca859181b5"
 LAYER_NAME = "alpine"
 
 K8S_IMAGE_TAG = "registry.k8s.io/pause:3.7"
 K8S_IMAGE_DIGEST = "221177c6082a88ea4f6240ab2450d540955ac6f4d5454f0e15751b653ebda165"
-K8S_IMAGE_ALT_TAG = "registry-1.docker.io/kndrvt/pause:latest"
+K8S_IMAGE_ALT_TAG = REGISTRY + "/kndrvt/pause:latest"
 
-UBUNTU_JAMMY_IMAGE_TAG = "registry-1.docker.io/library/ubuntu:jammy-20240125"
+UBUNTU_JAMMY_IMAGE_TAG = REGISTRY + "/library/ubuntu:jammy-20240125"
 UBUNTU_JAMMY_IMAGE_DIGEST = "fd1d8f58e8aedc22ec0a3a7ce1a33de544a596eaa6cdb842f1af7c5e081d453f"
 
 PLACE = ""

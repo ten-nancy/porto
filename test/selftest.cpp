@@ -4881,39 +4881,39 @@ static void TestDockerImageParsing(Porto::Connection &) {
     };
 
     // id
-    test("796f752061726520736f2063757465",                                                  { "registry-1.docker.io", "library", "", "latest", "796f752061726520736f2063757465" });
+    test("796f752061726520736f2063757465",                                                  { "mirror.gcr.io", "library", "", "latest", "796f752061726520736f2063757465" });
 
     // nothing
-    test("ubuntu",                                                                          { "registry-1.docker.io", "library", "ubuntu", "latest", "" });
-    test("kndrvt/ubuntu",                                                                   { "registry-1.docker.io", "kndrvt", "ubuntu", "latest", "" });
-    test("kndrvt/kek/ubuntu",                                                               { "registry-1.docker.io", "kndrvt/kek", "ubuntu", "latest", "" });
+    test("ubuntu",                                                                          { "mirror.gcr.io", "library", "ubuntu", "latest", "" });
+    test("kndrvt/ubuntu",                                                                   { "mirror.gcr.io", "kndrvt", "ubuntu", "latest", "" });
+    test("kndrvt/kek/ubuntu",                                                               { "mirror.gcr.io", "kndrvt/kek", "ubuntu", "latest", "" });
 
     test("registry.yandex.net/ubuntu",                                                      { "registry.yandex.net", "library", "ubuntu", "latest", "" });
     test("registry.yandex.net/kndrvt/ubuntu",                                               { "registry.yandex.net", "kndrvt", "ubuntu", "latest", "" });
     test("registry.yandex.net/kndrvt/kek/ubuntu",                                           { "registry.yandex.net", "kndrvt/kek", "ubuntu", "latest", "" });
 
     // tag
-    test("ubuntu:focal",                                                                   { "registry-1.docker.io", "library", "ubuntu", "focal", "" });
-    test("kndrvt/ubuntu:focal",                                                            { "registry-1.docker.io", "kndrvt", "ubuntu", "focal", "" });
-    test("kndrvt/kek/ubuntu:focal",                                                        { "registry-1.docker.io", "kndrvt/kek", "ubuntu", "focal", "" });
+    test("ubuntu:focal",                                                                   { "mirror.gcr.io", "library", "ubuntu", "focal", "" });
+    test("kndrvt/ubuntu:focal",                                                            { "mirror.gcr.io", "kndrvt", "ubuntu", "focal", "" });
+    test("kndrvt/kek/ubuntu:focal",                                                        { "mirror.gcr.io", "kndrvt/kek", "ubuntu", "focal", "" });
 
     test("registry.yandex.net/ubuntu:focal",                                               { "registry.yandex.net", "library", "ubuntu", "focal", "" });
     test("registry.yandex.net/kndrvt/ubuntu:focal",                                        { "registry.yandex.net", "kndrvt", "ubuntu", "focal", "" });
     test("registry.yandex.net/kndrvt/kek/ubuntu:focal",                                    { "registry.yandex.net", "kndrvt/kek", "ubuntu", "focal", "" });
 
     // digest
-    test("ubuntu@796f752061726520736f2063757465",                                           { "registry-1.docker.io", "library", "ubuntu", "latest", "796f752061726520736f2063757465" });
-    test("kndrvt/ubuntu@796f752061726520736f2063757465",                                    { "registry-1.docker.io", "kndrvt", "ubuntu", "latest", "796f752061726520736f2063757465" });
-    test("kndrvt/kek/ubuntu@796f752061726520736f2063757465",                                { "registry-1.docker.io", "kndrvt/kek", "ubuntu", "latest", "796f752061726520736f2063757465" });
+    test("ubuntu@796f752061726520736f2063757465",                                           { "mirror.gcr.io", "library", "ubuntu", "latest", "796f752061726520736f2063757465" });
+    test("kndrvt/ubuntu@796f752061726520736f2063757465",                                    { "mirror.gcr.io", "kndrvt", "ubuntu", "latest", "796f752061726520736f2063757465" });
+    test("kndrvt/kek/ubuntu@796f752061726520736f2063757465",                                { "mirror.gcr.io", "kndrvt/kek", "ubuntu", "latest", "796f752061726520736f2063757465" });
 
     test("registry.yandex.net/ubuntu@796f752061726520736f2063757465",                       { "registry.yandex.net", "library", "ubuntu", "latest", "796f752061726520736f2063757465" });
     test("registry.yandex.net/kndrvt/ubuntu@796f752061726520736f2063757465",                { "registry.yandex.net", "kndrvt", "ubuntu", "latest", "796f752061726520736f2063757465" });
     test("registry.yandex.net/kndrvt/kek/ubuntu@796f752061726520736f2063757465",            { "registry.yandex.net", "kndrvt/kek", "ubuntu", "latest", "796f752061726520736f2063757465" });
 
     // tag and digest
-    test("ubuntu:focal@796f752061726520736f2063757465",                                    { "registry-1.docker.io", "library", "ubuntu", "focal", "796f752061726520736f2063757465" });
-    test("kndrvt/ubuntu:focal@796f752061726520736f2063757465",                             { "registry-1.docker.io", "kndrvt", "ubuntu", "focal", "796f752061726520736f2063757465" });
-    test("kndrvt/kek/ubuntu:focal@796f752061726520736f2063757465",                         { "registry-1.docker.io", "kndrvt/kek", "ubuntu", "focal", "796f752061726520736f2063757465" });
+    test("ubuntu:focal@796f752061726520736f2063757465",                                    { "mirror.gcr.io", "library", "ubuntu", "focal", "796f752061726520736f2063757465" });
+    test("kndrvt/ubuntu:focal@796f752061726520736f2063757465",                             { "mirror.gcr.io", "kndrvt", "ubuntu", "focal", "796f752061726520736f2063757465" });
+    test("kndrvt/kek/ubuntu:focal@796f752061726520736f2063757465",                         { "mirror.gcr.io", "kndrvt/kek", "ubuntu", "focal", "796f752061726520736f2063757465" });
 
     test("registry.yandex.net/ubuntu:focal@796f752061726520736f2063757465",                { "registry.yandex.net", "library", "ubuntu", "focal", "796f752061726520736f2063757465" });
     test("registry.yandex.net/kndrvt/ubuntu:focal@796f752061726520736f2063757465",         { "registry.yandex.net", "kndrvt", "ubuntu", "focal", "796f752061726520736f2063757465" });

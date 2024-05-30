@@ -33,7 +33,7 @@ Layers path has the following structure:
 #include <unordered_set>
 #include <algorithm>
 
-constexpr const char *DOCKER_REGISTRY_HOST = "registry-1.docker.io";
+constexpr const char *DOCKER_REGISTRY_HOST = "mirror.gcr.io";
 constexpr const char *DOCKER_AUTH_PATH = "https://auth.docker.io/token";
 constexpr const char *DOCKER_AUTH_SERVICE = "registry.docker.io";
 

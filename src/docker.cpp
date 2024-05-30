@@ -69,7 +69,7 @@ TError TDockerImage::GetAuthToken() {
     TError error;
     std::string response;
 
-    if (Registry != DOCKER_REGISTRY_HOST && AuthPath.empty() && AuthService.empty())
+    if (AuthPath.empty() && AuthService.empty())
         return OK;
 
     std::string authService(DOCKER_AUTH_SERVICE);
