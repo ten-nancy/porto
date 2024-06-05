@@ -3588,6 +3588,28 @@ public:
     }
 } static DirtyLimit;
 
+class TDirtyLimitBound : public TProperty {
+public:
+    TDirtyLimitBound() : TProperty(P_DIRTY_LIMIT_BOUND, EProperty::NONE,
+            "Dirty file cache limit bound [bytes]")
+    {
+        IsReadOnly = true;
+    }
+    void Init(void) override {
+        IsHidden = !MemorySubsystem.SupportDirtyLimit();
+    }
+    TError Get(std::string &value) const override {
+        if (CT->DirtyMemLimitBound > 0)
+            value = std::to_string(CT->DirtyMemLimitBound);
+        return OK;
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        spec.set_dirty_limit(CT->DirtyMemLimitBound);
+    }
+
+} static DirtyLimitBound;
+
 class THugetlbLimit : public TProperty {
 public:
     THugetlbLimit() : TProperty(P_HUGETLB_LIMIT, EProperty::HUGETLB_LIMIT,

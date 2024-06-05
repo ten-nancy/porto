@@ -527,6 +527,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
         }
     }
 
+    DirtyMemLimitBound = Parent ? Parent->DirtyMemLimitBound : 0;
     SetProp(EProperty::CONTROLLERS);
 
     RespawnDelay = config().container().respawn_delay_ms() * 1000000;
@@ -1383,6 +1384,36 @@ uint64_t TContainer::GetAnonMemLimit(bool effective) const {
         lim = GetTotalMemory();
 
     return lim;
+}
+
+TError TContainer::ChooseDirtyMemLimit() {
+    if (Parent) {
+        if (DirtyMemLimit > 0) {
+            DirtyMemLimitBound = std::min(DirtyMemLimit, Parent->DirtyMemLimitBound);
+            if (DirtyMemLimitBound == 0)
+                DirtyMemLimitBound = DirtyMemLimit;
+        } else
+            DirtyMemLimitBound = Parent->DirtyMemLimitBound;
+    } else
+        DirtyMemLimitBound = DirtyMemLimit;
+
+    if (Controllers & CGROUP_MEMORY) {
+        auto memcg = GetCgroup(MemorySubsystem);
+        return MemorySubsystem.SetDirtyLimit(memcg, DirtyMemLimit > 0 ? DirtyMemLimitBound : 0);
+    }
+
+    return OK;
+}
+
+void TContainer::PropagateDirtyMemLimit() {
+    TError error;
+    auto children = Subtree();
+    children.reverse();
+    for (auto &child: children) {
+        error = child->ChooseDirtyMemLimit();
+        if (error && (child->Id == Id || (error.Errno != EINVAL && error.Errno != ENOENT)))
+            L_ERR("Cannot set {} CT{}:{}: {}", P_DIRTY_LIMIT, Id, Name, error);
+    }
 }
 
 TError TContainer::ApplyUlimits() {
@@ -2440,14 +2471,8 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if (TestClearPropDirty(EProperty::DIRTY_LIMIT)) {
-        error = MemorySubsystem.SetDirtyLimit(memcg, DirtyMemLimit);
-        if (error) {
-            if (error.Errno != EINVAL)
-                L_ERR("Can't set {}: {}", P_DIRTY_LIMIT, error);
-            return error;
-        }
-    }
+    if (TestClearPropDirty(EProperty::DIRTY_LIMIT))
+        PropagateDirtyMemLimit();
 
     if (TestClearPropDirty(EProperty::RECHARGE_ON_PGFAULT)) {
         error = MemorySubsystem.RechargeOnPgfault(memcg, RechargeOnPgfault);

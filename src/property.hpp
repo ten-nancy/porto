@@ -43,6 +43,7 @@ constexpr const char *P_SECCOMP_NAME = "seccomp_name";
 constexpr const char *P_MEM_GUARANTEE = "memory_guarantee";
 constexpr const char *P_MEM_LIMIT = "memory_limit";
 constexpr const char *P_DIRTY_LIMIT = "dirty_limit";
+constexpr const char *P_DIRTY_LIMIT_BOUND = "dirty_limit_bound";
 constexpr const char *P_ANON_LIMIT = "anon_limit";
 constexpr const char *P_HUGETLB_LIMIT = "hugetlb_limit";
 constexpr const char *P_RECHARGE_ON_PGFAULT = "recharge_on_pgfault";

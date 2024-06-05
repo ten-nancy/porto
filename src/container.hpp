@@ -240,9 +240,10 @@ public:
     int64_t MemSoftLimit = 0;
     EMemoryLockPolicy MemLockPolicy = EMemoryLockPolicy::Disabled;
     uint64_t AnonMemLimit = 0;
-    uint64_t DirtyMemLimit = 0;
     uint64_t HugetlbLimit = 0;
     uint64_t ThreadLimit = 0;
+    uint64_t DirtyMemLimit = 0;
+    uint64_t DirtyMemLimitBound = 0;
 
     bool AnonOnly = false;
     bool RechargeOnPgfault = false;
@@ -431,6 +432,8 @@ public:
     uint64_t GetTotalMemGuarantee(bool containers_locked = false) const;
     uint64_t GetMemLimit(bool effective = true) const;
     uint64_t GetAnonMemLimit(bool effective = true) const;
+    TError ChooseDirtyMemLimit();
+    void PropagateDirtyMemLimit();
 
     bool IsRoot() const { return !Level; }
     bool IsChildOf(const TContainer &ct) const;
