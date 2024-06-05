@@ -3141,9 +3141,12 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
     else
         error = link_mount.CreateRegular();
 
-    /* make private - cannot move from shared mount */
+    /*
+      make private - cannot move from shared mount
+      make unbindable - we dont want bind to leak into rbind
+    */
     if (!error)
-        error = link_mount.BindRemount(link_mount, MS_PRIVATE);
+        error = link_mount.BindRemount(link_mount, MS_UNBINDABLE);
 
     /* Start new shared group and make read-only - that isn't propagated */
     if (!error)
