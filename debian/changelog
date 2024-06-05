@@ -1,3 +1,18 @@
+porto (5.3.36) unstable; urgency=low
+  [ kndrvt ]
+      container: add dirty memory limit bound
+      docker: change default registry and remove auth token request for it
+  [ ovov ]
+      volume, nbd: umount nbd volume before disconnecting device
+      container: lock ancestors in shared mode
+      volume: cleanup junk on volume creation
+      volume: make volume_link mountpoint unbindable
+  [ ivan42 ]
+      network: quick fixes for configurable bpf clsact filter program for container interfaces
+  last commit: cbd1d5775cf1ccd98bb44a94745d2be17b6570b4
+
+ -- Porto Team <porto@yandex-team.ru>  Wed, 05 Jun 2024 10:20:01 -0000
+
 porto (5.3.35) unstable; urgency=low
   [ kndrvt ]
       property: add taint log for deprecated names
