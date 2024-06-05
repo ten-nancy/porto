@@ -2834,9 +2834,21 @@ TError TVolume::MakeShares(const TFile &base, bool cow) {
 TError TVolume::Build() {
     L_ACT("Build volume: {} backend: {}", Path, BackendType);
 
-    TError error = GetInternal("").Mkdir(0755);
-    if (error)
-        return error;
+    TPath internal = GetInternal("");
+    TError error = internal.Mkdir(0755);
+    if (error) {
+        if (error.Errno != EEXIST)
+            return error;
+
+        L_WRN("Junk volume {}", internal);
+        error = internal.UmountNested();
+        if (error)
+            return error;
+
+        error = internal.ClearDirectory();
+        if (error)
+            return error;
+    }
 
     /* Create and pin storage */
     if (!UserStorage() && !RemoteStorage() && !StoragePath.Exists()) {
