@@ -1721,11 +1721,11 @@ public:
         NbdVolumes.erase(Volume->DeviceIndex);
         VolumesMutex.unlock();
 
-        error = NbdConn.DisconnectDevice(Volume->DeviceIndex);
+        error = Volume->InternalPath.UmountAll();
         if (error)
             return error;
 
-        error = Volume->InternalPath.UmountAll();
+        error = NbdConn.DisconnectDevice(Volume->DeviceIndex);
         if (error)
             return error;
 
