@@ -219,7 +219,19 @@ TError TContainer::FindTaskContainer(pid_t pid, std::shared_ptr<TContainer> &ct,
     return TContainer::Find(name.substr(prefix.length()), ct, strict);
 }
 
-/* lock subtree shared or exclusive */
+/*
+  Lock subtree shared or exclusive. Ancestors are always locked in shared mode.
+  Container is locked in shared mode if:
+    * ActionLocked > 0 -- this container is locked in shared mode
+      by #ActionLocked readers.
+    * SubtreeRead  > 0 -- some descendant containers are locked in shared mode
+      by #SubtreeRead readers.
+  Container is locked in exclusive mode if ActionLocked = -1.
+
+  PendingWrite flag is set when writer is waiting for the lock. If this flag is set
+  no reader can acquire lock. This prevents write-starvation.
+*/
+
 TError TContainer::LockAction(std::unique_lock<std::mutex> &containers_lock, bool shared) {
     LockTimer timer(LOCK_ACTION);
     L_DBG("LockAction{} CT{}:{}", (shared ? "Shared" : ""), Id, Name);
@@ -231,9 +243,9 @@ TError TContainer::LockAction(std::unique_lock<std::mutex> &containers_lock, boo
         }
         bool busy;
         if (shared)
-            busy = ActionLocked < 0 || PendingWrite || SubtreeWrite;
+            busy = ActionLocked < 0 || PendingWrite;
         else
-            busy = ActionLocked || SubtreeRead || SubtreeWrite;
+            busy = ActionLocked || SubtreeRead;
         for (auto ct = Parent.get(); !busy && ct; ct = ct->Parent.get())
             busy = ct->PendingWrite || (shared ? ct->ActionLocked < 0 : ct->ActionLocked);
         if (!busy)
@@ -245,12 +257,8 @@ TError TContainer::LockAction(std::unique_lock<std::mutex> &containers_lock, boo
     PendingWrite = false;
     ActionLocked += shared ? 1 : -1;
     LastActionPid = GetTid();
-    for (auto ct = Parent.get(); ct; ct = ct->Parent.get()) {
-        if (shared)
-            ct->SubtreeRead++;
-        else
-            ct->SubtreeWrite++;
-    }
+    for (auto ct = Parent.get(); ct; ct = ct->Parent.get())
+        ct->SubtreeRead++;
     return OK;
 }
 
@@ -259,13 +267,8 @@ void TContainer::UnlockAction(bool containers_locked) {
     if (!containers_locked)
         ContainersMutex.lock();
     for (auto ct = Parent.get(); ct; ct = ct->Parent.get()) {
-        if (ActionLocked > 0) {
-            PORTO_ASSERT(ct->SubtreeRead > 0);
-            ct->SubtreeRead--;
-        } else {
-            PORTO_ASSERT(ct->SubtreeWrite > 0);
-            ct->SubtreeWrite--;
-        }
+        PORTO_ASSERT(ct->SubtreeRead > 0);
+        ct->SubtreeRead--;
     }
     PORTO_ASSERT(ActionLocked);
     ActionLocked += (ActionLocked > 0) ? -1 : 1;
@@ -288,11 +291,6 @@ void TContainer::DowngradeActionLock() {
 
     L_DBG("Downgrading exclusive to shared CT{}:{}", Id, Name);
 
-    for (auto ct = Parent.get(); ct; ct = ct->Parent.get()) {
-        ct->SubtreeRead++;
-        ct->SubtreeWrite--;
-    }
-
     ActionLocked = 1;
     ContainersCV.notify_all();
 }
@@ -305,11 +303,6 @@ void TContainer::UpgradeActionLock() {
     L_DBG("Upgrading shared back to exclusive CT{}:{}", Id, Name);
 
     PendingWrite = true;
-
-    for (auto ct = Parent.get(); ct; ct = ct->Parent.get()) {
-        ct->SubtreeRead--;
-        ct->SubtreeWrite++;
-    }
 
     while (ActionLocked != 1)
         ContainersCV.wait(lock);
@@ -365,11 +358,11 @@ void TContainer::DumpLocks() {
     for (auto &it: Containers) {
         auto &ct = it.second;
         if (ct->ActionLocked || ct->PendingWrite || ct->StateLocked ||
-                ct->SubtreeRead || ct->SubtreeWrite)
-            L_SYS("CT{}:{} StateLocked {} by {} ActionLocked {} by {} Read {} Write {}{}",
+            ct->SubtreeRead)
+            L_SYS("CT{}:{} StateLocked {} by {} ActionLocked {} by {} SubtreeRead {}{}",
                   ct->Id, ct->Name, ct->StateLocked, ct->LastStatePid,
                   ct->ActionLocked, ct->LastActionPid,
-                  ct->SubtreeRead, ct->SubtreeWrite,
+                  ct->SubtreeRead,
                   (ct->PendingWrite ? " PendingWrite" : ""));
     }
 }
