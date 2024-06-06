@@ -910,7 +910,7 @@ public:
             Volume->DeviceIndex = -1;
         }
 
-        if (error.Errno == EINVAL)
+        if (error.Errno == EINVAL || error.Errno == EIO)
             return TError(EError::InvalidFilesystem);
 
         return error;
@@ -1247,7 +1247,7 @@ public:
         error = lower.Mount("/dev/loop" + std::to_string(Volume->DeviceIndex),
                             "squashfs", MS_RDONLY | MS_NODEV | MS_NOSUID, {});
         if (error) {
-            if (error.Errno == EINVAL)
+            if (error.Errno == EINVAL || error.Errno == EIO)
                 error = TError(EError::InvalidFilesystem);
             goto err;
         }

@@ -569,6 +569,20 @@ def backend_loop(c):
     os.unlink(DIR + "/loop.img")
     os.rmdir(TMPDIR)
 
+    with open(DIR + "/loop.squash", "wb") as f:
+        f.write(b"broken")
+
+    ExpectException(c.CreateVolume, porto.exceptions.InvalidFilesystem, **args, fs_type="squashfs", read_only="true")
+    ExpectException(c.CreateVolume, porto.exceptions.InvalidFilesystem,
+                    backend="squash", layers=[DIR + "/loop.squash"], read_only="true")
+
+    with open(DIR + "/loop.squash", "wb") as f:
+        pass
+
+    ExpectException(c.CreateVolume, porto.exceptions.InvalidFilesystem, **args, fs_type="squashfs", read_only="true")
+    ExpectException(c.CreateVolume, porto.exceptions.InvalidFilesystem,
+                    backend="squash", layers=[DIR + "/loop.squash"], read_only="true")
+
 def backend_rbd():
     #Not implemented yet
     pass
