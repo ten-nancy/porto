@@ -267,6 +267,8 @@ public:
     TUintMap NetSnmp;
     TUintMap NetSnmp6;
 
+    TNetLimitSoftStat NetLimitSoftStat;
+
     TError GetL3Gate(TNetDeviceConfig &dev);
 
     TError SetupProxyNeighbour(const std::vector <TNlAddr> &ip,
@@ -308,6 +310,7 @@ public:
     static void RepairSockDiag();
 
     static void UpdateProcNetStats(const std::string &basename);
+    static void UpdateNetSoftLimitStats();
 };
 
 struct TNetDeviceConfig {

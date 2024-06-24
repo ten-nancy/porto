@@ -6445,6 +6445,73 @@ TNetL3StatProperty NetRxMaxSpeed(P_NET_RX_MAX_SPEED, "Maximum rx speed since net
 TNetL3StatProperty NetTxSpeedHgram(P_NET_TX_SPEED_HGRAM, "Network tx speed hgram since net namespace creation");
 TNetL3StatProperty NetRxSpeedHgram(P_NET_RX_SPEED_HGRAM, "Network rx speed hgram since net namespace creation");
 
+class TNetLimitSoftStatProperty : public TProperty {
+public:
+    TNetLimitSoftStatProperty(std::string name, std::string desc) : TProperty(name, EProperty::NONE, desc) {
+        IsReadOnly = true;
+        IsRuntimeOnly = true;
+    }
+
+    TError Has() const override {
+        if (!CT->Net)
+            return TError(EError::Unknown, "Net is empty");
+        if (CT->Net->IsHost())
+            return TError(EError::ResourceNotAvailable, "Not available for container with host network");
+        else
+            return OK;
+    }
+
+    TError Get(TUintMap &stat) const {
+        auto lock = TNetwork::LockNetState();
+
+        auto error = Has();
+        if (error)
+            return error;
+
+        stat["ConnectionMarks"] = CT->Net->NetLimitSoftStat.marked;
+        stat["ConnectionUnmarks"] = CT->Net->NetLimitSoftStat.unmarked;
+        stat["PacketsForcedToFB"] = CT->Net->NetLimitSoftStat.fbed;
+        stat["PacketsAboveGuarantee"] = CT->Net->NetLimitSoftStat.dropping;
+        stat["PacketsUntouched"] = CT->Net->NetLimitSoftStat.pass;
+        return OK;
+    }
+
+    TError Get(std::string &value) const override {
+        TUintMap stat;
+        auto error = Get(stat);
+
+        return UintMapToString(stat, value);
+    }
+
+    TError GetIndexed(const std::string &index, std::string &value) override {
+        TUintMap stat;
+        auto error = Get(stat);
+        if (error)
+            return error;
+
+        auto it = stat.find(index);
+        if (it == stat.end())
+            return TError(EError::InvalidValue, "netlimit soft stat " + index + " not found");
+
+        value = std::to_string(it->second);
+        return OK;
+    }
+
+    void Dump(rpc::TContainerStatus &spec) const override {
+        TUintMap stat;
+
+        auto error = Get(stat);
+        if (error)
+            return;
+
+        rpc::TUintMap *map = spec.mutable_net_limit_soft_stat();
+        DumpMap(stat, *map);
+    }
+};
+
+TNetLimitSoftStatProperty NetLimitSoftStat(P_NET_LIMIT_SOFT_STAT,
+        "Net limit soft statistics: <key>: <value>;...");
+
 class TNetStatProperty : public TProperty {
 public:
     uint64_t TNetStat:: *Member;

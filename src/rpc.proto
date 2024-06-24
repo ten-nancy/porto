@@ -561,6 +561,7 @@ message TContainerStatus {
     optional TUintMap net_tx_bytes = 61;       // out
     optional TUintMap net_tx_packets = 62;     // out
     optional TUintMap net_tx_drops = 63;       // out
+    optional TUintMap net_limit_soft_stat = 164; // out
     optional TUintMap net_netstat = 163;       // out
     optional TUintMap net_snmp = 263;          // out
     optional TUintMap net_snmp6 = 264;         // out

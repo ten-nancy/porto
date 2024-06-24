@@ -8,6 +8,13 @@
 
 class TNetLimitSoftOfNet;
 
+struct TNetLimitSoftStat {
+    uint64_t marked = 0;
+    uint64_t unmarked = 0;
+    uint64_t fbed = 0;
+    uint64_t dropping = 0;
+    uint64_t pass = 0;
+};
 
 class TNetLimitSoft : public TNonCopyable {
 public:

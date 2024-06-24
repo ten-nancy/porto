@@ -2310,6 +2310,36 @@ void TNetwork::UpdateProcNetStats(const std::string &basename) {
     }
 }
 
+void TNetwork::UpdateNetSoftLimitStats() {
+    TError error;
+
+    auto networks = Networks();
+    for (auto net : *networks) {
+        auto state_lock = LockNetState();
+
+        if (net->NetUsers.empty() || net->IsHost())
+            continue;
+
+        auto pprog = net->NetLimitSoftProgram;
+        if(!pprog)
+            continue;
+
+        TBpfMap map;
+
+        error = pprog->GetMap("netlimit_st_map", map);
+        if (error) {
+            L_ERR("Cannot get netlimit soft stats map for net {}: {}", net->NetInode, error);
+            continue;
+        }
+
+        error = map.Get((uint32_t)0, net->NetLimitSoftStat);
+        if (error) {
+            L_ERR("Cannot get netlimit soft stats for net {}: {}", net->NetInode, error);
+            continue;
+        }
+    }
+}
+
 void TNetwork::NetWatchdog() {
     auto now = GetCurrentTimeMs();
     auto LastProxyNeighbour = now;
@@ -2327,6 +2357,7 @@ void TNetwork::NetWatchdog() {
             TNetwork::UpdateProcNetStats("netstat");
             TNetwork::UpdateProcNetStats("snmp");
             TNetwork::UpdateProcNetStats("snmp6");
+            TNetwork::UpdateNetSoftLimitStats();
             SockDiagDeadline = now + SockDiagPeriod;
         }
         bool progsDirty = false;
