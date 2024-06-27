@@ -371,6 +371,10 @@ void InitPortoGroups() {
 #define CAP_AUDIT_READ 37
 #endif
 
+#ifndef CAP_BPF
+#define CAP_BPF 39
+#endif
+
 #ifndef PR_CAP_AMBIENT
 #define PR_CAP_AMBIENT              47
 # define PR_CAP_AMBIENT_IS_SET      1
@@ -418,6 +422,7 @@ static const TFlagsNames CapNames = {
     { BIT(CAP_WAKE_ALARM),       "WAKE_ALARM" },
     { BIT(CAP_BLOCK_SUSPEND),    "BLOCK_SUSPEND" },
     { BIT(CAP_AUDIT_READ),       "AUDIT_READ" },
+    { BIT(CAP_BPF),              "BPF" },
 };
 
 static int LastCapability;
