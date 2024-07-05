@@ -209,7 +209,7 @@ Porto provides API for label lookup, atomic compare-and-set, atomic increment an
 
     Hardcoded default is "core: 0 unlimited; nofile: 8K 1M".
 
-    If **memory\_limit** is set them default memlock is max(**memory\_limit\_total** - 16M, 8M), hard limit is unlimited.
+    If **memory\_limit** is set then default memlock is max(**memory\_limit\_total** - 16M, 8M), hard limit is unlimited.
 
     Configuration options in portod.conf:
     ```
