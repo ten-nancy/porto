@@ -559,18 +559,13 @@ static TError NetLimitSoftInitializeUlimit(TUlimit &ulimit) {
     if (config().network().network_limit_soft_bpf_elf_path().empty())
         return OK;
 
-    // we need to bump MEMLOCK for older kernels for bpf to work
+    if (CompareVersions(config().linux_version(), "5.11") >= 0)
+        return OK;
 
-    const uint64_t minimum_memlock = 80 * 1024 * 1024;
+    // we need to bump MEMLOCK to infinity for older kernels for bpf to work
 
-    uint64_t soft, hard;
-    if (ulimit.Get(RLIMIT_MEMLOCK, soft, hard)) {
-        if (soft >= minimum_memlock && hard >= minimum_memlock)
-            return OK;
-    }
-
-    L_SYS("Bumping RLIMIT_MEMLOCK to {} to make bpf machinery work", minimum_memlock);
-    ulimit.Set(RLIMIT_MEMLOCK, minimum_memlock, minimum_memlock);
+    L_SYS("Bumping RLIMIT_MEMLOCK to RLIM_INFINITY to make bpf machinery work on kernel versions below 5.11");
+    ulimit.Set(RLIMIT_MEMLOCK, RLIM_INFINITY, RLIM_INFINITY);
 
     error = ulimit.Apply();
     if (error)
