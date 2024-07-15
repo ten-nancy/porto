@@ -995,6 +995,7 @@ public:
         struct stat st;
         std::unordered_map<dev_t, std::unordered_set<ino_t> > ovlInodes;
         EStorageType layerType = Volume->GetLayerType();
+        std::vector<std::string> options;
 
         if (Volume->HaveQuota()) {
             quota.SpaceLimit = Volume->SpaceLimit;
@@ -1110,11 +1111,16 @@ public:
         if (cowFd)
             lower = cowFd.ProcPath().ToString() + ":" + lower;
 
-        error = Volume->InternalPath.Mount("overlay", "overlay",
-                                   Volume->GetMountFlags(),
-                                   { "lowerdir=" + lower,
-                                     "upperdir=" + upperFd.ProcPath().ToString(),
-                                     "workdir=" + workFd.ProcPath().ToString() });
+        options = {
+            "lowerdir=" + lower,
+            "upperdir=" + upperFd.ProcPath().ToString(),
+            "workdir=" + workFd.ProcPath().ToString()
+        };
+
+        if (Volume->Ephemeral() && CompareVersions(config().linux_version(), "5.15") >= 0)
+            options.push_back("volatile");
+
+        error = Volume->InternalPath.Mount("overlay", "overlay", Volume->GetMountFlags(), options);
 
         if (error && error.Errno == EINVAL && Volume->Layers.size() >= 500)
             error = TError(EError::InvalidValue, "Too many layers, kernel limits is 499 plus 1 for upper");
