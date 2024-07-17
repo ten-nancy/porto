@@ -933,9 +933,9 @@ TError TCpuSubsystem::InitializeSubsystem() {
                  cg.Has(CPU_CFS_RESERVE_US) &&
                  cg.Has(CPU_CFS_RESERVE_SHARES);
 
-    auto ExistsIdle = cg.Has(CPU_IDLE);
-    auto EnabledIdle = config().container().enable_sched_idle();
-    HasIdle = ExistsIdle && EnabledIdle;
+    HasIdle = cg.Has(CPU_IDLE);
+    if (HasIdle)
+        EnableIdle = config().container().enable_sched_idle();
 
     L_SYS("{} cores", GetNumCores());
     if (HasShares)
@@ -945,10 +945,8 @@ TError TCpuSubsystem::InitializeSubsystem() {
     if (HasReserve)
         L_CG("support reserves");
 
-    if (HasIdle)
-        L_CG("support SCHED_IDLE cgroups");
-    else if (ExistsIdle)
-        L_CG("SCHED_IDLE cgroups disabled in config");
+    if (EnableIdle)
+        L_CG("support idle cgroups");
 
     return OK;
 }

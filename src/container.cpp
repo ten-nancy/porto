@@ -1502,7 +1502,7 @@ TError TContainer::ApplySchedPolicy() {
     if (CpuSubsystem.HasIdle && Controllers & CGROUP_CPU) {
         auto cpucg = GetCgroup(CpuSubsystem);
 
-        if (SchedPolicy == SCHED_IDLE) {
+        if (CpuSubsystem.EnableIdle && SchedPolicy == SCHED_IDLE) {
             cpucg.Set(TCpuSubsystem::CPU_IDLE, "1");
             ExtSchedIdle = true;
         } else {

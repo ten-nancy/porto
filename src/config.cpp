@@ -160,7 +160,7 @@ static void DefaultConfig() {
 
     container->set_enable_rw_net_cgroups(false);
 
-    container->set_enable_sched_idle(true); // Enable SCHED_IDLE to cgroups (if cpu.idle exists)
+    container->set_enable_sched_idle(false);
 
     auto* volumes = cfg.mutable_volumes();
     volumes->set_enable_quota(true);

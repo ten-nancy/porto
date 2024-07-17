@@ -316,7 +316,8 @@ public:
     bool HasQuota = false;
     bool HasReserve = false;
     bool HasRtGroup = false;
-    bool HasIdle = false;    // Has extending SCHED_IDLE to cgroups
+    bool HasIdle = false;
+    bool EnableIdle = false;
 
     uint64_t BaseShares = 0ull;
     uint64_t MinShares = 0ull;
