@@ -1,3 +1,19 @@
+porto (5.3.37) unstable; urgency=low
+  [ ovov ]
+      container: disable idle cpu cgroup by default
+      volume: mount ephemeral overlays with volatile option
+      volume: handle EIO on squashfs mount
+  [ ivan42 ]
+      netlimit_soft: set RLIMIT_MEMLOCK to RLIM_INFINITY on kernel versions below 5.11 so bpf machinery can work
+      netlimit_soft: show stats in a `net_limit_soft_stat` container property
+  [ kndrvt ]
+      doc: fix typo in porto.md
+  [ warwish ]
+      [capabilities] add BPF capability bits
+  last commit: 0000380a712cc3dbb9ca20fe5dce63879ed7f49c
+
+ -- Porto Team <porto@yandex-team.ru>  Thu, 18 Jul 2024 10:45:34 -0000
+
 porto (5.3.36) unstable; urgency=low
   [ kndrvt ]
       container: add dirty memory limit bound
