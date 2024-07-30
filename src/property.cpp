@@ -1129,6 +1129,36 @@ public:
     }
 } static SeccompName;
 
+class TSessionInfoProperty : public TProperty {
+public:
+    TSessionInfoProperty() : TProperty(P_SESSION_INFO, EProperty::SESSION_INFO,
+            "Session info, format: <kind> <id> <user>") {}
+
+    TError Set(const std::string &value) override {
+        return CT->SessionInfo.Parse(value);
+    }
+
+    TError Get(std::string &value) const override {
+        if (!CT->SessionInfo.IsEmpty())
+            value = CT->SessionInfo.ToString();
+        return OK;
+    }
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_session_info();
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        if (!CT->SessionInfo.IsEmpty())
+            spec.set_session_info(CT->SessionInfo.ToString());
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        return CT->SessionInfo.Parse(spec.session_info());
+    }
+
+} static SessionInfoProperty;
+
 class TCommandArgv : public TProperty {
 public:
     TCommandArgv() : TProperty(P_COMMAND_ARGV, EProperty::COMMAND_ARGV,

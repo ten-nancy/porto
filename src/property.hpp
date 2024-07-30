@@ -39,6 +39,7 @@ constexpr const char *P_STDERR_PATH = "stderr_path";
 constexpr const char *P_STDOUT_LIMIT = "stdout_limit";
 constexpr const char *P_SECCOMP = "seccomp";
 constexpr const char *P_SECCOMP_NAME = "seccomp_name";
+constexpr const char *P_SESSION_INFO = "session_info";
 
 constexpr const char *P_MEM_GUARANTEE = "memory_guarantee";
 constexpr const char *P_MEM_LIMIT = "memory_limit";
@@ -306,6 +307,7 @@ enum class EProperty {
     COREDUMP_FILTER,
     SECCOMP,
     SECCOMP_NAME,
+    SESSION_INFO,
     NR_PROPERTIES,
 };
 

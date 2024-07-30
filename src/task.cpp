@@ -272,6 +272,12 @@ TError TTaskEnv::ChildExec() {
         }
     }
 
+    if (!CT->SessionInfo.IsEmpty()) {
+        error = CT->SessionInfo.Apply();
+        if (error)
+            L_WRN("{}", error);
+    }
+
     L("Exec '{}'", argv[0]);
     execvpe(argv[0], (char *const *)argv.data(), envp);
 

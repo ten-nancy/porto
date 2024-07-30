@@ -12,6 +12,7 @@
 extern "C" {
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <sys/prctl.h>
 }
 
 class TPath;
@@ -115,4 +116,77 @@ public:
     bool Running();
     TError Save(pid_t pid);
     TError Remove();
+};
+
+#ifndef PR_SESSION_INFO
+#define PR_SESSION_INFO 0x59410000
+#endif
+
+class TSessionInfo {
+    static constexpr unsigned int USER_MAX_LEN = 256;
+    struct session_info {
+        __u32 kind;
+        __u64 id;
+        char* user; // null-terminated
+    } sessionInfo;
+
+public:
+    TSessionInfo() {
+        sessionInfo.kind = 0;
+        sessionInfo.id = 0;
+        sessionInfo.user = new char[USER_MAX_LEN];
+        sessionInfo.user = strcpy(sessionInfo.user, "");
+    }
+    ~TSessionInfo() {
+        delete sessionInfo.user;
+    }
+
+    bool IsEmpty() const {
+        return sessionInfo.kind == 0 && sessionInfo.id == 0;
+    }
+
+    void Set(uint32_t kind, uint64_t id, const std::string &user) {
+        sessionInfo.kind = kind;
+        sessionInfo.id = id;
+        // substr to restrict out of memory range, USER_MAX_LEN - 1 because of '\0'
+        sessionInfo.user = strcpy(sessionInfo.user, user.substr(0, USER_MAX_LEN - 1).c_str());
+    }
+
+    TError Parse(const std::string &str) {
+        TError error;
+        uint64_t kind, id;
+
+        if (str.empty()) {
+            Set(0, 0, "");
+            return OK;
+        }
+
+        auto tokens = SplitString(str, ' ');
+        if (tokens.size() != 3)
+            return TError("Cannot parse {}: expected 3 arguments", str);
+
+        error = StringToUint64(tokens[0], kind);
+        if (error)
+            return TError("Cannot convert to unsigned int {}: {}", tokens[0], error);
+
+        error = StringToUint64(tokens[1], id);
+        if (error)
+            return TError("Cannot convert to unsigned int {}: {}", tokens[1], error);
+
+        Set((uint32_t)kind, id, tokens[2]);
+
+        return OK;
+    }
+
+    std::string ToString() const {
+        return fmt::format("{} {} {}", sessionInfo.kind, sessionInfo.id, sessionInfo.user);
+    }
+
+    TError Apply() const {
+        int ret = prctl(PR_SESSION_INFO, &sessionInfo);
+        if (ret < 0)
+            return TError::System("Cannot apply session info: {}", ToString());
+
+        return OK;
+    }
 };

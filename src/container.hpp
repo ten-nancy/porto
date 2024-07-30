@@ -192,6 +192,7 @@ public:
     bool EnableFuse = false;
     TSeccompProfile Seccomp;
     std::string SeccompName;
+    TSessionInfo SessionInfo;
 
     TMultiTuple NetProp;
     bool NetIsolate;            /* Create new network namespace */
