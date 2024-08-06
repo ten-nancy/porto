@@ -593,7 +593,7 @@ TCapabilities SysBootCapability;
 void InitCapabilities() {
     if (TPath("/proc/sys/kernel/cap_last_cap").ReadInt(LastCapability)) {
         L_WRN("Can't read /proc/sys/kernel/cap_last_cap");
-        LastCapability = CAP_AUDIT_READ;
+        LastCapability = CAP_BPF;
     }
 
     SysAdminCapability.Permitted = BIT(CAP_SYS_ADMIN);
@@ -648,8 +648,8 @@ void InitCapabilities() {
     HostCapBound.Permitted =
         ChrootCapBound.Permitted |
         SysAdminCapability.Permitted |
-        BIT(CAP_LINUX_IMMUTABLE) |
         SysNiceCapability.Permitted |
+        BIT(CAP_LINUX_IMMUTABLE) |
         BIT(CAP_SYS_BOOT) |
         BIT(CAP_SYS_RESOURCE);
 

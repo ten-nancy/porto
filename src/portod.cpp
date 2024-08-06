@@ -900,7 +900,10 @@ static int Portod() {
 
         for (const auto &prop : extraProp.properties()) {
             const auto &propName = prop.name();
-            if (SupportedExtraProperties.find(propName) == SupportedExtraProperties.end()) {
+            // the second condition allows checking indexed properties, e.g. capabilitiesj
+            if (SupportedExtraProperties.find(propName)                               == SupportedExtraProperties.end() &&
+                SupportedExtraProperties.find(propName.substr(0, propName.find('['))) == SupportedExtraProperties.end())
+            {
                 L_ERR("Extra property {} not supported", propName);
                 Statistics->Fatals++;
                 continue;

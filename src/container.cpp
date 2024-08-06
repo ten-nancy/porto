@@ -64,7 +64,7 @@ std::unordered_set<std::string> SupportedExtraProperties = {
     "userns",
     "unshare_on_exec",
     "resolv_conf",
-    "capabilities[SYS_ADMIN]",
+    "capabilities",
 };
 
 std::mutex CpuAffinityMutex;
@@ -432,6 +432,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     CapAllowed = NoCapabilities;
     CapLimit = NoCapabilities;
     CapBound = NoCapabilities;
+    CapExtra = NoCapabilities;
 
     if (IsRoot())
         NsName = ROOT_PORTO_NAMESPACE;
@@ -2222,7 +2223,7 @@ void TContainer::PropagateCpuLimit() {
 
 TError TContainer::ApplyExtraProperties() {
     TError error;
-    std::set<std::string> extraPropertiesSet;
+    std::unordered_set<std::string> caps;
 
     // clean old extra properties
     for (const auto &extraProp: EnabledExtraProperties) {
@@ -2257,7 +2258,12 @@ TError TContainer::ApplyExtraProperties() {
 
             auto prop = ContainerProperties.find(property);
             if (prop != ContainerProperties.end()) {
-                if (!HasProp(prop->second->Prop)) {
+                if (property == "capabilities") {
+                    if (extraProperty.Value == "true") {
+                        for (auto i: SplitEscapedString(idx, ';'))
+                            caps.insert(i);
+                    }
+                } else if (!HasProp(prop->second->Prop)) {
                     if (idx.empty())
                         error = prop->second->Set(extraProperty.Value);
                     else
@@ -2266,26 +2272,46 @@ TError TContainer::ApplyExtraProperties() {
                     if (error)
                         return error;
 
-                    extraPropertiesSet.insert(extraProperty.Name);
-                } else if (property == "capabilities" && idx == "SYS_ADMIN") {
-                    std::string value;
+                    EnabledExtraProperties.emplace_back(extraProperty.Name);
 
-                    error = prop->second->GetIndexed(idx, value);
-                    if (error)
-                        return error;
-
-                    if (value == extraProperty.Value)
-                        extraPropertiesSet.insert(extraProperty.Name);
                 }
             }
         }
     }
 
-    EnabledExtraProperties.insert(EnabledExtraProperties.end(),
-            extraPropertiesSet.begin(), extraPropertiesSet.end());
+    if (!caps.empty()) {
+        std::string value;
+        std::vector<std::string> extraCaps;
+        auto prop = ContainerProperties.find("capabilities");
+        bool hasCaps = HasProp(EProperty::CAPABILITIES);
+
+        for (auto cap: caps) {
+            if (hasCaps) {
+                error = prop->second->GetIndexed(cap, value);
+                if (error)
+                    return error;
+
+                if (value == "true") {
+                    extraCaps.emplace_back(cap);
+                    EnabledExtraProperties.emplace_back("capabilities[" + cap + "]");
+                }
+
+            } else {
+                error = prop->second->SetIndexed(cap, "true");
+                if (error)
+                    return error;
+
+                extraCaps.emplace_back(cap);
+                EnabledExtraProperties.emplace_back("capabilities[" + cap + "]");
+            }
+        }
+
+        CapExtra.Parse(MergeString(extraCaps, ';'));
+    }
 
     if (!EnabledExtraProperties.empty())
         SetProp(EProperty::EXTRA_PROPS);
+
     return OK;
 }
 
@@ -3199,13 +3225,14 @@ void TContainer::SanitizeCapabilities() {
 
         if (chroot) {
             CapBound.Permitted &= ChrootCapBound.Permitted & ~remove.Permitted;
-            if (std::find(EnabledExtraProperties.begin(),
-                          EnabledExtraProperties.end(),
-                          "capabilities[SYS_ADMIN]") != EnabledExtraProperties.end() &&
-                (CapLimit.Permitted & SysAdminCapability.Permitted))
-                CapBound.Permitted |= SysAdminCapability.Permitted;
+
+            // Extra property capabilities
+            CapBound.Permitted |= (CapLimit.Permitted & CapExtra.Permitted);
+
+            // CAP_SYS_NICE
             if (config().container().rt_priority())
                 CapBound.Permitted |= SysNiceCapability.Permitted;
+
             CapAllowed = CapBound;
 
             if (HasProp(EProperty::CAPABILITIES) &&

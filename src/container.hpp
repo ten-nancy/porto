@@ -214,6 +214,7 @@ public:
     TCapabilities CapAllowed;   /* can be set as ambient */
     TCapabilities CapLimit;     /* upper limit */
     TCapabilities CapBound;     /* actual bounding set */
+    TCapabilities CapExtra;     /* from extra properties */
     TMultiTuple DefaultGw;
     std::string ResolvConf;
     std::string EtcHosts;

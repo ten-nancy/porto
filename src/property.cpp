@@ -154,7 +154,8 @@ public:
             "Limit capabilities in container: SYS_ADMIN;NET_ADMIN;... see man capabilities") {}
 
     TError Reset() override {
-        return SetIndexed("SYS_ADMIN", "false");
+        CT->CapLimit.Permitted &= ~CT->CapExtra.Permitted;
+        return CommitLimit(CT->CapLimit);
     }
 
     TError CommitLimit(TCapabilities &limit) {
