@@ -40,7 +40,7 @@ bool TCgroup::IsRestore = false;
 static std::map<std::string, std::vector<pid_t>> prevAttachedPidsMap;
 
 extern pid_t MasterPid;
-extern pid_t PortodPid;
+extern pid_t ServerPid;
 extern std::unordered_set<pid_t> PortoTids;
 extern std::mutex TidsMutex;
 
@@ -499,7 +499,7 @@ TError TCgroup::KillAll(int signal, bool abortFuse) const {
             bool portoThread = PortoTids.find(pid) != PortoTids.end();
             lock.unlock();
 
-            if (portoThread || pid == MasterPid || pid == PortodPid || pid <= 0) {
+            if (portoThread || pid == MasterPid || pid == ServerPid || pid <= 0) {
                 L_TAINT(fmt::format("Cannot kill portod thread {}", pid));
                 continue;
             }

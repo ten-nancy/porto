@@ -13,8 +13,6 @@
 
 #include "fmt/ostream.h"
 
-class TEpollLoop;
-
 namespace rpc {
     class TContainerRequest;
 }

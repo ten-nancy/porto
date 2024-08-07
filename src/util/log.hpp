@@ -5,6 +5,10 @@
 #include "util/path.hpp"
 #include "fmt/format.h"
 
+extern "C" {
+#include <unistd.h>
+}
+
 extern bool StdLog;
 extern bool Verbose;
 extern bool Debug;
@@ -215,8 +219,12 @@ template <typename... Args> inline void L_CORE(const char* fmt, const Args&... a
     WriteLog("CORE", fmt::format(fmt, args...));
 }
 
+template <typename... Args> inline void FatalError(const char* fmt, const Args&... args) {
+    L_ERR(fmt, args...);
+    _exit(EXIT_FAILURE);
+}
+
 void porto_assert(const char *msg, const char *file, size_t line);
-void FatalError(const std::string &text, TError &error);
 void AccountErrorType(const TError &error);
 
 #define PORTO_ASSERT(EXPR) do { if (!(EXPR)) porto_assert(#EXPR, __FILE__, __LINE__); } while (0)

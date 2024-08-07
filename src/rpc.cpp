@@ -31,6 +31,8 @@ extern __thread char ReqId[9];
 
 extern uint32_t RequestHandlingDelayMs;
 
+static bool PortodFrozen = false;
+
 void TRequest::Classify() {
 
     /* Normally not logged in non-verbose mode */
