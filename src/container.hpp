@@ -123,10 +123,10 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
     TError DistributeCpus();
 
     static void UpdateJailCpuStateLocked(const TBitMap& affinity, bool release = false);
-    static void UpdateJailCpuState(const TBitMap& affinity, bool release = false);
     static unsigned NextJailCpu(int node = -1);
     TError JailCpus();
     void UnjailCpus(const TBitMap& affinity);
+    void UnjailCpusLocked(const TBitMap& affinity);
 
     TError SetCpuLimit(uint64_t limit);
     TError ApplyCpuLimit();

@@ -1678,11 +1678,6 @@ void TContainer::UpdateJailCpuStateLocked(const TBitMap& affinity, bool release)
     }
 }
 
-void TContainer::UpdateJailCpuState(const TBitMap& affinity, bool release) {
-    auto lock = LockCpuAffinity();
-    UpdateJailCpuStateLocked(affinity, release);
-}
-
 unsigned TContainer::NextJailCpu(int node) {
     if (node >= 0) {
         const auto& nodeThreads = NodeThreads[node];
@@ -1715,7 +1710,12 @@ unsigned TContainer::NextJailCpu(int node) {
 }
 
 void TContainer::UnjailCpus(const TBitMap& affinity) {
-    UpdateJailCpuState(affinity, true);
+    auto lock = LockCpuAffinity();
+    UnjailCpusLocked(affinity);
+}
+
+void TContainer::UnjailCpusLocked(const TBitMap& affinity) {
+    UpdateJailCpuStateLocked(affinity, true);
 
     ClearProp(EProperty::CPU_SET_AFFINITY);
 
@@ -1725,6 +1725,7 @@ void TContainer::UnjailCpus(const TBitMap& affinity) {
 TError TContainer::JailCpus() {
     TBitMap affinity;
     TError error;
+    auto lock = LockCpuAffinity();
 
     if (NewCpuJail) {
         for (auto ct = Parent.get(); ct; ct = ct->Parent.get()) {
@@ -1769,7 +1770,7 @@ TError TContainer::JailCpus() {
     if (!NewCpuJail) {
         /* disable previously enabled jail */
         if (CpuJail)
-            UnjailCpus(affinity);
+            UnjailCpusLocked(affinity);
 
         return OK;
     }
@@ -1811,8 +1812,6 @@ TError TContainer::JailCpus() {
     }
 
     if ((unsigned)NewCpuJail != affinityWeight || nodeChanged) {
-        auto lock = LockCpuAffinity();
-
         if (node >= 0) {
             if (affinityWeight < NodeThreads[node].Weight())
                 UpdateJailCpuStateLocked(affinity, true);
@@ -1824,8 +1823,6 @@ TError TContainer::JailCpus() {
         /* main loop */
         for (int i = 0; i < NewCpuJail; i++)
             affinity.Set(NextJailCpu(node));
-
-        lock.unlock();
 
         auto subtree = Subtree();
 
@@ -1849,7 +1846,7 @@ TError TContainer::JailCpus() {
         }
     } else if (!CpuJail)
         /* case of portod reload, fill current usage */
-        UpdateJailCpuState(affinity);
+        UpdateJailCpuStateLocked(affinity);
 
     SetAffinity(affinity);
 
