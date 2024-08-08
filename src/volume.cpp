@@ -911,7 +911,7 @@ public:
         }
 
         if (error.Errno == EINVAL || error.Errno == EIO)
-            return TError(EError::InvalidFilesystem);
+            return TError(EError::InvalidFilesystem, "Cannot mount loop device: {}", error);
 
         return error;
     }
@@ -1254,7 +1254,7 @@ public:
                             "squashfs", MS_RDONLY | MS_NODEV | MS_NOSUID, {});
         if (error) {
             if (error.Errno == EINVAL || error.Errno == EIO)
-                error = TError(EError::InvalidFilesystem);
+                error = TError(EError::InvalidFilesystem, "Cannot mount loop device: {}", error);
             goto err;
         }
 
@@ -1682,9 +1682,9 @@ public:
         error = Volume->InternalPath.Mount(GetDevice(), FilesystemType,
                                            Volume->GetMountFlags(), {});
         if (error.Errno == EIO)
-            return TError(Reconns ? EError::NbdSocketTimeout : EError::InvalidFilesystem);
+            return TError(Reconns ? EError::NbdSocketTimeout : EError::InvalidFilesystem, "Cannot mount nbd device: {}", error);
         else if (error.Errno == EINVAL)
-            return TError(EError::InvalidFilesystem);
+            return TError(EError::InvalidFilesystem, "Cannot mount nbd device: {}", error);
         return error;
     }
 
