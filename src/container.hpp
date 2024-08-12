@@ -104,7 +104,7 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
     TError ApplyDynamicProperties(bool onRestore = false);
     TError PrepareOomMonitor();
     void ShutdownOom();
-    TError PrepareCgroups();
+    TError PrepareCgroups(bool onRestore = false);
     TError PrepareTask(TTaskEnv &TaskEnv);
 
     TError PrepareResources();
@@ -491,7 +491,6 @@ public:
     void ForgetPid();
     void SyncState();
     TError Seize();
-    TError SyncCgroups();
 
     TError Save(void);
     TError Load(const TKeyValue &node);

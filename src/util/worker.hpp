@@ -52,6 +52,18 @@ protected:
         }
     }
 
+    void Shutdown() {
+        auto lock = ScopedLock();
+        Valid = false;
+        Cv.notify_all();
+    }
+
+    void Join() {
+        for (auto thread : Threads)
+            thread->join();
+        Threads.clear();
+    }
+
     virtual T Pop() =0;
     virtual bool Handle(T &elem) =0;
 
@@ -67,18 +79,12 @@ public:
 
     virtual void Stop() {
         if (Valid) {
-            {
-                auto lock = ScopedLock();
-                Valid = false;
-                Cv.notify_all();
-            }
-            for (auto thread : Threads)
-                thread->join();
-            Threads.clear();
+            Shutdown();
+            Join();
         }
     }
 
-    void Push(T &&elem) {
+    virtual void Push(T &&elem) {
         auto lock = ScopedLock();
         Queue.push(std::move(elem));
         Seq++;

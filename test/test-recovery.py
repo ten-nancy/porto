@@ -286,40 +286,6 @@ def TestRecovery():
 
     parent.Destroy()
 
-    print "Make sure task is moved to correct cgroup on recovery"
-
-    #Use a_b instead of a:b in selftest to simplify cgroup parsing
-    r = c.Create("a_b")
-    r.SetProperty("command", "sleep 1000")
-    r.Start()
-    pid = r.GetData("root_pid")
-
-    AsRoot()
-    open("/sys/fs/cgroup/memory/cgroup.procs","w").write(pid)
-
-    for cg in open("/proc/" + pid + "/cgroup").readlines():
-        if cg.find("memory") >= 0:
-            ExpectEq(cg.split(":")[2].rstrip('\n'), "/")
-
-    KillPid(GetPortodPid(), signal.SIGKILL)
-    AsAlice()
-    c.connect()
-
-    pid = c.GetData("a_b", "root_pid")
-
-    cgs = {}
-    for cg in open("/proc/" + pid + "/cgroup").readlines():
-        (subsys, path) = cg.split(":")[1:3]
-        for i in subsys.split(','):
-            cgs[i] = path.rstrip('\n')
-
-    ExpectEq(cgs["freezer"], "/porto/a_b")
-    for i in ["memory","cpu","cpuacct","devices"]:
-        ExpectEq(cgs[i], "/porto%a_b")
-
-    c.Destroy("a_b")
-
-
     print "Make sure some data is persistent"
 
     r = c.Create("a:b")

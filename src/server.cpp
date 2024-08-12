@@ -33,6 +33,7 @@ extern "C" {
 #include <poll.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/sysinfo.h>
 }
 
 TPidFile ServerPidFile(PORTO_PIDFILE, PORTOD_NAME, "portod-slave");
@@ -509,67 +510,6 @@ static TError CreateRootContainer() {
     return OK;
 }
 
-static void RestoreContainers() {
-    TIdMap ids(4, CONTAINER_ID_MAX - 4);
-    std::list<TKeyValue> nodes;
-
-    TError error = TKeyValue::ListAll(ContainersKV, nodes);
-    if (error)
-        FatalError("Cannot list container kv", error);
-
-    for (auto node = nodes.begin(); node != nodes.end(); ) {
-        error = node->Load();
-        if (!error) {
-            if (!node->Has(P_RAW_ID))
-                error = TError("id not found");
-            if (!node->Has(P_RAW_NAME))
-                error = TError("name not found");
-            if (!error && (StringToInt(node->Get(P_RAW_ID), node->Id) ||
-                           (node->Id > 3 && ids.GetAt(node->Id))))
-                node->Id = 0;
-        }
-        if (error) {
-            L_ERR("Cannot load {}: {}", node->Path, error);
-            (void)node->Path.Unlink();
-            node = nodes.erase(node);
-            continue;
-        }
-        /* key for sorting */
-        node->Name = node->Get(P_RAW_NAME);
-        ++node;
-    }
-
-    for (auto &node : nodes) {
-        if (node.Name[0] != '/' && !node.Id) {
-            error = ids.Get(node.Id);
-            if (!error) {
-                L("Replace container {} id {}", node.Name, node.Id);
-                TPath path = ContainersKV / std::to_string(node.Id);
-                node.Path.Rename(path);
-                node.Path = path;
-                node.Set(P_RAW_ID, std::to_string(node.Id));
-                node.Save();
-            }
-        }
-    }
-
-    nodes.sort();
-
-    for (auto &node : nodes) {
-        if (node.Name[0] == '/')
-            continue;
-
-        std::shared_ptr<TContainer> ct;
-        error = TContainer::Restore(node, ct);
-        if (error) {
-            L_ERR("Cannot restore {}: {}", node.Name, error);
-            Statistics->ContainerLost++;
-            node.Path.Unlink();
-            continue;
-        }
-    }
-}
-
 static void CleanupCgroups() {
     TError error;
     int pass = 0;
@@ -852,6 +792,125 @@ void PrepareServer() {
     NetLimitSoftInitialize();
 }
 
+class TRestoreWorker : public TWorker<TKeyValue*> {
+    std::atomic<size_t> WorkSize;
+    std::unordered_map< std::string, std::vector<TKeyValue*> > ChildMap;
+
+protected:
+    bool Handle(TKeyValue*& node) override {
+        TClient client("<restore>");
+        client.ClientContainer = RootContainer;
+        client.StartRequest();
+
+        std::shared_ptr<TContainer> ct;
+        auto error = TContainer::Restore(*node, ct);
+        if (error) {
+            L_ERR("Cannot restore {}: {}", node->Name, error);
+            Statistics->ContainerLost++;
+            node->Path.Unlink();
+        }
+        client.FinishRequest();
+
+        for (auto child : ChildMap[node->Name])
+            Push(std::move(child));
+        if (!--WorkSize)
+            Shutdown();
+
+        return true;
+    }
+
+    TKeyValue* Pop() override {
+        auto node = Queue.front();
+        Queue.pop();
+        return node;
+    }
+
+public:
+    TRestoreWorker(size_t workers, std::unordered_map< std::string, std::vector<TKeyValue*> > childMap)
+        : TWorker("portod-RS", workers),
+          WorkSize(0),
+          ChildMap(childMap) { }
+
+    void Execute() {
+        Start();
+        Join();
+    }
+
+    void Push(TKeyValue*&& node) override {
+        ++WorkSize;
+        TWorker::Push(std::move(node));
+    }
+};
+
+static void RestoreContainers() {
+    TIdMap ids(4, CONTAINER_ID_MAX - 4);
+    std::list<TKeyValue> nodes;
+
+    TError error = TKeyValue::ListAll(ContainersKV, nodes);
+    if (error)
+        FatalError("Cannot list container kv", error);
+
+    for (auto node = nodes.begin(); node != nodes.end(); ) {
+        error = node->Load();
+        if (!error) {
+            if (!node->Has(P_RAW_ID))
+                error = TError("id not found");
+            if (!node->Has(P_RAW_NAME))
+                error = TError("name not found");
+            if (!error && (StringToInt(node->Get(P_RAW_ID), node->Id) ||
+                           (node->Id > 3 && ids.GetAt(node->Id))))
+                node->Id = 0;
+        }
+        if (error) {
+            L_ERR("Cannot load {}: {}", node->Path, error);
+            (void)node->Path.Unlink();
+            node = nodes.erase(node);
+            continue;
+        }
+        /* name for dependency building */
+        node->Name = node->Get(P_RAW_NAME);
+        ++node;
+    }
+
+    std::unordered_map< std::string, std::vector<TKeyValue*> > childMap;
+
+    for (auto &node : nodes) {
+        if (node.Name[0] != '/' && !node.Id) {
+            error = ids.Get(node.Id);
+            if (!error) {
+                L("Replace container {} id {}", node.Name, node.Id);
+                TPath path = ContainersKV / std::to_string(node.Id);
+                node.Path.Rename(path);
+                node.Path = path;
+                node.Set(P_RAW_ID, std::to_string(node.Id));
+                node.Save();
+            }
+        }
+
+        if (node.Name[0] == '/')
+            continue;
+
+        auto parent = TContainer::ParentName(node.Name);
+
+        auto it = childMap.find(parent);
+        if (it == childMap.end()) {
+            childMap[parent] = {&node};
+        } else
+            it->second.push_back(&node);
+    }
+
+    auto &slots = childMap["/"];
+    if (slots.empty())
+        return;
+
+    TRestoreWorker restoreQueue(std::max(1, get_nprocs()/4), childMap);
+
+    for (auto node : slots) {
+        restoreQueue.Push(std::move(node));
+    }
+    restoreQueue.Execute();
+}
+
 void RestoreState() {
     SystemClient.StartRequest();
 
@@ -862,9 +921,7 @@ void RestoreState() {
     SystemClient.ClientContainer = RootContainer;
 
     L_SYS("Restore containers...");
-    TCgroup::StartRestore();
     RestoreContainers();
-    TCgroup::FinishRestore();
 
     L_SYS("Restore statistics...");
     TContainer::SyncPropertiesAll();

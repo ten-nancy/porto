@@ -143,6 +143,7 @@ public:
     bool IsBlockFollow() const;
 
     bool IsSameInode(const TPath &other) const;
+    bool IsMountPoint() const;
 
     dev_t GetDev() const;
     dev_t GetBlockDev() const;
@@ -274,6 +275,7 @@ private:
 
     TError Access(const TPath &root, const TCred &cred,
                   std::function<TError(const TCred&)> check) const;
+    bool IsMountPointFallback(const TError &error) const;
 public:
     union {
         const int Fd;
@@ -312,6 +314,8 @@ public:
     TError WriteAll(const std::string &text) const;
     static TError Chattr(int fd, unsigned add_flags, unsigned del_flags);
     int GetMountId(const TPath &relative = "") const;
+    TError GetMountId(int &mountId) const;
+    bool IsMountPoint() const;
     TError Dup(const TFile &other);
     TError OpenAt(const TFile &dir, const TPath &path, int flags, int mode = 0);
     TError OpenDirAt(const TFile &dir, const TPath &path);

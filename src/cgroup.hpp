@@ -135,11 +135,8 @@ public:
 
     bool IsEmpty() const;
 
-    static void StartRestore();
-    static void FinishRestore();
-
     TError Attach(pid_t pid, bool thread = false) const;
-    TError AttachAll(const TCgroup &cg) const;
+    TError AttachAll(const TCgroup &cg, bool thread = false) const;
 
     TPath Knob(const std::string &knob) const;
     bool Has(const std::string &knob) const;

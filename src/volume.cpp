@@ -4171,10 +4171,8 @@ TError TVolume::Restore(const TKeyValue &node) {
             L("Restore volume {} link {} for CT{}:{} target {}", Path, link->HostTarget,
                     link->Container->Id, link->Container->Name, link->Target);
 
-            TMount mount;
-            error = link->HostTarget.FindMount(mount, true);
-            if (error) {
-                L("Link is lost: {}", error);
+            if (!link->HostTarget.IsMountPoint()) {
+                L("Link {} is lost", link->HostTarget);
                 continue;
             }
 
@@ -4541,10 +4539,8 @@ void TVolume::RestoreAll(void) {
         }
 
         if (volume->BackendType != "dir" && volume->BackendType != "quota") {
-            TMount mount;
-            error = volume->Path.FindMount(mount, true);
-            if (error) {
-                L("Volume {} is not mounted: {}", volume->Path, error);
+            if (!volume->Path.IsMountPoint()) {
+                L("Volume {} is not mounted", volume->Path);
                 broken_volumes.push_back(volume);
                 continue;
             }

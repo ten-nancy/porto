@@ -694,7 +694,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
 
     lock.unlock();
 
-    error = SystemClient.LockContainer(ct);
+    error = CL->LockContainer(ct);
     if (error)
         goto err;
 
@@ -717,7 +717,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
         if (error)
             goto err;
 
-        error = ct->PrepareCgroups();
+        error = ct->PrepareCgroups(true);
         if (error)
             goto err;
 
@@ -779,10 +779,6 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
             goto err;
 
         ct->PropagateCpuLimit();
-
-        error = ct->SyncCgroups();
-        if (error)
-            goto err;
     }
 
     if (ct->State == EContainerState::Dead && ct->AutoRespawn)
@@ -799,7 +795,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
     if (ct->State == EContainerState::Stopped)
         ct->RemoveWorkDir();
 
-    SystemClient.ReleaseContainer();
+    CL->ReleaseContainer();
 
     return OK;
 
@@ -808,7 +804,7 @@ err:
     ct->SetState(EContainerState::Stopped);
     ct->RemoveWorkDir();
     lock.lock();
-    SystemClient.ReleaseContainer(true);
+    CL->ReleaseContainer(true);
     ct->Unregister();
     ct = nullptr;
     return error;
@@ -2827,7 +2823,7 @@ TError TContainer::SetSymlink(const TPath &symlink, const TPath &target) {
     return error;
 }
 
-TError TContainer::PrepareCgroups() {
+TError TContainer::PrepareCgroups(bool onRestore) {
     TError error;
 
     if (JobMode) {
@@ -2900,6 +2896,19 @@ TError TContainer::PrepareCgroups() {
         error = cg.Create();
         if (error)
             return error;
+
+        if (onRestore) {
+            L_WRN("No {} cgroup for CT{}:{}", TSubsystem::Format(hy->Controllers), Id, Name);
+            if (hy->Controllers & CGROUP_FREEZER)
+                continue;
+
+            // freezer is first in Hierarchies
+            auto freezer = GetCgroup(FreezerSubsystem);
+
+            error = cg.AttachAll(freezer, true);
+            if (error)
+                return error;
+        }
     }
 
     if (missing) {
@@ -4841,28 +4850,6 @@ void TContainer::SyncState() {
         RealDeathTime = time(nullptr);
         SetProp(EProperty::DEATH_TIME);
     }
-}
-
-TError TContainer::SyncCgroups() {
-    TError error;
-
-    /* Sync by parent container */
-    if (JobMode)
-        return OK;
-
-    if (!(Controllers & CGROUP_FREEZER))
-        return TError(EError::NotSupported, "Cannot sync cgroups without freezer");
-
-    auto freezer = GetCgroup(FreezerSubsystem);
-    for (auto hy: Hierarchies) {
-        if (hy->Controllers & CGROUP_FREEZER)
-            continue;
-        auto cg = GetCgroup(*hy);
-        error = cg.AttachAll(freezer);
-        if (error)
-            break;
-    }
-    return error;
 }
 
 TCgroup TContainer::GetCgroup(const TSubsystem &subsystem) const {

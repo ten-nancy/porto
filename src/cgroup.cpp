@@ -35,10 +35,6 @@ const TFlagsNames ControllersName = {
     { CGROUP2,          "cgroup2" },
 };
 
-bool TCgroup::IsRestore = false;
-
-static std::map<std::string, std::vector<pid_t>> prevAttachedPidsMap;
-
 extern pid_t MasterPid;
 extern pid_t ServerPid;
 extern std::unordered_set<pid_t> PortoTids;
@@ -276,7 +272,7 @@ TError TCgroup::Attach(pid_t pid, bool thread) const {
     return error;
 }
 
-TError TCgroup::AttachAll(const TCgroup &cg) const {
+TError TCgroup::AttachAll(const TCgroup &cg, bool thread) const {
     if (IsNetcls() && !config().network().enable_netcls_classid())
         return OK;
 
@@ -286,14 +282,11 @@ TError TCgroup::AttachAll(const TCgroup &cg) const {
     L_CG("Attach all processes from {} to {}", cg, *this);
 
     std::vector<pid_t> pids, prev;
-    std::vector<pid_t>& prevAttachPids = prevAttachedPidsMap[this->Type()];
 
     bool retry;
     TError error = cg.GetProcesses(pids);
     if (error)
         return error;
-
-    bool thread = IsRestore && std::find_first_of(pids.begin(), pids.end(), prevAttachPids.begin(), prevAttachPids.end()) != pids.end();
 
     if (thread && IsCgroup2())
         return OK;
@@ -319,12 +312,6 @@ TError TCgroup::AttachAll(const TCgroup &cg) const {
             L_WRN("Too long attachment of processes from {} to {}", cg, *this);
         }
     } while (retry);
-
-    if (IsRestore) {
-        error = GetProcesses(prevAttachPids);
-        if (error)
-            return error;
-    }
 
     return OK;
 }
@@ -417,15 +404,6 @@ bool TCgroup::IsEmpty() const {
 
     GetTasks(tasks);
     return tasks.empty();
-}
-
-void TCgroup::StartRestore() {
-    IsRestore = true;
-}
-
-void TCgroup::FinishRestore() {
-    prevAttachedPidsMap.clear();
-    IsRestore = false;
 }
 
 TError TCgroup::AbortFuse(pid_t pid) {

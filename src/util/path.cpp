@@ -186,6 +186,17 @@ bool TPath::IsSameInode(const TPath &other) const {
     return a.st_dev == b.st_dev && a.st_ino == b.st_ino;
 }
 
+bool TPath::IsMountPoint() const {
+    TFile f;
+    auto error = f.OpenPath(Path);
+    if (error) {
+        if (error.Errno != ENOENT)
+            L_WRN("OpenPath('{}') failed during IsMountPoint check: {}", error);
+        return false;
+    }
+    return f.IsMountPoint();
+}
+
 dev_t TPath::GetDev() const {
     struct stat st;
 
@@ -1590,6 +1601,46 @@ int TFile::GetMountId(const TPath &relative) const {
                           &fh.head, &mnt, AT_EMPTY_PATH))
         return -1;
     return mnt;
+}
+
+bool TFile::IsMountPointFallback(const TError &error) const {
+    L_WRN("IsMountPoint fallback to mountinfo scan due to: {}", error);
+    TMount unused;
+    return !RealPath().FindMount(unused, true);
+}
+
+bool TFile::IsMountPoint() const {
+    TFile parent;
+    auto error = parent.OpenDirAt(*this, "..");
+    if (error)
+        return IsMountPointFallback(error);
+
+    int x, y;
+    error = GetMountId(x);
+    if (!error)
+        error = parent.GetMountId(y);
+
+    if (error)
+        return IsMountPointFallback(error);
+
+    return x != y;
+}
+
+TError TFile::GetMountId(int &mountId) const {
+    std::vector<std::string> lines;
+    TError error = TPath(fmt::format("/proc/thread-self/fdinfo/{}", Fd)).ReadLines(lines);
+    for (const auto &line : lines) {
+        if (!StringStartsWith(line, "mnt_id:"))
+            continue;
+        auto tokens = SplitString(line, '\t', 2);
+        if (tokens.size() != 2)
+            return TError("Invalid mnt_id entry: '{}'", line);
+        auto error = StringToInt(tokens[1], mountId);
+        if (error)
+            return TError(error, "Failed parse mnt_id: {}", tokens[1]);
+        return OK;
+    }
+    return TError(error, "Cannot find mnt_id in fdinfo");
 }
 
 // Open same inode at different mount
