@@ -2886,10 +2886,10 @@ TError TNetwork::RestoreNetwork(TContainer &ct) {
 
     if (ct.NetInherit) {
         net = ct.Parent->Net;
-    } else if (ct.Task.Pid) {
-        error = TNetwork::Open("/proc/" + std::to_string(ct.Task.Pid) + "/ns/net", netNs, net);
+    } else if (ct.WaitTask.Pid) {
+        error = TNetwork::Open("/proc/" + std::to_string(ct.WaitTask.Pid) + "/ns/net", netNs, net);
         if (error) {
-            if (ct.WaitTask.IsZombie())
+            if (error.Errno == ENOENT)
                 return OK;
             return error;
         }
