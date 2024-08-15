@@ -630,7 +630,7 @@ TError TMemorySubsystem::InitializeSubsystem() {
 }
 
 TError TMemorySubsystem::SetLimit(TCgroup &cg, uint64_t limit) {
-    uint64_t old_limit, cur_limit, new_limit;
+    uint64_t old_limit, old_high_limit = 0;
     TError error;
 
     /*
@@ -650,34 +650,33 @@ TError TMemorySubsystem::SetLimit(TCgroup &cg, uint64_t limit) {
     if (old_limit == limit)
         return OK;
 
+    /* reduce high limit first to fail faster */
+    if (limit < old_limit && SupportHighLimit()) {
+        auto error2 = cg.GetUint64(HIGH_LIMIT, old_high_limit);
+        if (!error2)
+            error = cg.SetUint64(HIGH_LIMIT, limit);
+        if (error)
+            return error;
+    }
+
     /* Memory limit cannot be bigger than Memory+Swap limit. */
     if (SupportSwap()) {
+        uint64_t cur_limit;
         cg.GetUint64(MEM_SWAP_LIMIT, cur_limit);
         if (cur_limit < limit)
             (void)cg.SetUint64(MEM_SWAP_LIMIT, limit);
     }
 
-    cur_limit = old_limit;
-    new_limit = limit;
-    do {
-        error = cg.SetUint64(LIMIT, new_limit);
-        if (error) {
-            if (cur_limit < INT64_MAX)
-                new_limit = (cur_limit + new_limit) / 2;
-            else
-                new_limit *= 2;
-        } else {
-            cur_limit = new_limit;
-            new_limit = limit;
-        }
-    } while (cur_limit != limit && new_limit <= cur_limit - 4096 &&
-             (!error || error.Errno == EBUSY));
-
+    // this also updates high limit
+    error = cg.SetUint64(LIMIT, limit);
     if (!error && SupportSwap())
         error = cg.SetUint64(MEM_SWAP_LIMIT, limit);
 
-    if (error)
+    if (error) {
         (void)cg.SetUint64(LIMIT, old_limit);
+        if (old_high_limit)
+            (void)cg.SetUint64(HIGH_LIMIT, old_high_limit);
+    }
 
     return error;
 }
