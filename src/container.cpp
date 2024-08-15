@@ -2305,6 +2305,87 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     auto blkcg = GetCgroup(BlkioSubsystem);
     TError error;
 
+    if ((Controllers & CGROUP_CPU) &&
+            (TestPropDirty(EProperty::CPU_PERIOD) ||
+             TestPropDirty(EProperty::CPU_GUARANTEE))) {
+        for (auto ct = this; ct; ct = ct->Parent.get()) {
+            error = ct->ApplyCpuGuarantee();
+            if (error)
+                return error;
+            if (!config().container().propagate_cpu_guarantee())
+                break;
+        }
+    }
+
+    if (Controllers & CGROUP_CPU) {
+        for (auto ct = this; ct; ct = ct->Parent.get())
+            error = ct->ApplyCpuShares();
+    }
+
+    if (TestPropDirty(EProperty::CPU_LIMIT) || TestClearPropDirty(EProperty::CPU_GUARANTEE))
+        PropagateCpuLimit();
+
+    if ((Controllers & CGROUP_CPU) &&
+            (TestPropDirty(EProperty::CPU_POLICY) ||
+             TestPropDirty(EProperty::CPU_WEIGHT) ||
+             TestClearPropDirty(EProperty::CPU_LIMIT) ||
+             TestClearPropDirty(EProperty::CPU_PERIOD))) {
+        error = ApplyCpuLimit();
+        if (error)
+            return error;
+        if (MemorySubsystem.SupportHighLimit())
+            SetPropDirty(EProperty::MEM_HIGH_LIMIT);
+    }
+
+    /* Kludge for the sake of dynamic update and inheritance
+       for existing containers */
+
+    if (TestClearPropDirty(EProperty::CPU_PERIOD)) {
+        if (Controllers & CGROUP_CPU) {
+            auto cg = GetCgroup(CpuSubsystem);
+            error = CpuSubsystem.SetPeriod(cg, CpuPeriod);
+            if (error) {
+                L_ERR("Cannot update cpu period for cgroup: {}", error);
+                return error;
+            }
+        }
+    }
+
+    if (TestClearPropDirty(EProperty::CPU_SET) && Parent) {
+        if (NewCpuJail != CpuJail || CpuSetType == ECpuSetType::Node) {
+            error = JailCpus();
+            if (error)
+                return error;
+        }
+
+        if (!CpuJail) {
+            error = ApplyCpuSet();
+            if (error)
+                return error;
+        }
+
+        if ((Controllers & CGROUP_MEMORY) && MemorySubsystem.SupportNumaBalance()) {
+            auto memcg = GetCgroup(MemorySubsystem);
+            if (config().container().enable_numa_migration() && !RootPath.IsRoot() && CpuSetType == ECpuSetType::Node)
+                error = MemorySubsystem.SetNumaBalance(memcg, 0, 0);
+            else
+                error = MemorySubsystem.SetNumaBalance(memcg, 0, 4);
+
+            if (error)
+                return error;
+        }
+    }
+
+    if ((!JobMode) &&
+        (TestClearPropDirty(EProperty::CPU_POLICY) ||
+        TestClearPropDirty(EProperty::CPU_WEIGHT))) {
+        error = ApplySchedPolicy();
+        if (error) {
+            L_ERR("Cannot set scheduler policy: {}", error);
+            return error;
+        }
+    }
+
     if (TestClearPropDirty(EProperty::MEM_GUARANTEE)) {
         error = MemorySubsystem.SetGuarantee(memcg, MemGuarantee);
         if (error) {
@@ -2323,24 +2404,22 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
                 L_ERR("Cannot set {}: {}", P_MEM_LIMIT, error);
             return error;
         }
-        if (MemorySubsystem.SupportHighLimit() && MemLimit) {
-            // kernel private commit 434f0ca01640ab31c3c719101b2293f49776625e
-            //
-            // static unsigned long default_high_margin = 64;
-            // ...
-            // unsigned long margin = default_high_margin * num_online_cpus();
-            // memcg->high = max - min(max / 4, margin);
+        if (MemorySubsystem.SupportHighLimit())
+            SetPropDirty(EProperty::MEM_HIGH_LIMIT);
+    }
 
-            uint64_t defaultHighMargin = 64 * GetNumCores() * GetPageSize();
-            uint64_t highLimit = MemLimit - std::min(MemLimit / 4, defaultHighMargin);
-            if (config().container().memory_high_limit_proportion())
-                highLimit = config().container().memory_high_limit_proportion() * MemLimit;
+    if (TestClearPropDirty(EProperty::MEM_HIGH_LIMIT)) {
+        uint64_t highLimit = 0;
+        if (MemLimit) {
+            uint64_t numCores = std::min(uint64_t(GetNumCores()), CpuLimitBound / CPU_POWER_PER_SEC);
+            uint64_t highMargin = 64 * std::max(1UL, numCores) * GetPageSize();
+            highLimit = MemLimit - std::min(MemLimit / 4, highMargin);
+        }
 
-            error = MemorySubsystem.SetHighLimit(memcg, highLimit);
-            if (error) {
-                L_ERR("Cannot set high_limit_in_bytes: {}", error);
-                return error;
-            }
+        error = MemorySubsystem.SetHighLimit(memcg, highLimit);
+        if (error) {
+            L_ERR("Cannot set high_limit_in_bytes: {}", error);
+            return error;
         }
     }
 
@@ -2453,85 +2532,6 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
             error = HugetlbSubsystem.SetGigaLimit(cg, 0);
             if (error)
                 L_WRN("Cannot forbid 1GB pages: {}", error);
-        }
-    }
-
-    if ((Controllers & CGROUP_CPU) &&
-            (TestPropDirty(EProperty::CPU_PERIOD) ||
-             TestPropDirty(EProperty::CPU_GUARANTEE))) {
-        for (auto ct = this; ct; ct = ct->Parent.get()) {
-            error = ct->ApplyCpuGuarantee();
-            if (error)
-                return error;
-            if (!config().container().propagate_cpu_guarantee())
-                break;
-        }
-    }
-
-    if (Controllers & CGROUP_CPU) {
-        for (auto ct = this; ct; ct = ct->Parent.get())
-            error = ct->ApplyCpuShares();
-    }
-
-    if (TestPropDirty(EProperty::CPU_LIMIT) || TestClearPropDirty(EProperty::CPU_GUARANTEE))
-        PropagateCpuLimit();
-
-    if ((Controllers & CGROUP_CPU) &&
-            (TestPropDirty(EProperty::CPU_POLICY) ||
-             TestPropDirty(EProperty::CPU_WEIGHT) ||
-             TestClearPropDirty(EProperty::CPU_LIMIT) ||
-             TestClearPropDirty(EProperty::CPU_PERIOD))) {
-        error = ApplyCpuLimit();
-        if (error)
-            return error;
-    }
-
-    /* Kludge for the sake of dynamic update and inheritance
-       for existing containers */
-
-    if (TestClearPropDirty(EProperty::CPU_PERIOD)) {
-        if (Controllers & CGROUP_CPU) {
-            auto cg = GetCgroup(CpuSubsystem);
-            error = CpuSubsystem.SetPeriod(cg, CpuPeriod);
-            if (error) {
-                L_ERR("Cannot update cpu period for cgroup: {}", error);
-                return error;
-            }
-        }
-    }
-
-    if (TestClearPropDirty(EProperty::CPU_SET) && Parent) {
-        if (NewCpuJail != CpuJail || CpuSetType == ECpuSetType::Node) {
-            error = JailCpus();
-            if (error)
-                return error;
-        }
-
-        if (!CpuJail) {
-            error = ApplyCpuSet();
-            if (error)
-                return error;
-        }
-
-        if ((Controllers & CGROUP_MEMORY) && MemorySubsystem.SupportNumaBalance()) {
-            auto memcg = GetCgroup(MemorySubsystem);
-            if (config().container().enable_numa_migration() && !RootPath.IsRoot() && CpuSetType == ECpuSetType::Node)
-                error = MemorySubsystem.SetNumaBalance(memcg, 0, 0);
-            else
-                error = MemorySubsystem.SetNumaBalance(memcg, 0, 4);
-
-            if (error)
-                return error;
-        }
-    }
-
-    if ((!JobMode) &&
-        (TestClearPropDirty(EProperty::CPU_POLICY) ||
-        TestClearPropDirty(EProperty::CPU_WEIGHT))) {
-        error = ApplySchedPolicy();
-        if (error) {
-            L_ERR("Cannot set scheduler policy: {}", error);
-            return error;
         }
     }
 

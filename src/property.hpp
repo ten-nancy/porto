@@ -236,6 +236,7 @@ enum class EProperty {
     STDOUT_LIMIT,
     MEM_GUARANTEE,
     MEM_LIMIT,
+    MEM_HIGH_LIMIT,
     MEM_LOCK_POLICY,
     DIRTY_LIMIT,
     ANON_LIMIT,

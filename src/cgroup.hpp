@@ -224,6 +224,8 @@ public:
     TError SetHighLimit(TCgroup &cg, uint64_t limit) const {
         if (!SupportHighLimit())
             return OK;
+        if (!limit)
+            return cg.Set(HIGH_LIMIT, "-1");
         return cg.SetUint64(HIGH_LIMIT, limit);
     }
 

@@ -15,6 +15,24 @@ DURATION = 60000 #ms
 
 NAME = os.path.basename(__file__)
 
+def test_memory_limit_high(conn):
+    ct = conn.Run("memory_high", cpu_limit='1c')
+
+    ExpectEq(ct.GetProperty('memory.limit_in_bytes'), ct.GetProperty('memory.high_limit_in_bytes'))
+
+    ct.SetProperty('memory_limit', '10485760')
+    ExpectEq(int(ct.GetProperty('memory.high_limit_in_bytes')), 10223616)
+
+    ct.SetProperty('cpu_limit', '2c')
+    ExpectEq(int(ct.GetProperty('memory.high_limit_in_bytes')), 9961472)
+
+    ct.SetProperty('memory_limit', '41943040')
+    ExpectEq(int(ct.GetProperty('memory.high_limit_in_bytes')), 41418752)
+
+    ct.SetProperty('memory_limit', '0')
+    ExpectEq(ct.GetProperty('memory.limit_in_bytes'), ct.GetProperty('memory.high_limit_in_bytes'))
+
+
 def CT_NAME(suffix):
     global NAME
     return NAME + "-" + suffix
@@ -198,3 +216,6 @@ ct2.Prepare(use_anon=SIZE)
 ct1.Start(); ct1.WaitUsage();
 ct2.Start()
 ct2.CheckOOM(True); ct1.CheckOOM(True); ct.CheckOOM(True)
+
+print "\nCheck memory.high\n"
+test_memory_limit_high(conn)
