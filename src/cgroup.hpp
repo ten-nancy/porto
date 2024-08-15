@@ -338,16 +338,28 @@ public:
 };
 
 class TCpusetSubsystem : public TSubsystem {
-public:
-    TCpusetSubsystem() : TSubsystem(CGROUP_CPUSET, "cpuset") {}
-    bool IsOptional() override { return true; }
-    TError InitializeCgroup(TCgroup &cg) override;
-
+private:
     TError GetCpus(TCgroup &cg, std::string &cpus) const {
         return cg.Get("cpuset.cpus", cpus);
     }
     TError SetCpus(TCgroup &cg, const std::string &cpus) const;
     TError SetMems(TCgroup &cg, const std::string &mems) const;
+public:
+    TCpusetSubsystem() : TSubsystem(CGROUP_CPUSET, "cpuset") {}
+    bool IsOptional() override { return true; }
+    TError InitializeCgroup(TCgroup &cg) override;
+
+    TError GetCpus(TCgroup &cg, TBitMap &cpus) const {
+        std::string s;
+        auto error = GetCpus(cg, s);
+        if (error)
+            return error;
+        return cpus.Parse(s);
+    }
+
+    TError SetCpus(TCgroup &cg, const TBitMap &cpus) const {
+        return SetCpus(cg, cpus.Format());
+    }
 };
 
 class TNetclsSubsystem : public TSubsystem {

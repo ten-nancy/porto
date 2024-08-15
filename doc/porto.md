@@ -829,17 +829,10 @@ write permissions to the target or owning related volume.
     - \[N|N-M,\]...          - set of CPUs (logical cores)
     - *node* N               - bind to NUMA node
     - *jail* N \[;*node* N\] - evenly distribute to N CPUs and optionally bind to NUMA node
-    - *reserve* N            - allocate N CPUs, use the rest too
-    - *threads* N            - allocate N CPUs, use only them
-    - *cores* N              - allocate N physical cores, use only one thread for each
 
-    Each container owns set of cpus (shown in **cpu\_set\_affinity**) and
-    distributes them among childrens.
+    Each container scheduled on set of cpus (shown in **cpu\_set\_affinity**).
 
     Child could use only subset of parent cpus, by default all of them.
-
-    Allocated CPUs are removed from cpu sets of sibling containers,
-    but these CPUs still could be in use by processes outside sub-tree.
 
 * **cpu\_set\_affinity** - resulting CPU affinity: \[N,N-M,\]...
 

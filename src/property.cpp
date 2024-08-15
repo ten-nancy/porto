@@ -4057,38 +4057,9 @@ public:
         case ECpuSetType::Node:
             value += (value.empty() ? "" : "; ") + StringFormat("node %u", CT->CpuSetArg);
             break;
-        case ECpuSetType::Reserve:
-            value = StringFormat("reserve %u", CT->CpuSetArg);
-            break;
-        case ECpuSetType::Threads:
-            value = StringFormat("threads %u", CT->CpuSetArg);
-            break;
-        case ECpuSetType::Cores:
-            value = StringFormat("cores %u", CT->CpuSetArg);
-            break;
-        }
-
-        if (!CT->CpuMems.empty()) {
-            if (!value.empty())
-                value += "; ";
-            value += "mems " + CT->CpuMems;
         }
 
         return OK;
-    }
-
-    void SetMems(const std::string &mems) {
-        if (CT->CpuMems != mems) {
-            CT->CpuMems = mems;
-
-            if (CT->State == EContainerState::Stopped)
-                return;
-            // FIXME don't forgot about childs and parents mems
-            auto cg = CT->GetCgroup(CpusetSubsystem);
-            auto error = CpusetSubsystem.SetMems(cg, mems);
-            if (error)
-                L_TAINT(fmt::format("Cannot set mems: {}", error));
-        }
     }
 
     TError Set(const std::string &value) override {
@@ -4099,7 +4070,7 @@ public:
         int jail = 0;
 
         for (const auto& v : cfgs) {
-            if (v.size() != 0 && v[0] != "mems" && v[0] != "jail")
+            if (v.size() != 0 && v[0] != "jail")
                 cfg = v;
             else if (v.size() == 2) {
                 if (v[0] == "jail") {
@@ -4129,10 +4100,8 @@ public:
                 return error;
             type = ECpuSetType::Absolute;
             if (!CT->CpuAffinity.IsEqual(map)) {
-                CT->CpuAffinity.Clear();
-                CT->CpuAffinity.Set(map);
+                CT->CpuAffinity = map;
                 CT->SetProp(EProperty::CPU_SET);
-                CT->SetProp(EProperty::CPU_SET_AFFINITY);
             }
         } else if (cfg.size() == 2) {
             error = StringToInt(cfg[1], arg);
@@ -4141,12 +4110,6 @@ public:
 
             if (cfg[0] == "node")
                 type = ECpuSetType::Node;
-            else if (cfg[0] == "threads")
-                type = ECpuSetType::Threads;
-            else if (cfg[0] == "cores")
-                type = ECpuSetType::Cores;
-            else if (cfg[0] == "reserve")
-                type = ECpuSetType::Reserve;
             else
                 return TError(EError::InvalidValue, "wrong format");
 
@@ -4156,7 +4119,6 @@ public:
         } else
             return TError(EError::InvalidValue, "wrong format");
 
-        SetMems(mems);
 
         if (jail && (type != ECpuSetType::Node && type != ECpuSetType::Inherit))
             return TError(EError::InvalidValue, "wrong format");
@@ -4189,20 +4151,7 @@ public:
             cfg->set_policy("node");
             cfg->set_arg(CT->CpuSetArg);
             break;
-        case ECpuSetType::Reserve:
-            cfg->set_policy("reserve");
-            cfg->set_arg(CT->CpuSetArg);
-            break;
-        case ECpuSetType::Threads:
-            cfg->set_policy("threads");
-            cfg->set_arg(CT->CpuSetArg);
-            break;
-        case ECpuSetType::Cores:
-            cfg->set_policy("cores");
-            cfg->set_arg(CT->CpuSetArg);
-            break;
         }
-        cfg->set_mems(CT->CpuMems);
 
         if (CT->CpuJail)
             cfg->set_jail(CT->CpuJail);
@@ -4235,19 +4184,11 @@ public:
 
             type = ECpuSetType::Absolute;
             if (!CT->CpuAffinity.IsEqual(map)) {
-                CT->CpuAffinity.Clear();
-                CT->CpuAffinity.Set(map);
+                CT->CpuAffinity = map;
                 CT->SetProp(EProperty::CPU_SET);
-                CT->SetProp(EProperty::CPU_SET_AFFINITY);
             }
         } else if (cfg.policy() == "node") {
             type = ECpuSetType::Node;
-        } else if (cfg.policy() == "threads") {
-            type = ECpuSetType::Threads;
-        } else if (cfg.policy() == "cores") {
-            type = ECpuSetType::Cores;
-        } else if (cfg.policy() == "reserve") {
-            type = ECpuSetType::Reserve;
         } else
             return TError(EError::InvalidValue, "unknown cpu_set policy: {}", cfg.policy());
 
@@ -4266,8 +4207,6 @@ public:
             CT->NewCpuJail = jail;
             CT->SetProp(EProperty::CPU_SET);
         }
-
-        SetMems(cfg.mems());
 
         return OK;
     }

@@ -46,9 +46,6 @@ enum class EContainerState {
 
 enum class ECpuSetType {
     Inherit,
-    Reserve,
-    Threads,
-    Cores,
     Node,
     Absolute,
 };
@@ -116,11 +113,11 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
     void Reap(bool oomKilled);
     void Exit(int status, bool oomKilled);
 
+    TError BuildCpuTopology();
     TError ReserveCpus(unsigned nr_threads, unsigned nr_cores,
                        TBitMap &threads, TBitMap &cores);
     void SetAffinity(const TBitMap &affinity);
-    TError ApplySubtreeCpus(const std::list<std::shared_ptr<TContainer>> &subtree, const TBitMap &affinity, bool force = true);
-    TError DistributeCpus();
+    TError ApplyCpuSet();
 
     static void UpdateJailCpuStateLocked(const TBitMap& affinity, bool release = false);
     static unsigned NextJailCpu(int node = -1);
@@ -281,9 +278,6 @@ public:
     int CpuJail = 0;
     int NewCpuJail = 0;
     TBitMap CpuAffinity;
-    TBitMap CpuVacant;
-    TBitMap CpuReserve;
-    std::string CpuMems;
 
     /* Under CpuAffinityMutex */
     uint64_t CpuGuaranteeSum = 0;

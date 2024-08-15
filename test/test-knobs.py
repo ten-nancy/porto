@@ -155,12 +155,6 @@ r.Start()
 
 check_numa_balance('0 4')
 
-r.SetProperty("cpu_set", "mems 0")
-check_numa_balance('0 4')
-
-with open("/sys/fs/cgroup/cpuset/porto%test/cpuset.mems") as f:
-    assert int(f.read()) == 0
-
 r.SetProperty("cpu_set", "node 0")
 check_numa_balance('0 4')
 c.Destroy("test")
@@ -170,8 +164,6 @@ r = c.Run('test', wait=0, command='sleep 10', root_volume={'layers': ['ubuntu-xe
 check_numa_balance('0 4')
 r.SetProperty("cpu_set", "node 0")
 check_numa_balance('0 0')
-r.SetProperty("cpu_set", "mems 0")
-check_numa_balance('0 4')
 
 r.Destroy()
 

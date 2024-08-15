@@ -249,7 +249,6 @@ enum class EProperty {
     CPU_PERIOD,
     CPU_WEIGHT,
     CPU_SET,
-    CPU_SET_AFFINITY,
     IO_POLICY,
     IO_WEIGHT,
     IO_LIMIT,

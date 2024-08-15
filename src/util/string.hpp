@@ -83,6 +83,14 @@ private:
 public:
     TBitMap() {}
     ~TBitMap() {}
+
+    TBitMap(const TBitMap &other) : bits(other.bits) { }
+
+    TBitMap& operator=(const TBitMap &other) {
+        bits = other.bits;
+        return *this;
+    }
+
     TError Parse(const std::string &text);
     std::string Format() const;
     TError Read(const TPath &path);
