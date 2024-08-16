@@ -1,3 +1,23 @@
+porto (5.3.38) unstable; urgency=low
+  [ ovov ]
+      container: do not apply memory.high to containers without memcg
+      container: apply cpuset to cgroups without container
+      container: NextJailCpu must not return cpu that is already allocated
+      network: use WaitTask to restore net ns
+      container: use ct cpu_limit instead of host nproc to scale memory.high margin
+      cgroup: set memory.high to fail faster on reducing memory.limit_in_bytes
+      container: revise cpu_set
+      portod: optimize state restore
+      portod: split portod.cpp into master.cpp and server.cpp
+      container: perform cpu jail under LockCpuAffinity
+  [ kndrvt ]
+      volume: add info to InvalidFilesystem error
+      capabilities: expand possible caps in extra_properties
+      task: add info about session to container process
+  last commit: 7ecdbcbf30f9e3c2fe7aeb246b7e8887c4d32a6d
+
+ -- Porto Team <porto@yandex-team.ru>  Fri, 16 Aug 2024 15:30:27 -0000
+
 porto (5.3.37) unstable; urgency=low
   [ ovov ]
       container: disable idle cpu cgroup by default
