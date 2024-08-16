@@ -106,7 +106,7 @@ TError TCgroup::Rename(TCgroup &target) {
 }
 
 TError TCgroup::Remove() {
-    std::vector<TCgroup> children;
+    std::list<TCgroup> children;
 
     TError error = ChildsAll(children, true);
     if (error)
@@ -323,7 +323,7 @@ TCgroup TCgroup::Child(const std::string& name) const {
     return TCgroup(Subsystem, Name + "/" + name);
 }
 
-TError TCgroup::ChildsAll(std::vector<TCgroup> &cgroups, bool all) const {
+TError TCgroup::ChildsAll(std::list<TCgroup> &cgroups, bool all) const {
     TPathWalk walk;
     TError error;
 
@@ -344,13 +344,13 @@ TError TCgroup::ChildsAll(std::vector<TCgroup> &cgroups, bool all) const {
         if (!S_ISDIR(walk.Stat->st_mode) || walk.Postorder || walk.Level() == 0)
             continue;
 
-        std::string name = Subsystem->Root.InnerPath(walk.Path).ToString();
+        auto name = Subsystem->Root.InnerPath(walk.Path).ToString();
 
         /* Ignore non-porto cgroups */
         if (!StringStartsWith(name, PORTO_CGROUP_PREFIX) && !all)
             continue;
 
-        cgroups.push_back(TCgroup(Subsystem,  name));
+        cgroups.emplace_back(Subsystem, std::move(name));
     }
 
     return OK;
@@ -379,7 +379,7 @@ TError TCgroup::GetPids(const std::string &knob, std::vector<pid_t> &pids) const
 }
 
 TError TCgroup::GetCount(bool threads, uint64_t &count) const {
-    std::vector<TCgroup> childs;
+    std::list<TCgroup> childs;
     TError error;
 
     if (!Subsystem)
@@ -1116,7 +1116,7 @@ TError TCpuacctSubsystem::SystemUsage(TCgroup &cg, uint64_t &value) const {
 }
 
 // Cpuset
-TError TCpusetSubsystem::SetCpus(TCgroup &cg, const std::string &cpus) const {
+TError TCpusetSubsystem::SetCpus(const TCgroup &cg, const std::string &cpus) const {
     std::string val;
     TError error;
     TPath copy;
@@ -1146,7 +1146,7 @@ TError TCpusetSubsystem::SetCpus(TCgroup &cg, const std::string &cpus) const {
     return cg.Set("cpuset.cpus", val);
 }
 
-TError TCpusetSubsystem::SetMems(TCgroup &cg, const std::string &mems) const {
+TError TCpusetSubsystem::SetMems(const TCgroup &cg, const std::string &mems) const {
     std::string val;
     TError error;
     TPath copy;

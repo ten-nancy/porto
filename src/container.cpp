@@ -81,7 +81,7 @@ static std::vector<unsigned> JailCpuPermutation; /* 0,8,16,24,1,9,17,25,2,10,18,
 static std::vector<unsigned> CpuToJailPermutationIndex; /* cpu -> index in JailCpuPermutation */
 static std::vector<unsigned> JailCpuPermutationUsage; /* how many containers are jailed at JailCpuPermutation[cpu] core */
 
-static TError CommitSubtreeCpus(std::list<std::shared_ptr<TContainer>> &subtree);
+static TError CommitSubtreeCpus(const TCgroup &root, std::list<std::shared_ptr<TContainer>> &subtree);
 
 /* return true if index specified for property */
 static bool ParsePropertyName(std::string &name, std::string &idx) {
@@ -1771,7 +1771,7 @@ TError TContainer::JailCpus() {
         for (auto &ct : subtree)
             ct->CpuAffinity = affinity;
 
-        error = CommitSubtreeCpus(subtree);
+        error = CommitSubtreeCpus(cg, subtree);
         if (error)
             return error;
     } else if (!CpuJail)
@@ -1797,57 +1797,126 @@ TBitMap TContainer::GetNoSmtCpus() {
     return taskAffinity;
 }
 
-static TError ApplySubtreeCpus(const std::list<std::shared_ptr<TContainer>> &subtree) {
-    std::unordered_map<int, TBitMap> cpusets;
+class TCgroupAffinityIndex {
+    /*
+      qux/
+      foo/bar/
+      foo/
+      foo-/
+      baz/
 
-    // Step 1: widen to union of current and target affinity
-    for (auto &ct : subtree) {
-        if (ct->State == EContainerState::Stopped ||
-            ct->State == EContainerState::Dead ||
-            !(ct->Controllers & CGROUP_CPUSET))
-            continue;
+      Trailing slash is mandatory for correct work of index!
+      Without it index would look like this:
 
-        auto cg = ct->GetCgroup(CpusetSubsystem);
-        if (!cg.Exists())
-            continue;
+      qux
+      foo/bar
+      foo-
+      foo
+      baz
+
+      In this index foo/bar is not followed by its parent foo
+     */
+    std::map< std::string, TBitMap, std::greater<std::string> > Index;
+public:
+    TCgroupAffinityIndex(const std::list<std::shared_ptr<TContainer>> &subtree) {
+        for (auto &ct : subtree) {
+            if (ct->State == EContainerState::Stopped ||
+                ct->State == EContainerState::Dead ||
+                !(ct->Controllers & CGROUP_CPUSET))
+                continue;
+
+            auto cg = ct->GetCgroup(CpusetSubsystem);
+            if (!cg.Exists()) {
+                L_WRN(" CT{}:{} with cpuset controller does not have cpuset cgroup",
+                      ct->Id, ct->Name);
+                continue;
+            }
+
+            Index.emplace(cg.Name + "/", ct->CpuAffinity);
+        }
+    }
+
+    // Find target affinity for cgroup or its closest ancestor
+    bool GetAffinity(const TCgroup &cg, TBitMap &affinity) const {
+        auto name = cg.Name + "/";
+        auto it = Index.lower_bound(name);
+        if (it == Index.end())
+            return false;
+        // exact match or some other ancestor
+        if (name != it->first && !StringStartsWith(cg.Name, it->first))
+            return false;
+
+        L("closest ancestor for {} is {}", cg.Name, it->first);
+        affinity = it->second;
+        return true;
+    }
+};
+
+static TError WidenSubtreeCpus(const std::list<TCgroup> &cgroups,
+                               const TCgroupAffinityIndex &index,
+                               std::map<std::string, TBitMap> cpusets) {
+    for (auto &cg : cgroups) {
+        TBitMap affinity;
+        if (!index.GetAffinity(cg, affinity))
+            return TError("Cannot find target affinity for cgroup {}", cg);
 
         TBitMap cur;
         auto error = CpusetSubsystem.GetCpus(cg, cur);
         if (error)
             return error;
 
-        if (!ct->CpuAffinity.IsSubsetOf(cur)) {
-            cur.Set(ct->CpuAffinity); // union
+        if (!affinity.IsSubsetOf(cur)) {
+            cur.Set(affinity); // union
 
             error = CpusetSubsystem.SetCpus(cg, cur);
             if (error)
                 return error;
         }
-        cpusets[ct->Id] = cur;
+        cpusets.emplace(cg.Name, std::move(cur));
     }
+    return OK;
+}
 
-    // Step 2: narrow to target affinity
-    for (auto it = subtree.rbegin(); it != subtree.rend(); ++it) {
-        const auto &ct = *it;
+static TError NarrowSubtreeCpus(const std::list<TCgroup> &cgroups,
+                                const TCgroupAffinityIndex &index,
+                                std::map<std::string, TBitMap> cpusets) {
+    for (auto it = cgroups.rbegin(); it != cgroups.rend(); ++it) {
+        auto &cg = *it;
 
-        if (ct->State == EContainerState::Stopped ||
-            ct->State == EContainerState::Dead ||
-            !(ct->Controllers & CGROUP_CPUSET))
+        TBitMap affinity;
+        if (!index.GetAffinity(cg, affinity))
+            return TError("Cannot find target affinity for cgroup {}", cg);
+
+        auto kt = cpusets.find(cg.Name); // use find just in case
+        if (kt != cpusets.end() && kt->second.IsEqual(affinity))
             continue;
 
-        auto cg = ct->GetCgroup(CpusetSubsystem);
-        if (!cg.Exists())
-            continue;
-
-        auto cur = cpusets.find(ct->Id); // use find just in case
-        if (cur != cpusets.end() && cur->second.IsEqual(ct->CpuAffinity))
-            continue;
-
-        auto error = CpusetSubsystem.SetCpus(cg, ct->CpuAffinity);
+        auto error = CpusetSubsystem.SetCpus(cg, affinity);
         if (error)
             return error;
     }
+    return OK;
+}
 
+static TError ApplySubtreeCpus(const TCgroup &root, const std::list<std::shared_ptr<TContainer>> &subtree) {
+    TCgroupAffinityIndex index(subtree);
+    std::list<TCgroup> cgroups;
+    std::map<std::string, TBitMap> cpusets;
+
+    auto error = root.ChildsAll(cgroups, true);
+    if (error)
+        return error;
+    cgroups.push_front(root);
+
+    // Step 1: widen to union of current and target affinity
+    error = WidenSubtreeCpus(cgroups, index, cpusets);
+    if (error)
+        return error;
+
+    // Step 2: narrow to target affinity
+    error = NarrowSubtreeCpus(cgroups, index, cpusets);
+    if (error)
+        return error;
     return OK;
 }
 
@@ -1869,8 +1938,8 @@ static TError RevertSubtreeCpus(std::list<std::shared_ptr<TContainer>> &subtree)
     return OK;
 }
 
-static TError CommitSubtreeCpus(std::list<std::shared_ptr<TContainer>> &subtree) {
-    auto error = ApplySubtreeCpus(subtree);
+static TError CommitSubtreeCpus(const TCgroup &root, std::list<std::shared_ptr<TContainer>> &subtree) {
+    auto error = ApplySubtreeCpus(root, subtree);
 
     if (error) {
         L_ERR("Failed to apply cpuset: {}", error);
@@ -1999,7 +2068,7 @@ TError TContainer::ApplyCpuSet() {
         ct->CpuAffinity = affinity;
     }
 
-    auto error = CommitSubtreeCpus(subtree);
+    auto error = CommitSubtreeCpus(GetCgroup(CpusetSubsystem), subtree);
     if (error)
         return error;
 

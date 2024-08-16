@@ -520,7 +520,7 @@ again:
 
     /* freezer must be first */
     for (auto hy: Hierarchies) {
-        std::vector<TCgroup> cgroups;
+        std::list<TCgroup> cgroups;
 
         error = hy->RootCgroup().ChildsAll(cgroups);
         if (error)

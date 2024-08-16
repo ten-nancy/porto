@@ -75,6 +75,9 @@ public:
     TCgroup(const TSubsystem *subsystem, const std::string &name) :
         Subsystem(subsystem), Name(name) { }
 
+    TCgroup(const TSubsystem *subsystem, std::string &&name) :
+        Subsystem(subsystem), Name(std::move(name)) { }
+
     bool Secondary() const {
         return !Subsystem || Subsystem->Hierarchy != Subsystem;
     }
@@ -96,7 +99,7 @@ public:
     }
 
     TCgroup Child(const std::string& name) const;
-    TError ChildsAll(std::vector<TCgroup> &cgroups, bool all = false) const;
+    TError ChildsAll(std::list<TCgroup> &cgroups, bool all = false) const;
     bool IsChildOf(const TCgroup &parent) const;
 
     TPath Path() const;
@@ -341,17 +344,17 @@ public:
 
 class TCpusetSubsystem : public TSubsystem {
 private:
-    TError GetCpus(TCgroup &cg, std::string &cpus) const {
+    TError GetCpus(const TCgroup &cg, std::string &cpus) const {
         return cg.Get("cpuset.cpus", cpus);
     }
-    TError SetCpus(TCgroup &cg, const std::string &cpus) const;
-    TError SetMems(TCgroup &cg, const std::string &mems) const;
+    TError SetCpus(const TCgroup &cg, const std::string &cpus) const;
+    TError SetMems(const TCgroup &cg, const std::string &mems) const;
 public:
     TCpusetSubsystem() : TSubsystem(CGROUP_CPUSET, "cpuset") {}
     bool IsOptional() override { return true; }
     TError InitializeCgroup(TCgroup &cg) override;
 
-    TError GetCpus(TCgroup &cg, TBitMap &cpus) const {
+    TError GetCpus(const TCgroup &cg, TBitMap &cpus) const {
         std::string s;
         auto error = GetCpus(cg, s);
         if (error)
@@ -359,7 +362,7 @@ public:
         return cpus.Parse(s);
     }
 
-    TError SetCpus(TCgroup &cg, const TBitMap &cpus) const {
+    TError SetCpus(const TCgroup &cg, const TBitMap &cpus) const {
         return SetCpus(cg, cpus.Format());
     }
 };

@@ -383,19 +383,18 @@ public:
 
 class TPathWalk {
 private:
-    TPathWalk(const TPathWalk&) = delete;
-    TPathWalk& operator=(const TPathWalk&) = delete;
-
-public:
     FTS *Fts = nullptr;
     FTSENT *Ent = nullptr;
-    TPath Path;
-    struct stat *Stat;
-    bool Directory = false;
-    bool Postorder = false;
 
+    TPathWalk(const TPathWalk&) = delete;
+    TPathWalk& operator=(const TPathWalk&) = delete;
     static int CompareNames(const FTSENT **a, const FTSENT **b);
     static int CompareInodes(const FTSENT **a, const FTSENT **b);
+public:
+    bool Postorder = false;
+    bool Directory = false;
+    TPath Path;
+    struct stat *Stat;
 
     TPathWalk() {}
     ~TPathWalk() { Close(); }
