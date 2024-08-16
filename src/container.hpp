@@ -119,8 +119,8 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
     void SetAffinity(const TBitMap &affinity);
     TError ApplyCpuSet();
 
-    static void UpdateJailCpuStateLocked(const TBitMap& affinity, bool release = false);
-    static unsigned NextJailCpu(int node = -1);
+    void UpdateJailCpuStateLocked(const TBitMap& affinity, bool release = false);
+    TError NextJailCpu(TBitMap &affinity, int node = -1);
     TError JailCpus();
     void UnjailCpus(const TBitMap& affinity);
     void UnjailCpusLocked(const TBitMap& affinity);

@@ -3,6 +3,7 @@
 #include <memory>
 #include <csignal>
 #include <cstdlib>
+#include <climits>
 #include <algorithm>
 #include <condition_variable>
 
@@ -1627,35 +1628,29 @@ void TContainer::UpdateJailCpuStateLocked(const TBitMap& affinity, bool release)
     }
 }
 
-unsigned TContainer::NextJailCpu(int node) {
-    if (node >= 0) {
-        const auto& nodeThreads = NodeThreads[node];
-        int minJail = -1, minCpu = -1;
-        unsigned lastNodeCpu = HyperThreadingEnabled ? nodeThreads.Size() / 2 : nodeThreads.Size();
-        for (unsigned cpu = 0; cpu < lastNodeCpu; cpu++) {
-            if (!nodeThreads.Get(cpu))
-                continue;
+TError TContainer::NextJailCpu(TBitMap &affinity, int node) {
+    unsigned minUsage = UINT_MAX, minIndex;
+    for (unsigned i = 0; i < JailCpuPermutationUsage.size(); ++i) {
+        int cpu = JailCpuPermutation[i];
 
-            /* non-optimal but easy to understand */
-            std::vector<unsigned> threads({ cpu });
-            if (HyperThreadingEnabled)
-                threads.push_back(NeighborThreads[cpu]);
-            for (unsigned thread: threads) {
-                unsigned index = CpuToJailPermutationIndex[thread];
-                if (minJail < 0 || minJail > (int)JailCpuPermutationUsage[index]) {
-                    minJail = (int)JailCpuPermutationUsage[index];
-                    minCpu = index;
-                }
-            }
+        if (affinity.Get(cpu))
+            continue;
+
+        if (node >= 0 && ThreadsNode[cpu] != (unsigned)node)
+            continue;
+
+        if (JailCpuPermutationUsage[i] < minUsage) {
+            minIndex = i;
+            minUsage = JailCpuPermutationUsage[i];
         }
-
-        JailCpuPermutationUsage[minCpu]++;
-        return JailCpuPermutation[minCpu];
     }
 
-    auto min = std::min_element(JailCpuPermutationUsage.begin(), JailCpuPermutationUsage.end());
-    (*min)++;
-    return JailCpuPermutation[min - JailCpuPermutationUsage.begin()];
+    if (minUsage == UINT_MAX)
+        return TError("Failed allocate cpu to jail");
+
+    JailCpuPermutationUsage[minIndex]++;
+    affinity.Set(JailCpuPermutation[minIndex]);
+    return OK;
 }
 
 void TContainer::UnjailCpus(const TBitMap& affinity) {
@@ -1765,8 +1760,11 @@ TError TContainer::JailCpus() {
         affinity.Clear();
 
         /* main loop */
-        for (int i = 0; i < NewCpuJail; i++)
-            affinity.Set(NextJailCpu(node));
+        for (int i = 0; i < NewCpuJail; i++) {
+            error = NextJailCpu(affinity, node);
+            if (error)
+                return error;
+        }
 
         auto subtree = Subtree();
         subtree.reverse();
