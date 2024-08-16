@@ -2400,7 +2400,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         error = ApplyCpuLimit();
         if (error)
             return error;
-        if (MemorySubsystem.SupportHighLimit())
+        if (MemorySubsystem.SupportHighLimit() && (Controllers & CGROUP_MEMORY))
             SetPropDirty(EProperty::MEM_HIGH_LIMIT);
     }
 

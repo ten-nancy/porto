@@ -29,6 +29,12 @@ def test_memory_limit_high(conn):
     ct.SetProperty('memory_limit', '41943040')
     ExpectEq(int(ct.GetProperty('memory.high_limit_in_bytes')), 41418752)
 
+    ct1 = conn.Run("memory_high/cpu", cpu_limit='1c')
+    ExpectEq(int(ct.GetProperty('memory.high_limit_in_bytes')), 41418752)
+
+    ct1.SetProperty('cpu_limit', '2c')
+    ExpectEq(int(ct.GetProperty('memory.high_limit_in_bytes')), 41418752)
+
     ct.SetProperty('memory_limit', '0')
     ExpectEq(ct.GetProperty('memory.limit_in_bytes'), ct.GetProperty('memory.high_limit_in_bytes'))
 
