@@ -433,7 +433,13 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     Hostname = "";
     CapAmbient = NoCapabilities;
     CapAllowed = NoCapabilities;
-    CapLimit = NoCapabilities;
+    if (Parent) {
+        if (Level == 1)
+            CapLimit = DefaultCapabilities;
+        else
+            CapLimit = Parent->CapLimit;
+    } else
+        CapLimit = AllCapabilities;
     CapBound = NoCapabilities;
     CapExtra = NoCapabilities;
 
@@ -3121,82 +3127,62 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
 }
 
 void TContainer::SanitizeCapabilities() {
-    if (OwnerCred.IsRootUser()) {
-        if (HasProp(EProperty::CAPABILITIES))
-            CapBound = CapLimit;
-        else if (HostMode)
-            CapBound = AllCapabilities;
-        else
-            CapBound = HostCapBound;
-        CapAllowed = CapBound;
-    } else {
-        bool chroot = false;
-        bool pidns = false;
-        bool memcg = false;
-        bool netns = false;
-
-        if (HostMode)
-            CapBound = AllCapabilities;
-        else
-            /* FIXME: only virt_mode host should provide such wide set in future */
-            CapBound = HostCapBound;
-
-        for (auto ct = this; ct; ct = ct->Parent.get()) {
-            chroot |= ct->Root != "/";
-            pidns |= ct->Isolate;
-            memcg |= ct->MemLimit && ct->HasProp(EProperty::MEM_LIMIT);
-            netns |= ct->NetIsolate;
-
-            if (ct->HasProp(EProperty::CAPABILITIES))
-                CapBound.Permitted &= ct->CapLimit.Permitted;
-        }
-
-        TCapabilities remove;
-        if (!pidns)
-            remove.Permitted |= PidNsCapabilities.Permitted | SysBootCapability.Permitted;
-        if (!memcg)
-            remove.Permitted |= MemCgCapabilities.Permitted;
-        if (!netns)
-            remove.Permitted |= NetNsCapabilities.Permitted;
-
-        if (chroot) {
-            CapBound.Permitted &= ChrootCapBound.Permitted & ~remove.Permitted;
-
-            // Extra property capabilities
-            CapBound.Permitted |= (CapLimit.Permitted & CapExtra.Permitted);
-
-            // CAP_SYS_NICE
-            if (config().container().rt_priority())
-                CapBound.Permitted |= SysNiceCapability.Permitted;
-
-            CapAllowed = CapBound;
-
-            if (HasProp(EProperty::CAPABILITIES) &&
-                (CapLimit.Permitted & SysBootCapability.Permitted)) {
-                /* We have CAP_SYS_BOOT for everyone eariler.
-                   Let's enforce it disabled for non-host mode or
-                   privileged first level containers */
-
-                TaintFlags.SysBootForIsolated = true;
-                CapLimit.Permitted &= ~SysBootCapability.Permitted;
-            }
-        } else if (HostMode) {
-            CapAllowed.Permitted = CapBound.Permitted & ~remove.Permitted;
-        } else {
-            CapAllowed.Permitted = HostCapAllowed.Permitted &
-                                   CapBound.Permitted & ~remove.Permitted;
-        }
-
-        if (HasProp(EProperty::CAPABILITIES_AMBIENT) &&
-            (CapAmbient.Permitted & SysBootCapability.Permitted) ) {
-
-            TaintFlags.SysBootForIsolated = true;
-            CapAmbient.Permitted &= ~SysBootCapability.Permitted;
-        }
+    if (HostMode) {
+        CapBound = AllCapabilities;
+        CapLimit = AllCapabilities;
+        CapAllowed = AllCapabilities;
+        return;
     }
 
-    if (!HasProp(EProperty::CAPABILITIES))
-        CapLimit.Permitted = CapBound.Permitted;
+    bool chroot = false;
+    bool pidns = false;
+    bool memcg = false;
+    bool netns = false;
+    bool found = false;
+
+    CapBound = CapLimit;
+
+    for (auto ct = this; ct; ct = ct->Parent.get()) {
+        chroot |= ct->Root != "/";
+        pidns |= ct->Isolate;
+        memcg |= ct->MemLimit && ct->HasProp(EProperty::MEM_LIMIT);
+        netns |= ct->NetIsolate;
+
+        if (!found && !HasProp(EProperty::CAPABILITIES) && ct->HasProp(EProperty::CAPABILITIES)) {
+            CapLimit = ct->CapLimit;
+            CapBound = CapLimit;
+            found = true;
+        }
+
+        if (ct->HasProp(EProperty::CAPABILITIES))
+            CapBound &= ct->CapLimit;
+    }
+
+    TCapabilities remove;
+    if (!pidns)
+        remove |= PidNsCapabilities;
+    if (!memcg)
+        remove |= MemCgCapabilities;
+    if (!netns)
+        remove |= NetNsCapabilities;
+
+    if (HasProp(EProperty::CAPABILITIES))
+        remove &= ~CapLimit;
+    if (HasProp(EProperty::CAPABILITIES_AMBIENT))
+        remove &= ~CapAmbient;
+
+    CapBound &= ~remove;
+
+    if (chroot) {
+        // Extra property capabilities (old hack)
+        CapBound |= (CapLimit & CapExtra);
+
+        // CAP_SYS_NICE (old hack)
+        if (config().container().rt_priority())
+            CapBound |= SysNiceCapability;
+    }
+
+    CapAllowed = CapBound;
 }
 
 void TContainer::SanitizeCapabilitiesAll() {
@@ -3463,15 +3449,15 @@ TError TContainer::PrepareStart() {
         UnlockState();
     }
 
-    if (CapLimit.Permitted & ~CapBound.Permitted) {
-        TCapabilities cap = CapLimit;
-        cap.Permitted &= ~CapBound.Permitted;
+    if (CapBound & ~CapLimit) {
+        TCapabilities cap = CapBound;
+        cap &= ~CapLimit;
         return TError(EError::Permission, "Capabilities out of bounds: " + cap.Format());
     }
 
-    if (CapAmbient.Permitted & ~CapAllowed.Permitted) {
+    if (CapAmbient & ~CapAllowed) {
         TCapabilities cap = CapAmbient;
-        cap.Permitted &= ~CapAllowed.Permitted;
+        cap &= ~CapAllowed;
         return TError(EError::Permission, "Ambient capabilities out of bounds: " + cap.Format());
     }
 
@@ -5038,9 +5024,6 @@ TTuple TContainer::Taint() {
 
     if (TaintFlags.BindWithSuid)
         taint.push_back("Container with bind mount source which allows suid in host");
-
-    if (TaintFlags.SysBootForIsolated)
-        taint.push_back("Isolated container got SYS_BOOT capability as for legacy bounding set, silently dropped now");
 
     return taint;
 }

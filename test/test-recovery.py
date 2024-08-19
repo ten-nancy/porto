@@ -40,9 +40,8 @@ def ValidateDefaultProp(r):
             "hostname" : "",
             "devices" : "",
             "capabilities" : "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;" +
-            "KILL;SETGID;SETUID;SETPCAP;LINUX_IMMUTABLE;NET_BIND_SERVICE;" +
-            "NET_ADMIN;NET_RAW;IPC_LOCK;SYS_CHROOT;SYS_PTRACE;SYS_ADMIN;SYS_BOOT;" +
-            "SYS_NICE;SYS_RESOURCE;MKNOD;AUDIT_WRITE;SETFCAP{}".format(";BPF" if GetKernelVersion() >= (5, 15) else ""),
+            "KILL;SETGID;SETUID;SETPCAP;NET_BIND_SERVICE;NET_ADMIN;NET_RAW;"
+            "IPC_LOCK;SYS_CHROOT;SYS_PTRACE;MKNOD;AUDIT_WRITE;SETFCAP",
             "isolate" : True,
             "enable_porto" : True,
             "private" : "",

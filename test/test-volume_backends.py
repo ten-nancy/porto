@@ -96,6 +96,7 @@ def check_destroy_linked_non_root(c, path, **args):
     assert len(c.ListVolumes()) == vol_num + 1
 
     r = c.Create("test")
+    r.SetProperty("capabilities[SYS_RESOURCE]", "true")
     v.Link("test")
     v.Unlink("/")
     r.SetProperty("command", "echo 123")
@@ -110,6 +111,7 @@ def check_mounted(c, path, **args):
     v = c.CreateVolume(path, **args)
     open(v.path + "/file.txt", "w").write("aabb")
     r = c.Create("test")
+    r.SetProperty("capabilities[SYS_RESOURCE]", "true")
     v.Link("test")
     v.Unlink("/")
     r.SetProperty("command", "bash -c \"cat " + v.path + "/file.txt; echo -n 3210 > " +\
@@ -131,6 +133,7 @@ def check_space_limit(c, path, limits, cleanup=True, **args):
     args["space_limit"] = limits[0]
     v = c.CreateVolume(path, **args)
     r = c.Create("test")
+    r.SetProperty("capabilities[SYS_RESOURCE]", "true")
     v.Link("test")
     v.Unlink("/")
     r.SetProperty("command", "dd if=/dev/zero of=" + v.path + "/file.zeroes " + \
@@ -160,6 +163,7 @@ def check_inode_limit(c, path, cleanup=True, **args):
         args["inode_limit"] = "16"
     v = c.CreateVolume(path, **args)
     r = c.Create("test")
+    r.SetProperty("capabilities[SYS_RESOURCE]", "true")
     v.Link("test")
     v.Unlink("/")
     r.SetProperty("command", "bash -c \"for i in \$(seq 1 24); do touch " + v.path +\
@@ -186,6 +190,7 @@ def check_layers(c, path, cleanup=True, **args):
     args["layers"] = ["ubuntu-precise", "test-volumes"]
     v = c.CreateVolume(path, **args)
     r = c.Create("test")
+    r.SetProperty("capabilities[SYS_RESOURCE]", "true")
     v.Link("test")
     v.Unlink("/")
     r.SetProperty("root", v.path)

@@ -47,37 +47,36 @@ def CheckRt(r):
 
 #FIXME: remove it in the future, use capabilities from snapshot
 def CheckCaps(r):
-    chroot = r.GetProperty("root_path") != '/'
+    if not PREV_PORTOD:
+        caps = "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;SYS_CHROOT;SYS_PTRACE;MKNOD;AUDIT_WRITE;SETFCAP"
 
-    app_caps = "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;"
-    app_caps += "LINUX_IMMUTABLE;NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;"
-    app_caps += "SYS_CHROOT;SYS_PTRACE;SYS_ADMIN;"
-
-    # Host-chroot containers still have host bounding set
-    app_caps += "" if chroot else "SYS_BOOT;"
-    app_caps += "SYS_NICE;SYS_RESOURCE;MKNOD;AUDIT_WRITE;SETFCAP"
-    if GetKernelVersion() >= (5, 15) and not PREV_PORTOD and not chroot:
-        app_caps += ";BPF"
-
-    os_caps = "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;"
-    os_caps += "NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;SYS_CHROOT;SYS_PTRACE;"
-
-    # Host-chroot containers still have host bounding set
-    os_caps += "" if chroot else "SYS_BOOT;"
-    if RT_PRIORITY:
-        os_caps += "SYS_NICE;"
-    os_caps += "MKNOD;AUDIT_WRITE;SETFCAP"
-    if GetKernelVersion() >= (5, 15) and not PREV_PORTOD and not chroot:
-        os_caps += ";BPF"
-
-    legacy_os_caps = "AUDIT_WRITE; CHOWN; DAC_OVERRIDE; FOWNER; FSETID; IPC_LOCK; KILL; MKNOD; NET_ADMIN; NET_BIND_SERVICE; NET_RAW; SETGID; SETUID; SYS_CHROOT; SYS_PTRACE; SYS_RESOURCE"
-
-    if r.GetProperty("virt_mode") == "app":
-        caps = app_caps
-    elif r.GetProperty("virt_mode") == "os":
-        caps = os_caps
     else:
-        raise AssertionError("Found unexpected virt_mode value")
+        chroot = r.GetProperty("root_path") != '/'
+
+        app_caps = "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;"
+        app_caps += "LINUX_IMMUTABLE;NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;"
+        app_caps += "SYS_CHROOT;SYS_PTRACE;SYS_ADMIN;"
+
+        # Host-chroot containers still have host bounding set
+        app_caps += "SYS_BOOT;" if not chroot else ""
+        app_caps += "SYS_NICE;SYS_RESOURCE;MKNOD;AUDIT_WRITE;SETFCAP"
+
+        os_caps = "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;"
+        os_caps += "NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;SYS_CHROOT;SYS_PTRACE;"
+
+        # Host-chroot containers still have host bounding set
+        os_caps += "SYS_BOOT;" if not chroot else ""
+        os_caps += "SYS_NICE;" if RT_PRIORITY else ""
+        os_caps += "MKNOD;AUDIT_WRITE;SETFCAP"
+
+        legacy_os_caps = "AUDIT_WRITE; CHOWN; DAC_OVERRIDE; FOWNER; FSETID; IPC_LOCK; KILL; MKNOD; NET_ADMIN; NET_BIND_SERVICE; NET_RAW; SETGID; SETUID; SYS_CHROOT; SYS_PTRACE; SYS_RESOURCE"
+
+        if r.GetProperty("virt_mode") == "app":
+            caps = app_caps
+        elif r.GetProperty("virt_mode") == "os":
+            caps = os_caps
+        else:
+            raise AssertionError("Found unexpected virt_mode value")
 
     ExpectProp(r, "capabilities", caps)
 

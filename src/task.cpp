@@ -448,7 +448,7 @@ TError TTaskEnv::ConfigureChild() {
     if (error)
         return error;
 
-    if (CT->CapAmbient.Permitted)
+    if (CT->CapAmbient)
         L("Ambient capabilities: {}", CT->CapAmbient);
 
     error = CT->CapAmbient.ApplyAmbient();

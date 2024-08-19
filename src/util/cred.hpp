@@ -106,8 +106,62 @@ public:
 
 void InitCapabilities();
 
-struct TCapabilities {
+class TCapabilities {
     uint64_t Permitted = 0;
+
+public:
+    TCapabilities() = default;
+    TCapabilities(uint64_t i): Permitted(i) {};
+    TCapabilities(const TCapabilities &c): Permitted(c.Permitted) {};
+    TCapabilities(TCapabilities &&c): Permitted(c.Permitted) {};
+
+    inline operator bool() noexcept {
+        return Permitted != 0;
+    }
+    inline operator uint64_t() noexcept {
+        return Permitted;
+    }
+    // format tries converting to int
+    inline operator unsigned long long() noexcept {
+        return Permitted;
+    }
+
+    inline bool operator==(const TCapabilities &c) noexcept {
+        return Permitted == c.Permitted;
+    }
+    inline bool operator!=(const TCapabilities &c) noexcept {
+        return Permitted != c.Permitted;
+    }
+
+    inline TCapabilities& operator=(const TCapabilities &c) = default;
+    inline TCapabilities& operator=(TCapabilities &&c) = default;
+    inline TCapabilities& operator=(uint64_t i) noexcept {
+        Permitted = i;
+        return *this;
+    }
+
+    inline TCapabilities& operator|=(uint64_t i) noexcept {
+        Permitted |= i;
+        return *this;
+    }
+    inline TCapabilities& operator&=(uint64_t i) noexcept {
+        Permitted &= i;
+        return *this;
+    }
+
+    inline TCapabilities operator|(uint64_t i) noexcept {
+        return TCapabilities(Permitted | i);
+    }
+    inline TCapabilities operator&(uint64_t i) noexcept {
+        return TCapabilities(Permitted & i);
+    }
+    inline TCapabilities operator~() noexcept {
+        return TCapabilities(~Permitted);
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const TCapabilities &c) {
+        return os << c.Format();
+    }
 
     TError Change(const std::string &name, bool set);
     TError Parse(const std::string &str);
@@ -118,9 +172,7 @@ struct TCapabilities {
     TError ApplyEffective() const;
     TError Get(pid_t pid, int type);
     void Dump();
-    friend std::ostream& operator<<(std::ostream& os, const TCapabilities &c) {
-        return os << c.Format();
-    }
+
     bool HasSetUidGid() const;
 
     TError Load(const rpc::TCapabilities &cap);
@@ -128,17 +180,13 @@ struct TCapabilities {
 };
 
 extern bool HasAmbientCapabilities;
-extern TCapabilities SysAdminCapability;
-extern TCapabilities SysNiceCapability;
-extern TCapabilities BpfCapability;
+extern TCapabilities AllCapabilities;
+extern TCapabilities DefaultCapabilities;
 extern TCapabilities NoCapabilities;
 extern TCapabilities PortoInitCapabilities;
 extern TCapabilities HelperCapabilities;
+extern TCapabilities PrivilegedHelperCapabilities;
 extern TCapabilities MemCgCapabilities;
 extern TCapabilities PidNsCapabilities;
 extern TCapabilities NetNsCapabilities;
-extern TCapabilities HostCapAllowed;
-extern TCapabilities ChrootCapBound;
-extern TCapabilities HostCapBound;
-extern TCapabilities AllCapabilities;
-extern TCapabilities SysBootCapability;
+extern TCapabilities SysNiceCapability;

@@ -573,23 +573,16 @@ bool TCapabilities::HasSetUidGid() const {
     return (Permitted & BIT(CAP_SETUID)) && (Permitted & BIT(CAP_SETGID));
 }
 
-TCapabilities SysAdminCapability;
-TCapabilities SysNiceCapability;
-TCapabilities BpfCapability;
-
+TCapabilities AllCapabilities;
+TCapabilities DefaultCapabilities;
 TCapabilities NoCapabilities;
 TCapabilities PortoInitCapabilities;
 TCapabilities HelperCapabilities;
+TCapabilities PrivilegedHelperCapabilities;
 TCapabilities MemCgCapabilities;
 TCapabilities PidNsCapabilities;
 TCapabilities NetNsCapabilities;
-TCapabilities HostCapAllowed;
-TCapabilities ChrootCapBound;
-TCapabilities HostCapBound;
-TCapabilities AllCapabilities;
-
-/* Previously we have caps below asserted */
-TCapabilities SysBootCapability;
+TCapabilities SysNiceCapability;
 
 void InitCapabilities() {
     if (TPath("/proc/sys/kernel/cap_last_cap").ReadInt(LastCapability)) {
@@ -600,43 +593,35 @@ void InitCapabilities() {
             LastCapability = CAP_AUDIT_READ;
     }
 
-    SysAdminCapability.Permitted = BIT(CAP_SYS_ADMIN);
-    SysNiceCapability.Permitted = BIT(CAP_SYS_NICE);
-    BpfCapability.Permitted = BIT(CAP_BPF);
+    // TODO(kndrvt): remove it later everywhere
+    SysNiceCapability = BIT(CAP_SYS_NICE);
 
     HasAmbientCapabilities = prctl(PR_CAP_AMBIENT,
                                    PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) == 0;
-
-    NoCapabilities.Permitted = 0;
-
-    PortoInitCapabilities.Permitted = BIT(CAP_KILL);
-
-    AllCapabilities.Permitted = BIT(LastCapability + 1) - 1;
+    NoCapabilities = 0;
+    PortoInitCapabilities = BIT(CAP_KILL);
+    AllCapabilities = BIT(LastCapability + 1) - 1;
 
     /* requires memory limit */
-    MemCgCapabilities.Permitted =
+    MemCgCapabilities =
         BIT(CAP_IPC_LOCK);
 
     /* requires pid-namespace */
-    PidNsCapabilities.Permitted =
+    PidNsCapabilities =
         BIT(CAP_KILL) |
         BIT(CAP_SYS_PTRACE);
 
     /* requires net-namespace */
-    NetNsCapabilities.Permitted =
+    NetNsCapabilities =
         BIT(CAP_NET_ADMIN);
 
-    /* possible ambient capabilities in host */
-    HostCapAllowed.Permitted =
-        MemCgCapabilities.Permitted |
-        PidNsCapabilities.Permitted |
-        NetNsCapabilities.Permitted |
-        BIT(CAP_NET_BIND_SERVICE) | /* FIXME should require net-namespace */
-        BIT(CAP_NET_RAW);
-
-    /* bounding set for chroot */
-    ChrootCapBound.Permitted =
-        HostCapAllowed.Permitted |
+    /* default set for CapLimit (previously ChrootCapBound) */
+    DefaultCapabilities =
+        MemCgCapabilities |
+        PidNsCapabilities |
+        NetNsCapabilities |
+        BIT(CAP_NET_BIND_SERVICE) |
+        BIT(CAP_NET_RAW) |
         BIT(CAP_SETPCAP) |
         BIT(CAP_SETFCAP) |
         BIT(CAP_CHOWN) |
@@ -649,21 +634,9 @@ void InitCapabilities() {
         BIT(CAP_MKNOD) |
         BIT(CAP_AUDIT_WRITE);
 
-    /* bounding set for host */
-    HostCapBound.Permitted =
-        ChrootCapBound.Permitted |
-        SysAdminCapability.Permitted |
-        SysNiceCapability.Permitted |
-        BIT(CAP_LINUX_IMMUTABLE) |
-        BIT(CAP_SYS_BOOT) |
-        BIT(CAP_SYS_RESOURCE);
-
-    if (CompareVersions(config().linux_version(), "5.15") >= 0)
-        HostCapBound.Permitted |= BpfCapability.Permitted;
-
-    HelperCapabilities.Permitted = HostCapBound.Permitted;
-    HelperCapabilities.Permitted &= ~BIT(CAP_SYS_RESOURCE);
-    SysBootCapability.Permitted = BIT(CAP_SYS_BOOT);
+    /* helper sets */
+    HelperCapabilities = DefaultCapabilities;
+    PrivilegedHelperCapabilities = HelperCapabilities | BIT(CAP_SYS_RESOURCE);
 }
 
 bool TFile::Access(const struct stat &st, const TCred &cred, enum AccessMode mode) {

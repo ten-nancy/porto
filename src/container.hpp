@@ -207,6 +207,7 @@ public:
     TMultiTuple IpLimit;
     std::string IpPolicy;
 
+    /* CapLimit >= CapBound >= CapAllowed >= CapAmbient */
     TCapabilities CapAmbient;   /* get at start */
     TCapabilities CapAllowed;   /* can be set as ambient */
     TCapabilities CapLimit;     /* upper limit */
@@ -313,7 +314,6 @@ public:
         bool TaintCounted;
         bool RootOnLoop;
         bool BindWithSuid;
-        bool SysBootForIsolated;
     } TaintFlags;
 
     bool RecvOomEvents();

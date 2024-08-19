@@ -8,7 +8,7 @@
 
 #define noinline __attribute__((noinline))
 
-#define BIT(nr) (1ULL << (nr))
+#define BIT(nr) ((uint64_t)1ULL << (nr))
 
 #ifndef __has_feature
 # define __has_feature(__x) 0

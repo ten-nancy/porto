@@ -154,20 +154,19 @@ public:
             "Limit capabilities in container: SYS_ADMIN;NET_ADMIN;... see man capabilities") {}
 
     TError Reset() override {
-        CT->CapLimit.Permitted &= ~CT->CapExtra.Permitted;
+        CT->CapLimit &= ~CT->CapExtra;
         return CommitLimit(CT->CapLimit);
     }
 
     TError CommitLimit(TCapabilities &limit) {
-        if (limit.Permitted & ~AllCapabilities.Permitted) {
-            limit.Permitted &= ~AllCapabilities.Permitted;
+        if (limit & ~AllCapabilities) {
+            limit &= ~AllCapabilities;
             return TError(EError::InvalidValue,
                           "Unsupported capability: " + limit.Format());
         }
 
         CT->CapLimit = limit;
         CT->SetProp(EProperty::CAPABILITIES);
-        CT->TaintFlags.SysBootForIsolated = false;
         CT->SanitizeCapabilitiesAll();
         return OK;
     }
@@ -190,8 +189,8 @@ public:
         TError error = caps.Parse(index);
         if (error)
             return error;
-        value = BoolToString((CT->CapLimit.Permitted &
-                              caps.Permitted) == caps.Permitted);
+        value = BoolToString((CT->CapLimit &
+                              caps) == caps);
         return OK;
     }
 
@@ -205,9 +204,9 @@ public:
         if (error)
             return error;
         if (val)
-            caps.Permitted = CT->CapLimit.Permitted | caps.Permitted;
+            caps = CT->CapLimit | caps;
         else
-            caps.Permitted = CT->CapLimit.Permitted & ~caps.Permitted;
+            caps = CT->CapLimit & ~caps;
         return CommitLimit(caps);
     }
 
@@ -239,8 +238,8 @@ public:
     }
 
     TError CommitAmbient(TCapabilities &ambient) {
-        if (ambient.Permitted & ~AllCapabilities.Permitted) {
-            ambient.Permitted &= ~AllCapabilities.Permitted;
+        if (ambient & ~AllCapabilities) {
+            ambient &= ~AllCapabilities;
             return TError(EError::InvalidValue,
                           "Unsupported capability: " + ambient.Format());
         }
@@ -269,8 +268,8 @@ public:
         TError error = caps.Parse(index);
         if (error)
             return error;
-        value = BoolToString((CT->CapAmbient.Permitted &
-                              caps.Permitted) == caps.Permitted);
+        value = BoolToString((CT->CapAmbient &
+                              caps) == caps);
         return OK;
     }
 
@@ -284,9 +283,9 @@ public:
         if (error)
             return error;
         if (val)
-            caps.Permitted = CT->CapAmbient.Permitted | caps.Permitted;
+            caps = CT->CapAmbient | caps;
         else
-            caps.Permitted = CT->CapAmbient.Permitted & ~caps.Permitted;
+            caps = CT->CapAmbient & ~caps;
         return CommitAmbient(caps);
     }
 
@@ -325,8 +324,8 @@ public:
         TError error = caps.Parse(index);
         if (error)
             return error;
-        value = BoolToString((CT->CapBound.Permitted &
-                              caps.Permitted) == caps.Permitted);
+        value = BoolToString((CT->CapBound &
+                              caps) == caps);
         return OK;
     }
 
@@ -357,8 +356,8 @@ public:
         TError error = caps.Parse(index);
         if (error)
             return error;
-        value = BoolToString((CT->CapAllowed.Permitted &
-                              caps.Permitted) == caps.Permitted);
+        value = BoolToString((CT->CapAllowed &
+                              caps) == caps);
         return OK;
     }
 

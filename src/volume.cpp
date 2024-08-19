@@ -829,7 +829,7 @@ public:
             return TError::System("ioctl(LOOP_SET_CAPACITY)");
 
         /* needs CAP_SYS_RESOURCE */
-        return RunCommand({"resize2fs", path, size}, TFile(), TFile(), TFile(), HostCapBound);
+        return RunCommand({"resize2fs", path, size}, TFile(), TFile(), TFile(), PrivilegedHelperCapabilities);
     }
 
     TError Build() override {
@@ -2010,7 +2010,7 @@ public:
         /* needs CAP_SYS_RESOURCE */
         return RunCommand({"lvm", "lvresize", "--force", "--resizefs",
                            "--size", std::to_string(space_limit) + "B",
-                           Device}, TFile(), TFile(), TFile(), HostCapBound);
+                           Device}, TFile(), TFile(), TFile(), PrivilegedHelperCapabilities);
     }
 
     std::string ClaimPlace() override {

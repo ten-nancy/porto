@@ -3,13 +3,15 @@ from test_common import *
 
 c = porto.Connection(timeout=30)
 
-DefaultCapBnd = "0000003fffffffff"
-PortoHostCapBnd = "00000000a9ec77fb"
+AllCapSet           = "0000003fffffffff"
+DefaultCapSet       = "00000000a80c75fb" # DefaultCapabilities
+HardlyClearedCapSet = "00000000a80c25fb" # DefaultCapabilities & ~(CAP_NET_ADMIN | CAP_IPC_LOCK)
+FullyClearedCapSet  = "00000000a80425db" # DefaultCapabilities & ~(CAP_NET_ADMIN | CAP_IPC_LOCK | CAP_KILL | CAP_SYS_PTRACE)
+EmptyCapSet         = "0000000000000000"
 if GetKernelVersion() >= (5, 15):
-    DefaultCapBnd =  "000001ffffffffff"
-    PortoHostCapBnd = "00000080a9ec77fb"
+    AllCapSet       =  "000001ffffffffff"
 
-ExpectEq(ProcStatus('self', "CapBnd"), DefaultCapBnd)
+ExpectEq(ProcStatus('self', "CapBnd"), AllCapSet)
 
 # root user
 
@@ -17,11 +19,11 @@ a = c.Run("a", weak=True)
 pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)
-ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapPrm"), PortoHostCapBnd)
-ExpectEq(ProcStatus(pid, "CapEff"), PortoHostCapBnd)
-ExpectEq(ProcStatus(pid, "CapBnd"), PortoHostCapBnd)
-ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
+ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), HardlyClearedCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), HardlyClearedCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), HardlyClearedCapSet)
+ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()
 
@@ -29,28 +31,28 @@ a = c.Run("a", virt_mode='host', command="sleep 10000", weak=True)
 pid = a['root_pid']
 
 ExpectEq(ProcStatus(pid, "NSpid"), pid)
-ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapPrm"), DefaultCapBnd)
-ExpectEq(ProcStatus(pid, "CapEff"), DefaultCapBnd)
-ExpectEq(ProcStatus(pid, "CapBnd"), DefaultCapBnd)
-ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
+ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), AllCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), AllCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), AllCapSet)
+ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()
 
 # non root user
 AsAlice()
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 a = c.Run("a", weak=True)
 pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)
-ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapPrm"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapEff"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapBnd"), PortoHostCapBnd)
-ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
+ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), HardlyClearedCapSet)
+ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()
 
@@ -58,11 +60,11 @@ a = c.Run("a", virt_mode='host', command="sleep 10000", weak=True)
 pid = a['root_pid']
 
 ExpectEq(ProcStatus(pid, "NSpid"), pid)
-ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapPrm"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapEff"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapBnd"), DefaultCapBnd)
-ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
+ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), AllCapSet)
+ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()
 
@@ -70,11 +72,11 @@ a = c.Run("a", isolate='false', root_volume={"layers": ["ubuntu-precise"]}, weak
 pid = a['root_pid']
 
 ExpectEq(ProcStatus(pid, "NSpid"), pid)
-ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapPrm"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapEff"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapBnd"), "00000000a80425db")
-ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
+ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), FullyClearedCapSet)
+ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()
 
@@ -82,11 +84,11 @@ a = c.Run("a", net='none', memory_limit='1G', root_volume={"layers": ["ubuntu-pr
 pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)
-ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapPrm"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapEff"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapBnd"), "00000000a80c75fb")
-ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
+ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), DefaultCapSet)
+ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()
 
