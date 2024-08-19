@@ -811,8 +811,14 @@ protected:
         }
         client.FinishRequest();
 
-        for (auto child : ChildMap[node->Name])
-            Push(std::move(child));
+
+        // If k is not presented in map than map[k] is write operation.
+        // Use find here to avoid write to map from multiple threads.
+        auto it = ChildMap.find(node->Name);
+        if (it != ChildMap.end()) {
+            for (auto child : it->second)
+                Push(std::move(child));
+        }
         if (!--WorkSize)
             Shutdown();
 

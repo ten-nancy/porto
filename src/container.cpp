@@ -1846,7 +1846,6 @@ public:
         if (name != it->first && !StringStartsWith(cg.Name, it->first))
             return false;
 
-        L("closest ancestor for {} is {}", cg.Name, it->first);
         affinity = it->second;
         return true;
     }
