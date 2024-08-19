@@ -1,3 +1,10 @@
+porto (5.3.39) unstable; urgency=low
+  [ ovov ]
+      server: remove implicit write to TRestoreWorker.ChildMap
+  last commit: 3bef286935acfb9188bbad75e2dd42fd909b82f3
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 19 Aug 2024 10:07:34 -0000
+
 porto (5.3.38) unstable; urgency=low
   [ ovov ]
       container: do not apply memory.high to containers without memcg
