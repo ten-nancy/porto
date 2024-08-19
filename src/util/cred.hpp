@@ -130,6 +130,7 @@ struct TCapabilities {
 extern bool HasAmbientCapabilities;
 extern TCapabilities SysAdminCapability;
 extern TCapabilities SysNiceCapability;
+extern TCapabilities BpfCapability;
 extern TCapabilities NoCapabilities;
 extern TCapabilities PortoInitCapabilities;
 extern TCapabilities HelperCapabilities;

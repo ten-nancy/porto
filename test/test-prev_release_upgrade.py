@@ -7,6 +7,7 @@ from test_common import *
 AsRoot()
 
 PREV_VERSION = "5.0.11"
+PREV_PORTOD = False
 
 TMPDIR = "/tmp/test-release-upgrade"
 prev_portod = TMPDIR + "/old/usr/sbin/portod"
@@ -46,24 +47,28 @@ def CheckRt(r):
 
 #FIXME: remove it in the future, use capabilities from snapshot
 def CheckCaps(r):
-    root_path = r.GetProperty("root_path")
+    chroot = r.GetProperty("root_path") != '/'
 
     app_caps = "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;"
     app_caps += "LINUX_IMMUTABLE;NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;"
     app_caps += "SYS_CHROOT;SYS_PTRACE;SYS_ADMIN;"
 
     # Host-chroot containers still have host bounding set
-    app_caps += "" if root_path != '/' else "SYS_BOOT;"
+    app_caps += "" if chroot else "SYS_BOOT;"
     app_caps += "SYS_NICE;SYS_RESOURCE;MKNOD;AUDIT_WRITE;SETFCAP"
+    if GetKernelVersion() >= (5, 15) and not PREV_PORTOD and not chroot:
+        app_caps += ";BPF"
 
     os_caps = "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;"
     os_caps += "NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;SYS_CHROOT;SYS_PTRACE;"
 
     # Host-chroot containers still have host bounding set
-    os_caps += "" if root_path != '/' else "SYS_BOOT;"
+    os_caps += "" if chroot else "SYS_BOOT;"
     if RT_PRIORITY:
         os_caps += "SYS_NICE;"
     os_caps += "MKNOD;AUDIT_WRITE;SETFCAP"
+    if GetKernelVersion() >= (5, 15) and not PREV_PORTOD and not chroot:
+        os_caps += ";BPF"
 
     legacy_os_caps = "AUDIT_WRITE; CHOWN; DAC_OVERRIDE; FOWNER; FSETID; IPC_LOCK; KILL; MKNOD; NET_ADMIN; NET_BIND_SERVICE; NET_RAW; SETGID; SETUID; SYS_CHROOT; SYS_PTRACE; SYS_RESOURCE"
 
@@ -183,6 +188,7 @@ os.chdir(cwd)
 print " - start previous version"
 
 subprocess.check_call([prev_portod, "start"])
+PREV_PORTOD = True
 
 ver, rev = c.Version()
 ExpectEq(ver, PREV_VERSION)
@@ -319,6 +325,7 @@ try:
     print " - upgrade"
 
     subprocess.check_call([portod, "upgrade"])
+    PREV_PORTOD = False
 
 #That means we've upgraded successfully
 
@@ -391,6 +398,7 @@ c.disconnect()
 print " - downgrade"
 
 subprocess.check_call([prev_portod, "upgrade"])
+PREV_PORTOD = True
 
 AsAlice()
 
@@ -439,9 +447,10 @@ assert legacy_rt_settings == DumpLegacyRt(r)
 
 AsRoot()
 
-print " - restart to new vetsion"
+print " - restart to new version"
 
 RestartPortod()
+PREV_PORTOD = False
 
 ver, rev = c.Version()
 ExpectNe(ver, PREV_VERSION)

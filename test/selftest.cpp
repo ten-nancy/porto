@@ -200,7 +200,11 @@ static void ShouldHaveValidProperties(Porto::Connection &api, const string &name
     ExpectApiSuccess(api.GetProperty(name, "devices", v));
     ExpectEq(v, "");
     ExpectApiSuccess(api.GetProperty(name, "capabilities", v));
-    ExpectEq(v, "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;LINUX_IMMUTABLE;NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;SYS_CHROOT;SYS_PTRACE;SYS_ADMIN;SYS_BOOT;SYS_NICE;SYS_RESOURCE;MKNOD;AUDIT_WRITE;SETFCAP");
+
+    std::string caps = "CHOWN;DAC_OVERRIDE;FOWNER;FSETID;KILL;SETGID;SETUID;SETPCAP;LINUX_IMMUTABLE;NET_BIND_SERVICE;NET_ADMIN;NET_RAW;IPC_LOCK;SYS_CHROOT;SYS_PTRACE;SYS_ADMIN;SYS_BOOT;SYS_NICE;SYS_RESOURCE;MKNOD;AUDIT_WRITE;SETFCAP";
+    if (CompareVersions(config().linux_version(), "5.15") >= 0)
+        caps += ";BPF";
+    ExpectEq(v, caps);
     if (KernelSupports(KernelFeature::RECHARGE_ON_PGFAULT)) {
         ExpectApiSuccess(api.GetProperty(name, "recharge_on_pgfault", v));
         ExpectEq(v, "false");
@@ -1995,6 +1999,8 @@ static void TestCapabilitiesProperty(Porto::Connection &api) {
     //uint64_t allCap = (1ULL << (lastCap + 1)) - 1;
 
     uint64_t defaultCap = 0x00000000a9ec77fb;
+    if (CompareVersions(config().linux_version(), "5.15") >= 0)
+        defaultCap |= (uint64_t)1 << 39; // CAP_BPF
 
     Say() << "Check default capabilities for non-root container" << std::endl;
 

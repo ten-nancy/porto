@@ -2,7 +2,6 @@
 
 import porto
 import subprocess
-import types
 from test_common import *
 
 AsRoot()
@@ -38,7 +37,7 @@ knobs = {
                      "SYS_ADMIN;SYS_BOOT;SYS_NICE;SYS_RESOURCE;SYS_TIME;"\
                      "SYS_TTY_CONFIG;MKNOD;LEASE;AUDIT_WRITE;AUDIT_CONTROL;"\
                      "SETFCAP;MAC_OVERRIDE;MAC_ADMIN;SYSLOG;WAKE_ALARM;"\
-                     "BLOCK_SUSPEND;AUDIT_READ",
+                     "BLOCK_SUSPEND;AUDIT_READ{}".format(";BPF" if GetKernelVersion() >= (5, 15) else ""),
     "command" : "bash -c \'echo $(sleep) | xargs -I%sdf echo %sdf\'",
     "controllers" : "freezer;memory;cpu;cpuacct;net_cls;blkio;devices;hugetlb;cpuset;perf_event;cgroup2",
     "cpu_guarantee" : "0.756c",

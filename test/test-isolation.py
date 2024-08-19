@@ -4,8 +4,10 @@ from test_common import *
 c = porto.Connection(timeout=30)
 
 DefaultCapBnd = "0000003fffffffff"
+PortoHostCapBnd = "00000000a9ec77fb"
 if GetKernelVersion() >= (5, 15):
     DefaultCapBnd =  "000001ffffffffff"
+    PortoHostCapBnd = "00000080a9ec77fb"
 
 ExpectEq(ProcStatus('self', "CapBnd"), DefaultCapBnd)
 
@@ -16,9 +18,9 @@ pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)
 ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapPrm"), "00000000a9ec77fb")
-ExpectEq(ProcStatus(pid, "CapEff"), "00000000a9ec77fb")
-ExpectEq(ProcStatus(pid, "CapBnd"), "00000000a9ec77fb")
+ExpectEq(ProcStatus(pid, "CapPrm"), PortoHostCapBnd)
+ExpectEq(ProcStatus(pid, "CapEff"), PortoHostCapBnd)
+ExpectEq(ProcStatus(pid, "CapBnd"), PortoHostCapBnd)
 ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
 
 a.Destroy()
@@ -47,7 +49,7 @@ ExpectNe(ProcStatus(pid, "NSpid"), pid)
 ExpectEq(ProcStatus(pid, "CapInh"), "0000000000000000")
 ExpectEq(ProcStatus(pid, "CapPrm"), "0000000000000000")
 ExpectEq(ProcStatus(pid, "CapEff"), "0000000000000000")
-ExpectEq(ProcStatus(pid, "CapBnd"), "00000000a9ec77fb")
+ExpectEq(ProcStatus(pid, "CapBnd"), PortoHostCapBnd)
 ExpectEq(ProcStatus(pid, "CapAmb"), "0000000000000000")
 
 a.Destroy()

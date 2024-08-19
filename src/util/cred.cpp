@@ -575,6 +575,7 @@ bool TCapabilities::HasSetUidGid() const {
 
 TCapabilities SysAdminCapability;
 TCapabilities SysNiceCapability;
+TCapabilities BpfCapability;
 
 TCapabilities NoCapabilities;
 TCapabilities PortoInitCapabilities;
@@ -593,11 +594,15 @@ TCapabilities SysBootCapability;
 void InitCapabilities() {
     if (TPath("/proc/sys/kernel/cap_last_cap").ReadInt(LastCapability)) {
         L_WRN("Can't read /proc/sys/kernel/cap_last_cap");
-        LastCapability = CAP_BPF;
+        if (CompareVersions(config().linux_version(), "5.15") >= 0)
+            LastCapability = CAP_BPF;
+        else
+            LastCapability = CAP_AUDIT_READ;
     }
 
     SysAdminCapability.Permitted = BIT(CAP_SYS_ADMIN);
     SysNiceCapability.Permitted = BIT(CAP_SYS_NICE);
+    BpfCapability.Permitted = BIT(CAP_BPF);
 
     HasAmbientCapabilities = prctl(PR_CAP_AMBIENT,
                                    PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) == 0;
@@ -652,6 +657,9 @@ void InitCapabilities() {
         BIT(CAP_LINUX_IMMUTABLE) |
         BIT(CAP_SYS_BOOT) |
         BIT(CAP_SYS_RESOURCE);
+
+    if (CompareVersions(config().linux_version(), "5.15") >= 0)
+        HostCapBound.Permitted |= BpfCapability.Permitted;
 
     HelperCapabilities.Permitted = HostCapBound.Permitted;
     HelperCapabilities.Permitted &= ~BIT(CAP_SYS_RESOURCE);
