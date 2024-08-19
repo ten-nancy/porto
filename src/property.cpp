@@ -168,6 +168,7 @@ public:
         CT->CapLimit = limit;
         CT->SetProp(EProperty::CAPABILITIES);
         CT->SanitizeCapabilitiesAll();
+
         return OK;
     }
 
@@ -177,36 +178,44 @@ public:
     }
 
     TError Set(const std::string &value) override {
+        TError error;
         TCapabilities caps;
-        TError error = caps.Parse(value);
+
+        error = caps.Parse(value);
         if (error)
             return error;
+
         return CommitLimit(caps);
     }
 
     TError GetIndexed(const std::string &index, std::string &value) override {
+        TError error;
         TCapabilities caps;
-        TError error = caps.Parse(index);
+
+        error = caps.Parse(index);
         if (error)
             return error;
-        value = BoolToString((CT->CapLimit &
-                              caps) == caps);
+
+        value = BoolToString((CT->CapLimit & caps) == caps);
         return OK;
     }
 
     TError SetIndexed(const std::string &index, const std::string &value) override {
+        TError error;
         TCapabilities caps;
         bool val;
 
-        TError error = caps.Parse(index);
+        error = caps.Parse(index);
         if (!error)
             error = StringToBool(value, val);
         if (error)
             return error;
+
         if (val)
             caps = CT->CapLimit | caps;
         else
             caps = CT->CapLimit & ~caps;
+
         return CommitLimit(caps);
     }
 
@@ -219,10 +228,19 @@ public:
     }
 
     TError Load(const rpc::TContainerSpec &spec) override {
+        TError error;
         TCapabilities caps;
-        TError error = caps.Load(spec.capabilities());
+
+        error = caps.Load(spec.capabilities());
         if (error)
             return error;
+
+        if (spec.capabilities().has_action()) {
+            if (spec.capabilities().action())
+                caps = CT->CapLimit | caps;
+            else
+                caps = CT->CapLimit & ~caps;
+        }
 
         return CommitLimit(caps);
     }
@@ -243,7 +261,7 @@ public:
             return TError(EError::InvalidValue,
                           "Unsupported capability: " + ambient.Format());
         }
-
+        // rewrite ambient
         CT->CapAmbient = ambient;
         CT->SetProp(EProperty::CAPABILITIES_AMBIENT);
         CT->SanitizeCapabilitiesAll();
@@ -256,36 +274,44 @@ public:
     }
 
     TError Set(const std::string &value) override {
+        TError error;
         TCapabilities caps;
-        TError error = caps.Parse(value);
+
+        error = caps.Parse(value);
         if (error)
             return error;
+
         return CommitAmbient(caps);
     }
 
     TError GetIndexed(const std::string &index, std::string &value) override {
+        TError error;
         TCapabilities caps;
-        TError error = caps.Parse(index);
+
+        error = caps.Parse(index);
         if (error)
             return error;
-        value = BoolToString((CT->CapAmbient &
-                              caps) == caps);
+
+        value = BoolToString((CT->CapAmbient & caps) == caps);
         return OK;
     }
 
     TError SetIndexed(const std::string &index, const std::string &value) override {
+        TError error;
         TCapabilities caps;
         bool val;
 
-        TError error = caps.Parse(index);
+        error = caps.Parse(index);
         if (!error)
             error = StringToBool(value, val);
         if (error)
             return error;
+
         if (val)
             caps = CT->CapAmbient | caps;
         else
             caps = CT->CapAmbient & ~caps;
+
         return CommitAmbient(caps);
     }
 
@@ -298,10 +324,20 @@ public:
     }
 
     TError Load(const rpc::TContainerSpec &spec) override {
+        TError error;
         TCapabilities caps;
-        TError error = caps.Load(spec.capabilities_ambient());
+
+        error = caps.Load(spec.capabilities_ambient());
         if (error)
             return error;
+
+        if (spec.capabilities_ambient().has_action()) {
+            if (spec.capabilities_ambient().action())
+                caps = CT->CapAmbient | caps;
+            else
+                caps = CT->CapAmbient & ~caps;
+        }
+
         return CommitAmbient(caps);
     }
 } static CapabilitiesAmbient;
@@ -320,12 +356,14 @@ public:
     }
 
     TError GetIndexed(const std::string &index, std::string &value) override {
+        TError error;
         TCapabilities caps;
-        TError error = caps.Parse(index);
+
+        error = caps.Parse(index);
         if (error)
             return error;
-        value = BoolToString((CT->CapBound &
-                              caps) == caps);
+
+        value = BoolToString((CT->CapBound & caps) == caps);
         return OK;
     }
 
@@ -352,12 +390,14 @@ public:
     }
 
     TError GetIndexed(const std::string &index, std::string &value) override {
+        TError error;
         TCapabilities caps;
-        TError error = caps.Parse(index);
+
+        error = caps.Parse(index);
         if (error)
             return error;
-        value = BoolToString((CT->CapAllowed &
-                              caps) == caps);
+
+        value = BoolToString((CT->CapAllowed & caps) == caps);
         return OK;
     }
 
