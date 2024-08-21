@@ -189,4 +189,3 @@ extern TCapabilities PrivilegedHelperCapabilities;
 extern TCapabilities MemCgCapabilities;
 extern TCapabilities PidNsCapabilities;
 extern TCapabilities NetNsCapabilities;
-extern TCapabilities SysNiceCapability;

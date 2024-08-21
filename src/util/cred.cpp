@@ -582,7 +582,6 @@ TCapabilities PrivilegedHelperCapabilities;
 TCapabilities MemCgCapabilities;
 TCapabilities PidNsCapabilities;
 TCapabilities NetNsCapabilities;
-TCapabilities SysNiceCapability;
 
 void InitCapabilities() {
     if (TPath("/proc/sys/kernel/cap_last_cap").ReadInt(LastCapability)) {
@@ -592,9 +591,6 @@ void InitCapabilities() {
         else
             LastCapability = CAP_AUDIT_READ;
     }
-
-    // TODO(kndrvt): remove it later everywhere
-    SysNiceCapability = BIT(CAP_SYS_NICE);
 
     HasAmbientCapabilities = prctl(PR_CAP_AMBIENT,
                                    PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) == 0;

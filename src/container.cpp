@@ -3173,14 +3173,9 @@ void TContainer::SanitizeCapabilities() {
 
     CapBound &= ~remove;
 
-    if (chroot) {
+    if (chroot)
         // Extra property capabilities (old hack)
         CapBound |= (CapLimit & CapExtra);
-
-        // CAP_SYS_NICE (old hack)
-        if (config().container().rt_priority())
-            CapBound |= SysNiceCapability;
-    }
 
     CapAllowed = CapBound;
 }
