@@ -161,6 +161,7 @@ static void DefaultConfig() {
     container->set_enable_rw_net_cgroups(false);
 
     container->set_enable_sched_idle(false);
+    container->set_enable_start_parents(true);
 
     auto* volumes = cfg.mutable_volumes();
     volumes->set_enable_quota(true);

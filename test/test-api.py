@@ -184,6 +184,36 @@ assert a["command"] == "sleep 5"
 assert a["private"] == volume_private
 a.Destroy()
 
+# test start parents
+
+AsRoot()
+ConfigurePortod('test-api', """
+container {
+    enable_start_parents: true
+}
+""")
+AsAlice()
+
+a = c.Create(container_name)
+b = c.Run(container_name + "/child")
+assert a["state"] == "meta"
+assert b["state"] == "meta"
+b.Destroy()
+a.Destroy()
+
+AsRoot()
+ConfigurePortod('test-api', """
+container {
+    enable_start_parents: false
+}
+""")
+AsAlice()
+
+a = c.Create(container_name)
+ExpectException(c.Run, porto.exceptions.InvalidState, container_name + "/child")
+ExpectEq(a["state"], "stopped")
+ExpectEq(c.ListContainers(container_name + "/*"), [])
+a.Destroy()
 
 # LAYERS
 AsRoot()

@@ -3266,6 +3266,11 @@ TError TContainer::StartParents() {
     if (IsRunningOrMeta(Parent->State))
         return OK;
 
+    if (!config().container().enable_start_parents())
+        return TError(EError::InvalidState, "Parent container is stopped");
+
+    L_TAINT("Starting with stopped parent is deprecated");
+
     /* In case client is portod, we don't start parents
      * PORTO-1010
      */
