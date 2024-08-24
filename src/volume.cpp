@@ -42,13 +42,13 @@ TNbdConn NbdConn;
 
 TPath VolumesKV;
 TPath NbdKV;
-MeasuredMutex VolumesMutex("volumes");
+MeasuredRwMutex VolumesMutex("volumes");
 std::map<TPath, std::shared_ptr<TVolume>> Volumes;
 std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
 
 static std::atomic<uint64_t> NextId(1);
 
-static std::condition_variable VolumesCv;
+static std::condition_variable_any VolumesCv;
 
 std::unique_ptr<std::thread> StatFsThread;
 bool NeedStopStatFsLoop(false);
@@ -81,7 +81,7 @@ void StatFsUpdateLoop() {
     while (!NeedStopStatFsLoop) {
         std::list<std::shared_ptr<TVolume>> volumes;
         locker.unlock();
-        auto volumes_lock = LockVolumes();
+        auto volumes_lock = RLockVolumes();
 
         for (auto& it: Volumes)
             volumes.push_back(it.second);
@@ -1547,7 +1547,7 @@ class TVolumeNbdBackend : public TVolumeBackend {
     TCred Cred;
 
     static std::shared_ptr<TVolume> ResolveNbd(int deviceIndex) {
-        auto volumes_lock = LockVolumes();
+        auto volumes_lock = RLockVolumes();
         auto it = NbdVolumes.find(deviceIndex);
         if (it != NbdVolumes.end())
             return it->second;
@@ -2032,7 +2032,7 @@ std::shared_ptr<TVolumeLink> TVolume::ResolveLinkLocked(const TPath &path) {
 }
 
 std::shared_ptr<TVolumeLink> TVolume::ResolveLink(const TPath &path) {
-    auto volumes_lock = LockVolumes();
+    auto volumes_lock = RLockVolumes();
     return ResolveLinkLocked(path);
 }
 
@@ -2048,7 +2048,7 @@ std::shared_ptr<TVolumeLink> TVolume::ResolveOriginLocked(const TPath &path) {
 }
 
 std::shared_ptr<TVolumeLink> TVolume::ResolveOrigin(const TPath &path) {
-    auto volumes_lock = LockVolumes();
+    auto volumes_lock = RLockVolumes();
     return ResolveOriginLocked(path);
 }
 
@@ -2073,7 +2073,7 @@ TPath TVolume::ComposePathLocked(const TContainer &ct) const {
 }
 
 TPath TVolume::ComposePath(const TContainer &ct) const {
-    auto volumes_lock = LockVolumes();
+    auto volumes_lock = RLockVolumes();
     return ComposePathLocked(ct);
 }
 
@@ -3854,7 +3854,7 @@ void TVolume::DestroyUnlinked(std::list<std::shared_ptr<TVolume>> &unlinked) {
 }
 
 TError TVolume::CheckRequired(TContainer &ct) {
-    auto volumes_lock = LockVolumes();
+    auto volumes_lock = RLockVolumes();
     for (auto &path: ct.RequiredVolumes) {
         auto link = ResolveLinkLocked(ct.RootPath / path);
         if (!link)
@@ -3870,7 +3870,7 @@ TError TVolume::CheckRequired(TContainer &ct) {
 void TVolume::DumpDescription(TVolumeLink *link, const TPath &path, rpc::TVolumeDescription *dump) {
     TStringMap ret;
 
-    auto volumes_lock = LockVolumes();
+    auto volumes_lock = RLockVolumes();
 
     ret[V_ID] = Id;
 
@@ -3977,10 +3977,10 @@ TError TVolume::Save(bool locked) {
     TError error;
     std::string tmp;
 
-    std::unique_lock<std::mutex> volumes_lock;
+    std::shared_lock<std::shared_mutex> volumes_lock;
 
     if (!locked)
-        volumes_lock = LockVolumes();
+        volumes_lock = RLockVolumes();
 
     if (State == EVolumeState::ToDestroy ||
             State == EVolumeState::Destroying ||
@@ -4885,7 +4885,7 @@ TError TVolume::Load(const rpc::TVolumeSpec &spec, bool full) {
 }
 
 void TVolume::Dump(rpc::TVolumeSpec &spec, bool full) {
-    auto volumes_lock = LockVolumes();
+    auto volumes_lock = RLockVolumes();
 
     spec.set_path(CL->ComposePath(Path).ToString());
     spec.set_container(CL->RelativeName(CL->ClientContainer->Name));
