@@ -1859,7 +1859,7 @@ public:
 
 static TError WidenSubtreeCpus(const std::list<TCgroup> &cgroups,
                                const TCgroupAffinityIndex &index,
-                               std::map<std::string, TBitMap> cpusets) {
+                               std::map<std::string, TBitMap> &cpusets) {
     for (auto &cg : cgroups) {
         TBitMap affinity;
         if (!index.GetAffinity(cg, affinity))
@@ -1884,7 +1884,7 @@ static TError WidenSubtreeCpus(const std::list<TCgroup> &cgroups,
 
 static TError NarrowSubtreeCpus(const std::list<TCgroup> &cgroups,
                                 const TCgroupAffinityIndex &index,
-                                std::map<std::string, TBitMap> cpusets) {
+                                std::map<std::string, TBitMap> &cpusets) {
     for (auto it = cgroups.rbegin(); it != cgroups.rend(); ++it) {
         auto &cg = *it;
 
@@ -2048,19 +2048,17 @@ TError TContainer::ApplyCpuSet() {
     subtree.reverse();
 
     for (auto &ct: subtree) {
-        if (ct->State == EContainerState::Stopped ||
-            ct->State == EContainerState::Dead ||
-            ct->CpuJail)
+        if (ct->CpuJail)
             continue;
 
         TBitMap affinity;
 
-        switch (CpuSetType) {
+        switch (ct->CpuSetType) {
         case ECpuSetType::Inherit:
-            affinity = Parent->CpuAffinity;
+            affinity = ct->Parent->CpuAffinity;
             break;
         case ECpuSetType::Absolute:
-            affinity = CpuAffinity;
+            affinity = ct->CpuAffinity;
             break;
         case ECpuSetType::Node:
             if (!NumaNodes.Get(ct->CpuSetArg))
