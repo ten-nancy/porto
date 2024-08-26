@@ -1303,6 +1303,31 @@ noinline TError UnlinkVolume(const rpc::TVolumeUnlinkRequest &req) {
     return error;
 }
 
+static std::map<TPath, std::shared_ptr<TVolumeLink>>
+ListInnerVolumes(const TPath &base, const std::string &mask = "") {
+    std::map<TPath, std::shared_ptr<TVolumeLink>> map;
+    TPath path;
+    auto volumes_lock = LockVolumes();
+
+    // check for self
+    auto it = VolumeLinks.find(base);
+    if (it != VolumeLinks.end())
+        map["/"] = it->second;
+
+    // children
+    for (auto it = VolumeLinks.lower_bound(base + "/"); it != VolumeLinks.end(); ++it) {
+        TPath path = base.InnerPath(it->first);
+
+        if (!path)
+            break;
+
+        if (mask.empty() || StringMatch(path.ToString(), mask))
+            map[path] = it->second;
+    }
+
+    return map;
+}
+
 noinline TError ListVolumes(const rpc::TVolumeListRequest &req,
                             rpc::TContainerResponse &rsp) {
     TError error;
@@ -1334,19 +1359,7 @@ noinline TError ListVolumes(const rpc::TVolumeListRequest &req,
     } else
         base_path = CL->ClientContainer->RootPath;
 
-    std::map<TPath, std::shared_ptr<TVolumeLink>> map;
-    auto volumes_lock = LockVolumes();
-
-    for (auto &it: VolumeLinks) {
-        TPath path = base_path.InnerPath(it.first);
-
-        if (path && StringMatch(path.ToString(), mask))
-            map[path] = it.second;
-    }
-
-    volumes_lock.unlock();
-
-    for (auto &it: map) {
+    for (auto &it : ListInnerVolumes(base_path, mask)) {
         auto entry = rsp.mutable_volumelist()->add_volumes();
         auto volume = it.second->Volume.get();
         if (req.has_changed_since() && volume->ChangeTime < req.changed_since()) {
@@ -1410,17 +1423,7 @@ noinline TError GetVolume(const rpc::TGetVolumeRequest &req,
     }
 
     if (req.path().size() == 0) {
-        std::map<TPath, std::shared_ptr<TVolumeLink>> map;
-
-        auto volumes_lock = LockVolumes();
-        for (auto &it: VolumeLinks) {
-            TPath path = ct->RootPath.InnerPath(it.first);
-            if (path)
-                map[path] = it.second;
-        }
-        volumes_lock.unlock();
-
-        for (auto &it: map) {
+        for (auto &it : ListInnerVolumes(ct->RootPath)) {
             auto volume = it.second->Volume.get();
             auto spec = rsp.add_volume();
             if (req.has_changed_since() && volume->ChangeTime < req.changed_since()) {
