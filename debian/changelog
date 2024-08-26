@@ -1,3 +1,16 @@
+porto (5.3.40) unstable; urgency=low
+  [ ovov ]
+      cgroup: remove PortoTids
+      container: add config option to restrict starting with stopped parent
+  [ kndrvt ]
+      capabilities: remove CAP_SYS_NICE set with rt_priority
+      capabilities: add action in spec to modify caps partially
+      capabilities: CapLimit is inherited and does not depend on CapBound
+      capabilities: add CAP_BPF to default host bound
+  last commit: 65caa8b13eb3f77121aaa0e0b6f84fdf4895ec7d
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 26 Aug 2024 13:03:06 -0000
+
 porto (5.3.39) unstable; urgency=low
   [ ovov ]
       server: remove implicit write to TRestoreWorker.ChildMap
