@@ -74,7 +74,7 @@ class TNbdConn : public TNonCopyable {
     std::shared_ptr<struct nl_sock> Sock;
     std::shared_ptr<struct nl_sock> McastSock;
     int EventFd;
-    std::unique_ptr<std::thread> McastThread;
+    std::thread McastThread;
 
     int DriverId = -1;
     std::atomic<std::uint32_t> Seq;

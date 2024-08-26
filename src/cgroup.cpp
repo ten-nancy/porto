@@ -37,7 +37,6 @@ const TFlagsNames ControllersName = {
 
 extern pid_t MasterPid;
 extern pid_t ServerPid;
-extern std::unordered_set<pid_t> PortoTids;
 extern std::mutex TidsMutex;
 
 TPath TCgroup::Path() const {
@@ -473,11 +472,7 @@ TError TCgroup::KillAll(int signal, bool abortFuse) const {
 
         retry = false;
         for (auto pid: tasks) {
-            std::unique_lock<std::mutex> lock(TidsMutex);
-            bool portoThread = PortoTids.find(pid) != PortoTids.end();
-            lock.unlock();
-
-            if (portoThread || pid == MasterPid || pid == ServerPid || pid <= 0) {
+            if (pid == MasterPid || pid == ServerPid || pid <= 0) {
                 L_TAINT(fmt::format("Cannot kill portod thread {}", pid));
                 continue;
             }

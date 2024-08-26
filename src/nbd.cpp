@@ -18,7 +18,6 @@ extern "C" {
 #include "nbd.hpp"
 #include "util/log.hpp"
 #include "util/socket.hpp"
-#include "util/thread.hpp"
 
 #define NBD_OPT_EXPORT_NAME      (1)          /**< Client wants to select a named export (is followed by name of export) */
 #define NBD_FLAG_FIXED_NEWSTYLE (1 << 0)      /**< new-style export that actually supports extending */
@@ -449,52 +448,51 @@ TError TNbdConn::Init(int mcastFd) {
     if (EventFd < 0)
         return TError::System("eventfd");
 
-    McastThread = std::unique_ptr<std::thread>(
-        NewThread([this, sock, mcastSock] {
-            SetProcessName("portod-NS");
+    McastThread = std::thread([this, sock, mcastSock] {
+        SetProcessName("portod-NS");
 
-            struct pollfd fds[] = {
-                {
-                    .fd = EventFd,
-                    .events = POLLIN,
-                    .revents = 0,
-                },
-                {
-                    .fd = nl_socket_get_fd(sock.get()),
-                    .events = POLLIN,
-                    .revents = 0,
-                },
-                {
-                    .fd = nl_socket_get_fd(mcastSock.get()),
-                    .events = POLLIN,
-                    .revents = 0,
-                }
-            };
-
-            while (true) {
-                if (ppoll(fds, sizeof(fds)/sizeof(*fds), NULL, NULL) < 0)
-                    L_WRN("nbd: {}", TError::System("mcast poll"));
-
-                if (fds[0].revents)
-                    break;
-
-                if (fds[1].revents) {
-                    int ret = nl_recvmsgs_default(sock.get());
-                    if (ret < 0)
-                        L_WRN("nbd: nl_recvmsgs_default: {}", nl_geterror(ret));
-                }
-
-                if (fds[2].revents) {
-                    int ret = nl_recvmsgs_default(mcastSock.get());
-                    if (ret < 0)
-                        L_WRN("nbd: nl_recvmsgs_default: {}", nl_geterror(ret));
-                    for (auto &pair : Disconnects)
-                        DeadLinkCb(pair.first, pair.second);
-                    Disconnects.clear();
-                }
+        struct pollfd fds[] = {
+            {
+                .fd = EventFd,
+                .events = POLLIN,
+                .revents = 0,
+            },
+            {
+                .fd = nl_socket_get_fd(sock.get()),
+                .events = POLLIN,
+                .revents = 0,
+            },
+            {
+                .fd = nl_socket_get_fd(mcastSock.get()),
+                .events = POLLIN,
+                .revents = 0,
             }
-        })
-    );
+        };
+
+        while (true) {
+            if (ppoll(fds, sizeof(fds)/sizeof(*fds), NULL, NULL) < 0)
+                L_WRN("nbd: {}", TError::System("mcast poll"));
+
+            if (fds[0].revents)
+                break;
+
+            if (fds[1].revents) {
+                int ret = nl_recvmsgs_default(sock.get());
+                if (ret < 0)
+                    L_WRN("nbd: nl_recvmsgs_default: {}", nl_geterror(ret));
+            }
+
+            if (fds[2].revents) {
+                int ret = nl_recvmsgs_default(mcastSock.get());
+                if (ret < 0)
+                    L_WRN("nbd: nl_recvmsgs_default: {}", nl_geterror(ret));
+                for (auto &pair : Disconnects)
+                    DeadLinkCb(pair.first, pair.second);
+                Disconnects.clear();
+            }
+        }
+    });
+
 
     Sock = sock;
     McastSock = mcastSock;
@@ -506,12 +504,11 @@ void TNbdConn::Close() {
     Sock.reset();
     McastSock.reset();
 
-    if (McastThread) {
+    if (McastThread.joinable()) {
         uint64_t data = 1;
         if (write(EventFd, &data, sizeof(data)) < 0)
             L_ERR("nbd: {}", TError::System("eventfd write"));
-        McastThread->join();
-        McastThread = nullptr;
+        McastThread.join();
         close(EventFd);
     }
 }

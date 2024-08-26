@@ -300,7 +300,7 @@ class AsyncWaiter {
     };
 
     std::unordered_map<std::string, CallbackData> AsyncCallbacks;
-    std::unique_ptr<std::thread> WatchDogThread;
+    std::thread WatchDogThread;
     std::atomic<uint64_t> CallbacksCount;
     int EpollFd = -1;
     Connection Api;

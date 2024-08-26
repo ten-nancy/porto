@@ -229,7 +229,6 @@
   "src/util/task.cpp":"infra/porto/porto/src/util/task.cpp",
   "src/util/task.hpp":"infra/porto/porto/src/util/task.hpp",
   "src/util/tcp_info.hpp":"infra/porto/porto/src/util/tcp_info.hpp",
-  "src/util/thread.hpp":"infra/porto/porto/src/util/thread.hpp",
   "src/util/unix.cpp":"infra/porto/porto/src/util/unix.cpp",
   "src/util/unix.hpp":"infra/porto/porto/src/util/unix.hpp",
   "src/util/worker.hpp":"infra/porto/porto/src/util/worker.hpp",

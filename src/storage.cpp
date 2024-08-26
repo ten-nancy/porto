@@ -13,7 +13,6 @@
 #include "util/string.hpp"
 #include "util/md5.hpp"
 #include "util/quota.hpp"
-#include "util/thread.hpp"
 
 extern "C" {
 #include <sys/stat.h>
@@ -78,7 +77,7 @@ static TUintMap PlaceLoadLimit;
 
 extern std::atomic_bool NeedStopHelpers;
 
-static std::unique_ptr<std::thread> AsyncRemoveThread;
+static std::thread AsyncRemoveThread;
 static std::condition_variable AsyncRemoverCv;
 static std::mutex AsyncRemoverMutex;
 
@@ -227,12 +226,12 @@ void TStorage::Init() {
 
     CheckPlace(PORTO_PLACE);
     AsyncRemoveWatchDogPeriod = config().volumes().async_remove_watchdog_ms();
-    AsyncRemoveThread = std::unique_ptr<std::thread>(NewThread(&AsyncRemoveWatchDog));
+    AsyncRemoveThread = std::thread(&AsyncRemoveWatchDog);
 }
 
 void TStorage::StopAsyncRemover() {
     AsyncRemoverCv.notify_all();
-    AsyncRemoveThread->join();
+    AsyncRemoveThread.join();
 }
 
 void TStorage::IncPlaceLoad(const TPath &place) {

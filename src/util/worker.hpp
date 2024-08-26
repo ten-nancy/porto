@@ -7,7 +7,6 @@
 #include "util/log.hpp"
 #include "util/unix.hpp"
 #include "util/locks.hpp"
-#include "util/thread.hpp"
 
 template<typename T,
          typename Q = std::queue<T>>
@@ -15,7 +14,7 @@ class TWorker : public TLockable {
 protected:
     volatile bool Valid = true;
     std::condition_variable Cv;
-    std::vector<std::shared_ptr<std::thread>> Threads;
+    std::vector<std::thread> Threads;
     size_t Seq = 0;
     const std::string Name;
     size_t Nr;
@@ -59,8 +58,8 @@ protected:
     }
 
     void Join() {
-        for (auto thread : Threads)
-            thread->join();
+        for (auto &thread : Threads)
+            thread.join();
         Threads.clear();
     }
 
@@ -74,7 +73,7 @@ public:
 
     void Start() {
         for (size_t i = 0; i < Nr; i++)
-            Threads.push_back(std::shared_ptr<std::thread>(NewThread(&TWorker::WorkerFn, this, Name + std::to_string(i))));
+            Threads.emplace_back(&TWorker::WorkerFn, this, Name + std::to_string(i));
     }
 
     virtual void Stop() {

@@ -10,7 +10,6 @@
 #include "waiter.hpp"
 #include "event.hpp"
 #include "helpers.hpp"
-#include "util/thread.hpp"
 #include "util/log.hpp"
 #include "util/string.hpp"
 #include "util/cred.hpp"
@@ -2355,7 +2354,7 @@ void TRequest::ChangeId() {
 }
 
 class TRequestQueue {
-    std::vector<std::unique_ptr<std::thread>> Threads;
+    std::vector<std::thread> Threads;
     std::vector<uint64_t> StartTime;
     std::queue<std::unique_ptr<TRequest>> Queue;
     std::condition_variable Wakeup;
@@ -2369,7 +2368,7 @@ public:
     void Start(int thread_count) {
         StartTime.resize(thread_count);
         for (int index = 0; index < thread_count; index++)
-            Threads.emplace_back(NewThread(&TRequestQueue::Run, this, index));
+            Threads.emplace_back(&TRequestQueue::Run, this, index);
     }
 
     void Stop() {
@@ -2378,7 +2377,7 @@ public:
         Mutex.unlock();
         Wakeup.notify_all();
         for (auto &thread: Threads)
-            thread->join();
+            thread.join();
         Threads.clear();
         ShouldStop = false;
     }

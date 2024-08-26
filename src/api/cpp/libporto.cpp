@@ -1283,12 +1283,12 @@ AsyncWaiter::AsyncWaiter(std::function<void(const std::string &error, int ret)> 
         return;
     }
 
-    WatchDogThread = std::unique_ptr<std::thread>(new std::thread(&AsyncWaiter::WatchDog, this));
+    WatchDogThread = std::thread(&AsyncWaiter::WatchDog, this);
 }
 
 AsyncWaiter::~AsyncWaiter() {
     SendInt(MasterSock, static_cast<int>(ERequestType::Stop));
-    WatchDogThread->join();
+    WatchDogThread.join();
 
     // pedantic check, that porto api is watching by epoll
     if (epoll_ctl(EpollFd, EPOLL_CTL_DEL, Api.Impl->Fd, nullptr) || epoll_ctl(EpollFd, EPOLL_CTL_DEL, Sock, nullptr)) {

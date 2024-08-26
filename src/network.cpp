@@ -14,7 +14,6 @@
 #include "util/proc.hpp"
 #include "util/string.hpp"
 #include "util/crc32.hpp"
-#include "util/thread.hpp"
 #include "util/hgram.hpp"
 
 extern "C" {
@@ -51,8 +50,8 @@ std::unordered_map<ino_t, std::shared_ptr<TNetwork>> TNetwork::NetworksIndex;
 std::shared_ptr<const std::list<std::shared_ptr<TNetwork>>> TNetwork::NetworksList = std::make_shared<const std::list<std::shared_ptr<TNetwork>>>();
 std::atomic<int> TNetwork::GlobalStatGen;
 
-static std::unique_ptr<std::thread> NetThread;
-static std::unique_ptr<std::thread> L3StatThread;
+static std::thread NetThread;
+static std::thread L3StatThread;
 static std::condition_variable NetThreadCv;
 static std::condition_variable L3ThreadCv;
 static uint64_t NetWatchdogPeriod;
@@ -2848,9 +2847,9 @@ void TNetwork::StopNetwork(TContainer &ct) {
         lock.unlock();
         NetThreadCv.notify_all();
         L3ThreadCv.notify_all();
-        NetThread->join();
+        NetThread.join();
         if (L3StatWatchdogPeriod > 0)
-            L3StatThread->join();
+            L3StatThread.join();
         SockDiag.Disconnect();
     }
 
@@ -3935,9 +3934,9 @@ TError TNetEnv::OpenNetwork(TContainer &ct) {
         if (error)
             return TError("Cannot connect sock diag: {}", error);
 
-        NetThread = std::unique_ptr<std::thread>(NewThread(&TNetwork::NetWatchdog));
+        NetThread = std::thread(&TNetwork::NetWatchdog);
         if (L3StatWatchdogPeriod > 0)
-            L3StatThread = std::unique_ptr<std::thread>(NewThread(&TNetwork::L3StatWatchdog));
+            L3StatThread = std::thread(&TNetwork::L3StatWatchdog);
 
         return OK;
     }

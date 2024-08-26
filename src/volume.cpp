@@ -17,7 +17,6 @@
 #include "util/string.hpp"
 #include "util/unix.hpp"
 #include "util/quota.hpp"
-#include "util/thread.hpp"
 #include "util/worker.hpp"
 #include "config.hpp"
 #include "kvalue.hpp"
@@ -50,7 +49,7 @@ static std::atomic<uint64_t> NextId(1);
 
 static std::condition_variable VolumesCv;
 
-std::unique_ptr<std::thread> StatFsThread;
+std::thread StatFsThread;
 bool NeedStopStatFsLoop(false);
 std::condition_variable StatFsCv;
 std::mutex StatFsLock;
@@ -111,7 +110,7 @@ void StatFsUpdateLoop() {
 
 void StartStatFsLoop() {
     NeedStopStatFsLoop = false;
-    StatFsThread = std::unique_ptr<std::thread>(NewThread(&StatFsUpdateLoop));
+    StatFsThread = std::thread(&StatFsUpdateLoop);
 }
 
 void StopStatFsLoop() {
@@ -120,7 +119,7 @@ void StopStatFsLoop() {
         NeedStopStatFsLoop = true;
     }
     StatFsCv.notify_all();
-    StatFsThread->join();
+    StatFsThread.join();
 }
 
 static class TPinCloser : public TWorker<TFile> {
