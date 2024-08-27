@@ -1,3 +1,11 @@
+porto (5.3.41) unstable; urgency=low
+  [ ovov ]
+      container: fix cpuset propogation
+      volume: use std::map find/lower_bound to iterate container volumes
+  last commit: e9a06f5d082b5e0935210d48753b8056d3cd43a4
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 26 Aug 2024 20:30:29 -0000
+
 porto (5.3.40) unstable; urgency=low
   [ ovov ]
       cgroup: remove PortoTids
