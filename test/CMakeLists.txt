@@ -30,7 +30,7 @@ endmacro()
 if(PARALLEL_TESTS)
     macro(ADD_TESTS_PART PART)
         add_test(NAME part${PART}
-                 COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python -uB ${CMAKE_SOURCE_DIR}/test/test-parts.py ${PART}
+                 COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python3 -uB ${CMAKE_SOURCE_DIR}/test/test-parts.py ${PART}
                  WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     endmacro()
 

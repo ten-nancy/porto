@@ -6,7 +6,7 @@ import sys
 
 assert len(sys.argv) == 2
 
-tests = subprocess.check_output(['ctest', '-N'])
+tests = subprocess.check_output(['ctest', '-N']).decode("utf-8")
 
 test_names = []
 
@@ -91,7 +91,7 @@ part8 = {'spec':4,
          'python3-docker-images':120,
          'docker':30}
 
-for test in part1.keys() + part2.keys() + part3.keys() + part4.keys() + part5.keys() + part6.keys() + part7.keys() + part8.keys():
+for test in list(part1.keys()) + list(part2.keys()) + list(part3.keys()) + list(part4.keys()) + list(part5.keys()) + list(part6.keys()) + list(part7.keys()) + list(part8.keys()):
     test_names.remove(test)
 
 for i in range(1, 9):
@@ -109,6 +109,7 @@ def run_test(test_name, timeout):
     for i in range(ATTEMPTS):
         # clean configs
         subprocess.check_call(['rm', '-rf', 'rm -rf /etc/portod.conf.d/*'])
+
         # restart portod to remove containers/volumes
         if test == 'portod_start':
             StopPortod()
@@ -124,20 +125,10 @@ def run_test(test_name, timeout):
             else:
                 raise e
 
-try:
-    pkgs = ['nbd-server', 'procps', 'squashfs-tools']
-    subprocess.check_call(['apt', 'install', '-y'] + pkgs)
-except subprocess.CalledProcessError:
-    try:
-        subprocess.check_call(['apt', 'update'])
-        subprocess.check_call(['apt', 'install', '-y'] + pkgs)
-    except subprocess.CalledProcessError as e:
-        print('Failed install packages:', e)
-
 
 for test, timeout in eval('part{}.items()'.format(sys.argv[1])):
     run_test(test, timeout)
     if test not in ['portod_stop', 'cleanup_portod']:
-        c = porto.Connection()
+        c = porto.Connection(timeout=30)
         fatals = int(c.GetProperty('/', 'porto_stat[fatals]'))
         assert 0 == fatals
