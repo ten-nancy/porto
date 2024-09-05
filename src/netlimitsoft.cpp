@@ -7,6 +7,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+// FIXME: libbpf is broken when building with C++
+// https://github.com/libbpf/libbpf/issues/820
+
+enum bpf_link_type {};
+
 #include <libbpf.h>
 
 
