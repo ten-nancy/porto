@@ -141,7 +141,7 @@ else()
 endif()
 
 if(NOT LIBBPF_TGZ_URL)
-	set(LIBBPF_TGZ_URL "https://github.com/libbpf/libbpf/archive/refs/tags/v1.2.2.tar.gz")
+	set(LIBBPF_TGZ_URL "https://github.com/libbpf/libbpf/archive/refs/tags/v0.7.0.tar.gz")
 endif()
 
 if(USE_SYSTEM_LIBBPF)
@@ -149,14 +149,11 @@ if(USE_SYSTEM_LIBBPF)
 	find_path(LIBBPF_INCLUDE_DIR NAMES libbpf.h PATH_SUFFIXES bpf)
 	include_directories(${LIBBPF_INCLUDE_DIR})
 else()
-	# because recent libbpf versions fail to compile with older gcc (e.g. on xenial) the
-	# CFLAGS=-Wno-address is needed
-	# https://github.com/libbpf/libbpf/issues/691
 	ExternalProject_Add(libbpf
 		URL ${LIBBPF_TGZ_URL}
-		URL_MD5 97e801fec96279cca0b451d64b9737e5
+		URL_MD5 6c893f52f92e751c97637cdebd81190a
 		CONFIGURE_COMMAND ""
-		BUILD_COMMAND $(MAKE) -C <SOURCE_DIR>/src BUILD_STATIC_ONLY=1 CFLAGS=-Wno-address
+		BUILD_COMMAND $(MAKE) -C <SOURCE_DIR>/src BUILD_STATIC_ONLY=1
 		INSTALL_COMMAND $(MAKE) -C <SOURCE_DIR>/src BUILD_STATIC_ONLY=1 DESTDIR=<INSTALL_DIR> install)
 	ExternalProject_Get_Property(libbpf INSTALL_DIR)
 	include_directories(${INSTALL_DIR}/usr/include/bpf)

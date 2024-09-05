@@ -4,12 +4,6 @@
 #include <fcntl.h>
 #include <linux/version.h>
 
-
-// FIXME: libbpf is broken when building with C++
-// https://github.com/libbpf/libbpf/issues/820
-
-enum bpf_link_type {};
-
 #include <libbpf.h>
 
 // FIXME: required linux-headers from 5.8
@@ -148,7 +142,7 @@ TError TBpfProgram::Open(const std::string &prog_name, const std::vector<uint8_t
         return TError(EError::Unknown, "Failed to load program '{}' -- failed to find bpf program in the loaded object", prog_name);
     }
 
-    bpf_program__set_type(prog, BPF_PROG_TYPE_SCHED_CLS);
+    bpf_program__set_sched_cls(prog);
 
     if (bpf_object__load(obj)) {
         bpf_object__close(obj);
