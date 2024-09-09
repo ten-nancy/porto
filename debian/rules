@@ -5,7 +5,7 @@ DESTDIR=$(CURDIR)/debian/$(PKGPREFIX)porto
 SBINDIR=$(DESTDIR)/usr/sbin
 BUILD_TYPE?=Release
 OPENSSL_TGZ_URL?=https://github.com/openssl/openssl/archive/refs/tags/OpenSSL_1_1_1o.tar.gz
-LIBBPF_TGZ_URL?=https://github.com/libbpf/libbpf/archive/refs/tags/v0.7.0.tar.gz
+LIBBPF_TGZ_URL?=https://github.com/libbpf/libbpf/archive/refs/tags/v1.2.2.tar.gz
 PORTO_INSTALL_ADDON?=
 
 sedpkgprefix:=sed -e "s/PKGPREFIX/$(PKGPREFIX)/gI"
