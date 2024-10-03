@@ -182,6 +182,7 @@ public:
 extern bool HasAmbientCapabilities;
 extern TCapabilities AllCapabilities;
 extern TCapabilities DefaultCapabilities;
+extern TCapabilities RootCapabilities;
 extern TCapabilities NoCapabilities;
 extern TCapabilities PortoInitCapabilities;
 extern TCapabilities HelperCapabilities;

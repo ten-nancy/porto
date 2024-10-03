@@ -1995,6 +1995,7 @@ static void TestCapabilitiesProperty(Porto::Connection &api) {
     //uint64_t allCap = (1ULL << (lastCap + 1)) - 1;
 
     uint64_t defaultCap = 0x00000000a80c25fb;
+    uint64_t rootCap = 0x00000000a9ec77fb;
 
     Say() << "Check default capabilities for non-root container" << std::endl;
 
@@ -2029,9 +2030,9 @@ static void TestCapabilitiesProperty(Porto::Connection &api) {
     ExpectApiSuccess(api.GetData(name, "root_pid", pid));
 
     ExpectEq(GetCap(pid, "CapInh"), 0);
-    ExpectEq(GetCap(pid, "CapPrm"), defaultCap);
-    ExpectEq(GetCap(pid, "CapEff"), defaultCap);
-    ExpectEq(GetCap(pid, "CapBnd"), defaultCap);
+    ExpectEq(GetCap(pid, "CapPrm"), rootCap);
+    ExpectEq(GetCap(pid, "CapEff"), rootCap);
+    ExpectEq(GetCap(pid, "CapBnd"), rootCap);
     ExpectApiSuccess(api.Stop(name));
 
     Say() << "Check limiting root capabilities" << std::endl;
@@ -2039,6 +2040,7 @@ static void TestCapabilitiesProperty(Porto::Connection &api) {
     ExpectApiSuccess(api.Start(name));
     ExpectApiSuccess(api.GetData(name, "root_pid", pid));
     ExpectEq(GetCap(pid, "CapInh"), 0);
+    // root owner ignores capabilities property
     ExpectEq(GetCap(pid, "CapPrm"), 1);
     ExpectEq(GetCap(pid, "CapEff"), 1);
     ExpectEq(GetCap(pid, "CapBnd"), 1);

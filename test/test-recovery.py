@@ -137,7 +137,7 @@ def RespawnTicks(r):
 
 def TestRecovery():
     #Former selftest.cpp TestRecovery()
-    print "Make sure we can restore stopped child when parent is dead"
+    print("Make sure we can restore stopped child when parent is dead")
 
     if os.getuid() == 0:
         AsAlice()
@@ -166,7 +166,7 @@ def TestRecovery():
 
     c.Destroy("parent")
 
-    print "Make sure we can figure out that containers are dead even if master dies"
+    print("Make sure we can figure out that containers are dead even if master dies")
 
     r = c.Create("a:b")
     r.SetProperty("command", "sleep 3")
@@ -174,14 +174,14 @@ def TestRecovery():
 
     AsRoot()
     KillPid(GetMasterPid(), signal.SIGKILL)
-    subprocess.check_output([portod, "start"])
+    subprocess.check_call([portod, "start"])
     AsAlice()
     c.connect()
 
     ExpectEq(c.Wait(["a:b"]), "a:b")
     c.Destroy("a:b")
 
-    print "Make sure we don't kill containers when doing recovery"
+    print("Make sure we don't kill containers when doing recovery")
 
     c.disconnect()
     AsRoot()
@@ -220,7 +220,7 @@ def TestRecovery():
     AsAlice()
     c.connect()
 
-    print "Make sure meta gets correct state upon recovery"
+    print("Make sure meta gets correct state upon recovery")
 
     parent = c.Create("a")
     child = c.Create("a/b")
@@ -237,7 +237,7 @@ def TestRecovery():
     parent.Destroy()
 
 
-    print "restore virt_mode=host meta + virt_mode=job child container"
+    print("restore virt_mode=host meta + virt_mode=job child container")
 
     parent = c.Run("test-host", virt_mode='host', weak=False)
     child = c.Run("test-host/job", virt_mode='job', command="sleep 1000", weak=False)
@@ -253,7 +253,7 @@ def TestRecovery():
     parent.Destroy()
 
 
-    print "Make sure hierarchical recovery works"
+    print("Make sure hierarchical recovery works")
     #Still as alice
 
     parent = c.Create("a")
@@ -285,7 +285,7 @@ def TestRecovery():
 
     parent.Destroy()
 
-    print "Make sure some data is persistent"
+    print("Make sure some data is persistent")
 
     r = c.Create("a:b")
     r.SetProperty("command", "sort -S 1G /dev/urandom")
@@ -322,7 +322,7 @@ def TestRecovery():
     r = c.Find("a:b")
     r.GetData("respawn_count") == "1"
 
-    print "Make sure stopped state is persistent"
+    print("Make sure stopped state is persistent")
 
     r.Destroy()
     r = c.Create("a:b")
@@ -341,7 +341,7 @@ def TestRecovery():
     ValidateDefaultData(r)
 
 
-    print "Make sure paused state is persistent"
+    print("Make sure paused state is persistent")
 
     r.SetProperty("command", "sleep 1000")
     r.Start()
@@ -371,7 +371,7 @@ def TestRecovery():
     ExpectPropNe(r, "time", "0")
     r.Destroy()
 
-    print "Make sure respawn_count ticks after recovery"
+    print("Make sure respawn_count ticks after recovery")
 
     r = c.Create("a:b")
     r.SetProperty("command", "true")
@@ -390,7 +390,7 @@ def TestRecovery():
 
     n = 100
 
-    print "Make sure we can recover", n, "containers "
+    print("Make sure we can recover", n, "containers ")
 
     for i in range(0, n):
         r = c.Create("recover" + str(i))
@@ -419,7 +419,7 @@ def TestRecovery():
 
 #Former selftest.cpp TestWaitRecovery()
 def TestWaitRecovery():
-    print "Check wait for restored container"
+    print("Check wait for restored container")
 
     if os.getuid() == 0:
         AsAlice()
@@ -440,7 +440,7 @@ def TestWaitRecovery():
 
     aaa.Stop()
 
-    print "Check wait for lost and restored container"
+    print("Check wait for lost and restored container")
 
     aaa.SetProperty("command", "sleep 3")
     aaa.Start()
@@ -457,7 +457,7 @@ def TestWaitRecovery():
 
 #Former selftest.cpp TestVolumeRecovery
 def TestVolumeRecovery():
-    print "Make sure porto removes leftover volumes"
+    print("Make sure porto removes leftover volumes")
 
     if os.getpid() != 0:
         AsRoot()
@@ -469,7 +469,7 @@ def TestVolumeRecovery():
     except OSError:
         pass
 
-    os.mkdir("/tmp/volume_c", 0755)
+    os.mkdir("/tmp/volume_c", 0o0755)
 
     ExpectEq(len(c.ListVolumes()), 0)
 
@@ -481,7 +481,7 @@ def TestVolumeRecovery():
     except OSError:
         pass
 
-    os.mkdir("/place/porto_volumes/leftover_volume", 0755)
+    os.mkdir("/place/porto_volumes/leftover_volume", 0o0755)
 
     KillPid(GetPortodPid(), signal.SIGKILL)
     c.connect()
@@ -490,7 +490,7 @@ def TestVolumeRecovery():
 
     Expect(not os.path.exists("/place/porto_volumes/leftover_volume"))
 
-    print "Make sure porto preserves mounted loop/overlayfs"
+    print("Make sure porto preserves mounted loop/overlayfs")
 
     ExpectEq(len(c.ListVolumes()), 2)
 
@@ -508,7 +508,7 @@ def TestVolumeRecovery():
     os.rmdir("/tmp/volume_c")
 
 def TestTCCleanup():
-    print "Make sure stale tc classes to be cleaned up"
+    print("Make sure stale tc classes to be cleaned up")
 
     AsRoot()
 
@@ -581,7 +581,7 @@ def TestTCCleanup():
     c.Destroy("a")
 
 def TestPersistentStorage():
-    print "Verifying volume persistent storage behavior"
+    print("Verifying volume persistent storage behavior")
 
     if os.getuid() == 0:
         AsAlice()
@@ -704,7 +704,7 @@ def TestPersistentStorage():
     ExpectEq(len(c.ListStorages()), 0)
 
 def TestAttach():
-    print "Verify that tids attached correctly after reload"
+    print("Verify that tids attached correctly after reload")
 
     def GetPidsAndTids(name):
         pids = {int(p.rstrip()) for p in open("/sys/fs/cgroup/freezer/porto/{}/cgroup.procs".format(name), 'r')}
@@ -780,7 +780,7 @@ try:
     TestPersistentStorage()
     TestAttach()
 except BaseException as e:
-    print traceback.format_exc()
+    print(traceback.format_exc())
     ret = 1
 
 AsRoot()

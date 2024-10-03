@@ -575,6 +575,7 @@ bool TCapabilities::HasSetUidGid() const {
 
 TCapabilities AllCapabilities;
 TCapabilities DefaultCapabilities;
+TCapabilities RootCapabilities;
 TCapabilities NoCapabilities;
 TCapabilities PortoInitCapabilities;
 TCapabilities HelperCapabilities;
@@ -630,9 +631,18 @@ void InitCapabilities() {
         BIT(CAP_MKNOD) |
         BIT(CAP_AUDIT_WRITE);
 
+    /* root set (previously HostCapBound) */
+    RootCapabilities =
+        DefaultCapabilities |
+        BIT(CAP_SYS_ADMIN) |
+        BIT(CAP_SYS_NICE) |
+        BIT(CAP_LINUX_IMMUTABLE) |
+        BIT(CAP_SYS_BOOT) |
+        BIT(CAP_SYS_RESOURCE);
+
     /* helper sets */
-    HelperCapabilities = DefaultCapabilities;
-    PrivilegedHelperCapabilities = HelperCapabilities | BIT(CAP_SYS_RESOURCE);
+    HelperCapabilities = RootCapabilities & ~BIT(CAP_SYS_RESOURCE);
+    PrivilegedHelperCapabilities = RootCapabilities;
 }
 
 bool TFile::Access(const struct stat &st, const TCred &cred, enum AccessMode mode) {

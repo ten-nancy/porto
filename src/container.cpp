@@ -3143,17 +3143,27 @@ void TContainer::SanitizeCapabilities() {
     for (auto ct = this; ct; ct = ct->Parent.get()) {
         chroot |= ct->Root != "/";
         pidns |= ct->Isolate;
+        // TODO(kndrvt): change to Controllers later
         memcg |= ct->MemLimit && ct->HasProp(EProperty::MEM_LIMIT);
         netns |= ct->NetIsolate;
 
-        if (!found && !HasProp(EProperty::CAPABILITIES) && ct->HasProp(EProperty::CAPABILITIES)) {
+        if (!found && !HasProp(EProperty::CAPABILITIES) && (ct->HasProp(EProperty::CAPABILITIES) || ct->Level == 1)) {
             CapLimit = ct->CapLimit;
             CapBound = CapLimit;
             found = true;
         }
 
-        if (ct->HasProp(EProperty::CAPABILITIES))
+        if (ct->HasProp(EProperty::CAPABILITIES) || ct->Level == 1)
             CapBound &= ct->CapLimit;
+    }
+
+    if (OwnerCred.IsRootUser() && !HasProp(EProperty::CAPABILITIES)) {
+        // RootCapabilities equals to previous HostCapBound.
+        // This is a hack for backward compatibility.
+        // TODO(kndrvt): remove or change it later
+        CapBound = RootCapabilities;
+        CapAllowed = RootCapabilities;
+        return;
     }
 
     TCapabilities remove;
@@ -3450,7 +3460,11 @@ TError TContainer::PrepareStart() {
     if (CapBound & ~CapLimit) {
         TCapabilities cap = CapBound;
         cap &= ~CapLimit;
-        return TError(EError::Permission, "Capabilities out of bounds: " + cap.Format());
+        // In case of owner is root without CapLimit
+        // it's allowed to break condition CapBound <= CapLimit.
+        // TODO(kndrvt): remove it later
+        if (!OwnerCred.IsRootUser() || HasProp(EProperty::CAPABILITIES))
+            return TError(EError::Permission, "Capabilities out of bounds: " + cap.Format());
     }
 
     if (CapAmbient & ~CapAllowed) {

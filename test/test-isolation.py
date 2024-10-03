@@ -7,6 +7,7 @@ AllCapSet           = "0000003fffffffff"
 DefaultCapSet       = "00000000a80c75fb" # DefaultCapabilities
 HardlyClearedCapSet = "00000000a80c25fb" # DefaultCapabilities & ~(CAP_NET_ADMIN | CAP_IPC_LOCK)
 FullyClearedCapSet  = "00000000a80425db" # DefaultCapabilities & ~(CAP_NET_ADMIN | CAP_IPC_LOCK | CAP_KILL | CAP_SYS_PTRACE)
+RootCapSet          = "00000000a9ec77fb" # DefaultCapabilities | CAP_SYS_ADMIN | CAP_SYS_NICE | CAP_LINUX_IMMUTABLE | CAP_SYS_BOOT | CAP_SYS_RESOURCE
 EmptyCapSet         = "0000000000000000"
 if GetKernelVersion() >= (5, 15):
     AllCapSet       =  "000001ffffffffff"
@@ -20,9 +21,9 @@ pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)
 ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
-ExpectEq(ProcStatus(pid, "CapPrm"), HardlyClearedCapSet)
-ExpectEq(ProcStatus(pid, "CapEff"), HardlyClearedCapSet)
-ExpectEq(ProcStatus(pid, "CapBnd"), HardlyClearedCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), RootCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), RootCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), RootCapSet)
 ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()

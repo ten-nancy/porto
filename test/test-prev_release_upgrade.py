@@ -82,7 +82,7 @@ def CheckCaps(r):
 
 #FIXME: remove it in ther future
 def PropTrim(prop):
-    if not (type(prop) is str or type(prop) is unicode):
+    if not (type(prop) is str or type(prop) is str):
         return prop
     prop = str(prop.replace("; ", ";"))
     if len(prop) > 0 and prop[-1] == ';':
@@ -99,7 +99,7 @@ def VerifyProps(r, props):
         try:
             assert PropTrim(p[1]) == PropTrim(value)
         except AssertionError as e:
-            print "{} prop value <{}> != <{}>".format(p[0], p[1], value)
+            print("{} prop value <{}> != <{}>".format(p[0], p[1], value))
             raise e
 
 def SnapshotProps(r):
@@ -158,7 +158,7 @@ c = porto.Connection(timeout=3)
 
 #Check  working with older version
 
-print "Checking upgrade from", PREV_VERSION
+print("Checking upgrade from", PREV_VERSION)
 
 ver, rev = c.Version()
 ExpectNe(ver, PREV_VERSION)
@@ -167,9 +167,9 @@ cwd=os.path.abspath(os.getcwd())
 
 os.chdir(TMPDIR)
 subprocess.call(["apt-get", "update"])
-download = subprocess.check_output(["apt-get", "--force-yes", "download", "yandex-porto=" + PREV_VERSION])
+download = subprocess.check_output(["apt-get", "--force-yes", "download", "yandex-porto=" + PREV_VERSION]).decode("utf-8")
 
-print "Package successfully downloaded"
+print("Package successfully downloaded")
 
 StopPortod()
 
@@ -184,7 +184,7 @@ os.symlink(TMPDIR + "/old/usr/lib/porto/portoinit", "old/usr/sbin/portoinit")
 
 os.chdir(cwd)
 
-print " - start previous version"
+print(" - start previous version")
 
 subprocess.check_call([prev_portod, "start"])
 PREV_PORTOD = True
@@ -321,7 +321,7 @@ try:
 
     AsRoot()
 
-    print " - upgrade"
+    print(" - upgrade")
 
     subprocess.check_call([portod, "upgrade"])
     PREV_PORTOD = False
@@ -394,7 +394,7 @@ finally:
 
 c.disconnect()
 
-print " - downgrade"
+print(" - downgrade")
 
 subprocess.check_call([prev_portod, "upgrade"])
 PREV_PORTOD = True
@@ -446,7 +446,7 @@ assert legacy_rt_settings == DumpLegacyRt(r)
 
 AsRoot()
 
-print " - restart to new version"
+print(" - restart to new version")
 
 RestartPortod()
 PREV_PORTOD = False

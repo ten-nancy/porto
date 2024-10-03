@@ -40,7 +40,7 @@ part3 = {'cleanup_portod':1,
          'wait':1,
          'python3-wait':1,
          'python3-ct-state':2,
-         'knobs':1,
+         'python3-knobs':1,
          'std-streams':3,
          'labels':1,
          'ulimit':1,
@@ -81,8 +81,8 @@ part6 = {'python3-volume_places':65,
          'python3-volume-spec':20}
 
 part7 = {'python3-volume_backends':55,
-         'recovery':40,
-         'prev_release_upgrade':50,
+         'python3-recovery':40,
+         'python3-prev_release_upgrade':50,
          'performance':115}
 
 part8 = {'spec':4,

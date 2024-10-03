@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import porto
 import subprocess
@@ -14,7 +14,7 @@ def SetProps(r, knobs):
         try:
             r.SetProperty(k, knobs[k])
         except BaseException as e:
-            print "Cannot set: \n <{}> \n with \n <{}> : \n {}".format(k, knobs[k], e)
+            print("Cannot set: \n <{}> \n with \n <{}> : \n {}".format(k, knobs[k], e))
             raise e
 
 
@@ -24,7 +24,7 @@ def VerifyProperties(r, knobs):
         try:
             assert value == knobs[k]
         except BaseException as e:
-            print "Assertion for {} : \n <{}> \n != \n <{}>".format(k, value, knobs[k])
+            print("Assertion for {} : \n <{}> \n != \n <{}>".format(k, value, knobs[k]))
             raise e
 
 knobs = {
@@ -125,18 +125,18 @@ for k in knobs:
         subprocess.check_call([portoctl, "set", "test", k, "%s" %(str(value).lower()\
                           if type(value) is bool else value)])
     except subprocess.CalledProcessError as e:
-        print "Cannot set property {} with <{}> : {} : {}".format(k, value, e, e.output)
+        print("Cannot set property {} with <{}> : {} : {}".format(k, value, e, e.output))
         raise e
 
 for k in knobs:
-    value = subprocess.check_output([portoctl, "get", "test", k]).rstrip("\n")
+    value = subprocess.check_output([portoctl, "get", "test", k]).decode("utf-8").rstrip("\n")
     try:
         if type(knobs[k]) is bool:
             assert value == str(knobs[k]).lower()
         else:
             assert value == knobs[k]
     except AssertionError as e:
-        print "portoctl get {} result:\n <{}> \n != <{}> \n".format(k, value, knobs[k])
+        print("portoctl get {} result:\n <{}> \n != <{}> \n".format(k, value, knobs[k]))
         raise e
 
 c.Destroy("test")
