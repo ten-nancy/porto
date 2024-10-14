@@ -1,3 +1,13 @@
+porto (5.3.42) unstable; urgency=low
+  [ kndrvt ]
+      capabilities: revert to extended caps for user root and helpers
+      test: remove packages installation and move test-parts to python3
+  [ ivan42 ]
+      update libbpf to v1.2.2
+  last commit: 06e5f230296090a47aacbbc064806f41344529a9
+
+ -- Porto Team <porto@yandex-team.ru>  Fri, 04 Oct 2024 12:20:20 -0000
+
 porto (5.3.41) unstable; urgency=low
   [ ovov ]
       container: fix cpuset propogation
