@@ -432,7 +432,6 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
 
     Hostname = "";
     CapAmbient = NoCapabilities;
-    CapAllowed = NoCapabilities;
     if (Parent) {
         if (Level == 1)
             CapLimit = DefaultCapabilities;
@@ -3125,14 +3124,6 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
 }
 
 void TContainer::SanitizeCapabilities() {
-    if (HostMode) {
-        CapBound = AllCapabilities;
-        CapLimit = AllCapabilities;
-        CapAllowed = AllCapabilities;
-        return;
-    }
-
-    bool chroot = false;
     bool pidns = false;
     bool memcg = false;
     bool netns = false;
@@ -3141,7 +3132,6 @@ void TContainer::SanitizeCapabilities() {
     CapBound = CapLimit;
 
     for (auto ct = this; ct; ct = ct->Parent.get()) {
-        chroot |= ct->Root != "/";
         pidns |= ct->Isolate;
         // TODO(kndrvt): change to Controllers later
         memcg |= ct->MemLimit && ct->HasProp(EProperty::MEM_LIMIT);
@@ -3157,13 +3147,14 @@ void TContainer::SanitizeCapabilities() {
             CapBound &= ct->CapLimit;
     }
 
-    if (OwnerCred.IsRootUser() && !HasProp(EProperty::CAPABILITIES)) {
-        // RootCapabilities equals to previous HostCapBound.
-        // This is a hack for backward compatibility.
-        // TODO(kndrvt): remove or change it later
-        CapBound = RootCapabilities;
-        CapAllowed = RootCapabilities;
-        return;
+    if (!HasProp(EProperty::CAPABILITIES)) {
+        if (HostMode) {
+            CapBound = AllCapabilities;
+            return;
+        } else if (OwnerCred.IsRootUser()) {
+            CapBound = RootCapabilities;
+            return;
+        }
     }
 
     TCapabilities remove;
@@ -3180,12 +3171,8 @@ void TContainer::SanitizeCapabilities() {
         remove &= ~CapAmbient;
 
     CapBound &= ~remove;
-
-    if (chroot)
-        // Extra property capabilities (old hack)
-        CapBound |= (CapLimit & CapExtra);
-
-    CapAllowed = CapBound;
+    // Extra property capabilities (old hack)
+    CapBound |= (CapLimit & CapExtra);
 }
 
 void TContainer::SanitizeCapabilitiesAll() {
@@ -3457,19 +3444,18 @@ TError TContainer::PrepareStart() {
         UnlockState();
     }
 
+    /* CapLimit >= CapBound */
     if (CapBound & ~CapLimit) {
         TCapabilities cap = CapBound;
         cap &= ~CapLimit;
-        // In case of owner is root without CapLimit
-        // it's allowed to break condition CapBound <= CapLimit.
-        // TODO(kndrvt): remove it later
-        if (!OwnerCred.IsRootUser() || HasProp(EProperty::CAPABILITIES))
+        if ((!OwnerCred.IsRootUser() && !HostMode) || HasProp(EProperty::CAPABILITIES))
             return TError(EError::Permission, "Capabilities out of bounds: " + cap.Format());
     }
 
-    if (CapAmbient & ~CapAllowed) {
+    /* CapBound >= CapAmbient */
+    if (CapAmbient & ~CapBound) {
         TCapabilities cap = CapAmbient;
-        cap &= ~CapAllowed;
+        cap &= ~CapBound;
         return TError(EError::Permission, "Ambient capabilities out of bounds: " + cap.Format());
     }
 

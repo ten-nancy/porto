@@ -207,11 +207,11 @@ public:
     TMultiTuple IpLimit;
     std::string IpPolicy;
 
-    /* CapLimit >= CapBound >= CapAllowed >= CapAmbient */
+    /* CapLimit >= CapBound >= CapAmbient */
+    /* Host mode and owner is root are exceptions for the first condition. */
     TCapabilities CapAmbient;   /* get at start */
-    TCapabilities CapAllowed;   /* can be set as ambient */
-    TCapabilities CapLimit;     /* upper limit */
-    TCapabilities CapBound;     /* actual bounding set */
+    TCapabilities CapLimit;     /* upper limit set by user */
+    TCapabilities CapBound;     /* actual bounding set and can be set as ambient */
     TCapabilities CapExtra;     /* from extra properties */
     TMultiTuple DefaultGw;
     std::string ResolvConf;

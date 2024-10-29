@@ -375,7 +375,7 @@ public:
 class TCapAmbientAllowed : public TProperty {
 public:
     TCapAmbientAllowed() : TProperty(P_CAPABILITIES_AMBIENT_ALLOWED, EProperty::NONE,
-            "Allowed ambient capabilities in container")
+            "Allowed ambient capabilities in container (deprecated)")
     {
         IsReadOnly = true;
     }
@@ -385,7 +385,7 @@ public:
     }
 
     TError Get(std::string &value) const override {
-        value = CT->CapAllowed.Format();
+        value = CT->CapBound.Format();
         return OK;
     }
 
@@ -397,12 +397,12 @@ public:
         if (error)
             return error;
 
-        value = BoolToString((CT->CapAllowed & caps) == caps);
+        value = BoolToString((CT->CapBound & caps) == caps);
         return OK;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-        CT->CapAllowed.Dump(*spec.mutable_capabilities_ambient_allowed());
+        CT->CapBound.Dump(*spec.mutable_capabilities_ambient_allowed());
     }
 } static CapAmbientAllowed;
 

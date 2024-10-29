@@ -371,8 +371,16 @@ void InitPortoGroups() {
 #define CAP_AUDIT_READ 37
 #endif
 
+#ifndef CAP_PERFMON
+#define CAP_PERFMON 38
+#endif
+
 #ifndef CAP_BPF
 #define CAP_BPF 39
+#endif
+
+#ifndef CAP_CHECKPOINT_RESTORE
+#define CAP_CHECKPOINT_RESTORE 40
 #endif
 
 #ifndef PR_CAP_AMBIENT
@@ -384,45 +392,47 @@ void InitPortoGroups() {
 #endif
 
 static const TFlagsNames CapNames = {
-    { BIT(CAP_CHOWN),            "CHOWN" },
-    { BIT(CAP_DAC_OVERRIDE),     "DAC_OVERRIDE" },
-    { BIT(CAP_DAC_READ_SEARCH),  "DAC_READ_SEARCH" },
-    { BIT(CAP_FOWNER),           "FOWNER" },
-    { BIT(CAP_FSETID),           "FSETID" },
-    { BIT(CAP_KILL),             "KILL" },
-    { BIT(CAP_SETGID),           "SETGID" },
-    { BIT(CAP_SETUID),           "SETUID" },
-    { BIT(CAP_SETPCAP),          "SETPCAP" },
-    { BIT(CAP_LINUX_IMMUTABLE),  "LINUX_IMMUTABLE" },
-    { BIT(CAP_NET_BIND_SERVICE), "NET_BIND_SERVICE" },
-    { BIT(CAP_NET_BROADCAST),    "NET_BROADCAST" },
-    { BIT(CAP_NET_ADMIN),        "NET_ADMIN" },
-    { BIT(CAP_NET_RAW),          "NET_RAW" },
-    { BIT(CAP_IPC_LOCK),         "IPC_LOCK" },
-    { BIT(CAP_IPC_OWNER),        "IPC_OWNER" },
-    { BIT(CAP_SYS_MODULE),       "SYS_MODULE" },
-    { BIT(CAP_SYS_RAWIO),        "SYS_RAWIO" },
-    { BIT(CAP_SYS_CHROOT),       "SYS_CHROOT" },
-    { BIT(CAP_SYS_PTRACE),       "SYS_PTRACE" },
-    { BIT(CAP_SYS_PACCT),        "SYS_PACCT" },
-    { BIT(CAP_SYS_ADMIN),        "SYS_ADMIN" },
-    { BIT(CAP_SYS_BOOT),         "SYS_BOOT" },
-    { BIT(CAP_SYS_NICE),         "SYS_NICE" },
-    { BIT(CAP_SYS_RESOURCE),     "SYS_RESOURCE" },
-    { BIT(CAP_SYS_TIME),         "SYS_TIME" },
-    { BIT(CAP_SYS_TTY_CONFIG),   "SYS_TTY_CONFIG" },
-    { BIT(CAP_MKNOD),            "MKNOD" },
-    { BIT(CAP_LEASE),            "LEASE" },
-    { BIT(CAP_AUDIT_WRITE),      "AUDIT_WRITE" },
-    { BIT(CAP_AUDIT_CONTROL),    "AUDIT_CONTROL" },
-    { BIT(CAP_SETFCAP),          "SETFCAP" },
-    { BIT(CAP_MAC_OVERRIDE),     "MAC_OVERRIDE" },
-    { BIT(CAP_MAC_ADMIN),        "MAC_ADMIN" },
-    { BIT(CAP_SYSLOG),           "SYSLOG" },
-    { BIT(CAP_WAKE_ALARM),       "WAKE_ALARM" },
-    { BIT(CAP_BLOCK_SUSPEND),    "BLOCK_SUSPEND" },
-    { BIT(CAP_AUDIT_READ),       "AUDIT_READ" },
-    { BIT(CAP_BPF),              "BPF" },
+    { BIT(CAP_CHOWN),              "CHOWN" },
+    { BIT(CAP_DAC_OVERRIDE),       "DAC_OVERRIDE" },
+    { BIT(CAP_DAC_READ_SEARCH),    "DAC_READ_SEARCH" },
+    { BIT(CAP_FOWNER),             "FOWNER" },
+    { BIT(CAP_FSETID),             "FSETID" },
+    { BIT(CAP_KILL),               "KILL" },
+    { BIT(CAP_SETGID),             "SETGID" },
+    { BIT(CAP_SETUID),             "SETUID" },
+    { BIT(CAP_SETPCAP),            "SETPCAP" },
+    { BIT(CAP_LINUX_IMMUTABLE),    "LINUX_IMMUTABLE" },
+    { BIT(CAP_NET_BIND_SERVICE),   "NET_BIND_SERVICE" },
+    { BIT(CAP_NET_BROADCAST),      "NET_BROADCAST" },
+    { BIT(CAP_NET_ADMIN),          "NET_ADMIN" },
+    { BIT(CAP_NET_RAW),            "NET_RAW" },
+    { BIT(CAP_IPC_LOCK),           "IPC_LOCK" },
+    { BIT(CAP_IPC_OWNER),          "IPC_OWNER" },
+    { BIT(CAP_SYS_MODULE),         "SYS_MODULE" },
+    { BIT(CAP_SYS_RAWIO),          "SYS_RAWIO" },
+    { BIT(CAP_SYS_CHROOT),         "SYS_CHROOT" },
+    { BIT(CAP_SYS_PTRACE),         "SYS_PTRACE" },
+    { BIT(CAP_SYS_PACCT),          "SYS_PACCT" },
+    { BIT(CAP_SYS_ADMIN),          "SYS_ADMIN" },
+    { BIT(CAP_SYS_BOOT),           "SYS_BOOT" },
+    { BIT(CAP_SYS_NICE),           "SYS_NICE" },
+    { BIT(CAP_SYS_RESOURCE),       "SYS_RESOURCE" },
+    { BIT(CAP_SYS_TIME),           "SYS_TIME" },
+    { BIT(CAP_SYS_TTY_CONFIG),     "SYS_TTY_CONFIG" },
+    { BIT(CAP_MKNOD),              "MKNOD" },
+    { BIT(CAP_LEASE),              "LEASE" },
+    { BIT(CAP_AUDIT_WRITE),        "AUDIT_WRITE" },
+    { BIT(CAP_AUDIT_CONTROL),      "AUDIT_CONTROL" },
+    { BIT(CAP_SETFCAP),            "SETFCAP" },
+    { BIT(CAP_MAC_OVERRIDE),       "MAC_OVERRIDE" },
+    { BIT(CAP_MAC_ADMIN),          "MAC_ADMIN" },
+    { BIT(CAP_SYSLOG),             "SYSLOG" },
+    { BIT(CAP_WAKE_ALARM),         "WAKE_ALARM" },
+    { BIT(CAP_BLOCK_SUSPEND),      "BLOCK_SUSPEND" },
+    { BIT(CAP_AUDIT_READ),         "AUDIT_READ" },
+    { BIT(CAP_PERFMON),            "PERFMON" },
+    { BIT(CAP_BPF),                "BPF" },
+    { BIT(CAP_CHECKPOINT_RESTORE), "CHECKPOINT_RESTORE" },
 };
 
 static int LastCapability;

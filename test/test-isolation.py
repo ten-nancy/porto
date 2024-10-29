@@ -9,6 +9,7 @@ HardlyClearedCapSet = "00000000a80c25fb" # DefaultCapabilities & ~(CAP_NET_ADMIN
 FullyClearedCapSet  = "00000000a80425db" # DefaultCapabilities & ~(CAP_NET_ADMIN | CAP_IPC_LOCK | CAP_KILL | CAP_SYS_PTRACE)
 RootCapSet          = "00000000a9ec77fb" # DefaultCapabilities | CAP_SYS_ADMIN | CAP_SYS_NICE | CAP_LINUX_IMMUTABLE | CAP_SYS_BOOT | CAP_SYS_RESOURCE
 EmptyCapSet         = "0000000000000000"
+CustomCapSet        = "0000000000000180" # SETUID | SETPCAP
 if GetKernelVersion() >= (5, 15):
     AllCapSet       =  "000001ffffffffff"
 
@@ -94,6 +95,42 @@ ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 a.Destroy()
 
 # virt_mode=host restrictions
+
+a = c.Run("a", virt_mode='host', command="sleep inf", weak=False)
+pid = a['root_pid']
+
+ExpectEq(len(a.GetProperty("capabilities")), 151)
+ExpectEq(ProcStatus(pid, "NSpid"), pid)
+ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), AllCapSet)
+ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
+
+AsRoot()
+ReloadPortod()
+AsAlice()
+
+ExpectEq(a['state'], "running")
+a.Destroy()
+
+a = c.Run("a", virt_mode='host', capabilities="SETUID;SETPCAP", command="sleep inf", weak=False)
+pid = a['root_pid']
+
+ExpectEq(a.GetProperty("capabilities"), "SETUID;SETPCAP")
+ExpectEq(ProcStatus(pid, "NSpid"), pid)
+ExpectEq(ProcStatus(pid, "CapInh"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapPrm"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapEff"), EmptyCapSet)
+ExpectEq(ProcStatus(pid, "CapBnd"), CustomCapSet)
+ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
+
+AsRoot()
+ReloadPortod()
+AsAlice()
+
+ExpectEq(a['state'], "running")
+a.Destroy()
 
 a = c.Run("a")
 ExpectEq(Catch(c.Run, "a/b", virt_mode='host', weak=True), porto.exceptions.Permission)
