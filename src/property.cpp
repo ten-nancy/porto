@@ -182,8 +182,9 @@ public:
         TCapabilities caps;
 
         error = caps.Parse(value);
-        if (error)
-            return error;
+        // temporary ignore error
+        // if (error)
+        //     return error;
 
         return CommitLimit(caps);
     }
