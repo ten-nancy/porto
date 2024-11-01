@@ -1,3 +1,11 @@
+porto (5.3.43) unstable; urgency=low
+  [ kndrvt ]
+      capabilities: temporary ignore parsing error
+      capabilities: CapLimit has more priority than HostMode, remove CapAllowed and chroot, add PERFMON and CHECKPOINT_RESTORE
+  last commit: af4447715bef42237c673f66c787acabdfa8125a
+
+ -- Porto Team <porto@yandex-team.ru>  Thu, 31 Oct 2024 17:22:12 -0000
+
 porto (5.3.42) unstable; urgency=low
   [ kndrvt ]
       capabilities: revert to extended caps for user root and helpers
