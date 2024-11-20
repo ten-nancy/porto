@@ -94,7 +94,7 @@ try:
 
         # note: level 1 containers always have cpu cgroup, so controllers property is not neccessary
         a = conn.Run("a", command='sleep inf', cpu_policy="idle", controllers="cpu", weak=True)
-        ExpectException(a.GetProperty, porto.exceptions.InvalidProperty, cpu_idle)
+        ExpectException(a.GetProperty, porto.exceptions.InvalidValue, cpu_idle)
         a.Destroy()
 
 finally:

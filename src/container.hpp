@@ -5,11 +5,9 @@
 #include <list>
 #include <memory>
 #include <atomic>
-#include <condition_variable>
 
 #include "util/unix.hpp"
 #include "util/task.hpp"
-#include "util/log.hpp"
 #include "util/idmap.hpp"
 #include "util/mutex.hpp"
 #include "task.hpp"
@@ -20,8 +18,6 @@
 #include "seccomp.hpp"
 
 class TEpollSource;
-class TCgroup;
-class TSubsystem;
 class TEvent;
 class TClient;
 class TVolume;
@@ -99,6 +95,7 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
     TError ApplyIoPolicy() const;
     TError ApplyDeviceConf() const;
     TError ApplyDynamicProperties(bool onRestore = false);
+
     TError PrepareOomMonitor();
     void ShutdownOom();
     TError PrepareCgroups(bool onRestore = false);
@@ -488,9 +485,6 @@ public:
 
     TError Save(void);
     TError Load(const TKeyValue &node);
-
-    TCgroup GetCgroup(const TSubsystem &subsystem) const;
-    TError FreeCgroup(const TSubsystem &subsystem);
 
     void ChooseSchedPolicy();
     TBitMap GetNoSmtCpus();

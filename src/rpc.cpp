@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include "rpc.hpp"
+#include "cgroup.hpp"
 #include "client.hpp"
 #include "config.hpp"
 #include "version.hpp"
@@ -27,7 +28,6 @@ extern "C" {
 }
 
 extern __thread char ReqId[9];
-
 extern uint32_t RequestHandlingDelayMs;
 
 static bool PortodFrozen = false;
@@ -1454,7 +1454,7 @@ noinline TError ImportLayer(const rpc::TLayerImportRequest &req) {
         if (error)
             return error;
 
-        memCgroup = ct->GetCgroup(MemorySubsystem).Name;
+        memCgroup = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get())->GetName();
     }
 
     error = layer.Resolve(EStorageType::Layer, req.place(), req.layer());
@@ -1752,9 +1752,8 @@ noinline TError AttachProcess(const rpc::TAttachProcessRequest &req, bool thread
     L_ACT("Attach {} {} ({}) from {} to {}", thread ? "thread" : "process",
           pid, comm, oldCt->Name, newCt->Name);
 
-    for (auto hy: Hierarchies) {
-        auto cg = newCt->GetCgroup(*hy);
-        error = cg.Attach(pid, thread);
+    for (auto& cg: CgroupDriver.GetContainerCgroups(*newCt)) {
+        error = cg->Attach(pid, thread);
         if (error)
             goto undo;
     }
@@ -1762,10 +1761,9 @@ noinline TError AttachProcess(const rpc::TAttachProcessRequest &req, bool thread
     return OK;
 
 undo:
-    for (auto hy: Hierarchies) {
-        auto cg = oldCt->GetCgroup(*hy);
-        (void)cg.Attach(pid, thread);
-    }
+    for (auto& cg: CgroupDriver.GetContainerCgroups(*newCt))
+        (void)cg->Attach(pid, thread);
+
     return error;
 }
 

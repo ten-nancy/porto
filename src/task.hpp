@@ -35,7 +35,7 @@ struct TTaskEnv {
     bool QuadroFork;
     std::vector<std::string> Autoconf;
     bool NewMountNs;
-    std::vector<TCgroup> Cgroups;
+    std::list<std::unique_ptr<const TCgroup>> Cgroups;
     TCred Cred;
     uid_t LoginUid;
 

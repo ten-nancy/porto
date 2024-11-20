@@ -1,6 +1,3 @@
-#include <climits>
-#include <sstream>
-#include <iterator>
 #include <csignal>
 
 #include "task.hpp"
@@ -718,8 +715,8 @@ TError TTaskEnv::Start() {
 
         L("Attach to cgroups");
         // move to target cgroups
-        for (auto &cg : Cgroups) {
-            error = cg.Attach(GetPid());
+        for (auto& cg : Cgroups) {
+            error = cg->Attach(GetPid());
             if (error)
                 Abort(error);
         }

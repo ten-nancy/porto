@@ -1,11 +1,10 @@
-#include <sstream>
-#include <fstream>
 #include <memory>
 #include <csignal>
 #include <cstdlib>
 #include <climits>
 #include <algorithm>
 #include <condition_variable>
+#include <mutex>
 
 #include "portod.hpp"
 #include "container.hpp"
@@ -197,21 +196,21 @@ TError TContainer::Find(const std::string &name, std::shared_ptr<TContainer> &ct
 
 TError TContainer::FindTaskContainer(pid_t pid, std::shared_ptr<TContainer> &ct, bool strict) {
     TError error;
-    TCgroup cg;
+    std::unique_ptr<const TCgroup> cg;
 
-    if (Cgroup2Subsystem.IsDisabled())
-        error = FreezerSubsystem.TaskCgroup(pid, cg);
+    if (CgroupDriver.Cgroup2Subsystem->IsDisabled())
+        error = CgroupDriver.FreezerSubsystem->TaskCgroup(pid, cg);
     else
-        error = Cgroup2Subsystem.TaskCgroup(pid, cg);
+        error = CgroupDriver.Cgroup2Subsystem->TaskCgroup(pid, cg);
 
     if (error)
         return error;
 
-    if (cg.Name == PORTO_DAEMON_CGROUP || cg.Name == PORTO_HELPERS_CGROUP)
+    if (cg->GetName() == PORTO_DAEMON_CGROUP || cg->GetName() == PORTO_HELPERS_CGROUP)
         return TError(EError::HelperError, "Read-only access");
 
     std::string prefix = std::string(PORTO_CGROUP_PREFIX) + "/";
-    std::string name = cg.Name;
+    std::string name = cg->GetName();
     std::replace(name.begin(), name.end(), '%', '/');
 
     auto containers_lock = LockContainers();
@@ -492,26 +491,26 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
 
     Controllers |= CGROUP_FREEZER;
 
-    if (Cgroup2Subsystem.Supported)
+    if (CgroupDriver.Cgroup2Subsystem->Supported)
         Controllers |= CGROUP2;
 
-    if (PerfSubsystem.Supported)
+    if (CgroupDriver.PerfSubsystem->Supported)
         Controllers |= CGROUP_PERF;
 
-    if (CpuacctSubsystem.Controllers == CGROUP_CPUACCT)
+    if (CgroupDriver.CpuacctSubsystem->Controllers == CGROUP_CPUACCT)
         Controllers |= CGROUP_CPUACCT;
 
     if (Level <= 1) {
         Controllers |= CGROUP_MEMORY | CGROUP_CPU | CGROUP_CPUACCT |
                        CGROUP_DEVICES;
 
-        if (BlkioSubsystem.Supported)
+        if (CgroupDriver.BlkioSubsystem->Supported)
             Controllers |= CGROUP_BLKIO;
 
-        if (CpusetSubsystem.Supported)
+        if (CgroupDriver.CpusetSubsystem->Supported)
             Controllers |= CGROUP_CPUSET;
 
-        if (HugetlbSubsystem.Supported)
+        if (CgroupDriver.HugetlbSubsystem->Supported)
             Controllers |= CGROUP_HUGETLB;
     }
 
@@ -522,7 +521,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
                 config().container().memory_limit_margin());
         SetPropDirty(EProperty::MEM_LIMIT);
 
-        if (MemorySubsystem.SupportAnonLimit() &&
+        if (CgroupDriver.MemorySubsystem->SupportAnonLimit() &&
                 config().container().anon_limit_margin()) {
             AnonMemLimit = MemLimit - std::min(MemLimit / 4,
                     config().container().anon_limit_margin());
@@ -530,7 +529,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
         }
     }
 
-    if (Level == 1 && PidsSubsystem.Supported) {
+    if (Level == 1 && CgroupDriver.PidsSubsystem->Supported) {
         Controllers |= CGROUP_PIDS;
 
         if (config().container().default_thread_limit()) {
@@ -737,18 +736,13 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
             goto err;
 
         /* Kernel without group rt forbids moving RT tasks in to cpu cgroup */
-        if (ct->Task.Pid && !CpuSubsystem.HasRtGroup) {
-            auto cpuCg = ct->GetCgroup(CpuSubsystem);
-            TCgroup cg;
+        if (ct->Task.Pid && !CgroupDriver.CpuSubsystem->HasRtGroup) {
+            auto cpuCg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpuSubsystem.get());
+            std::unique_ptr<const TCgroup> cg;
 
-            if (!CpuSubsystem.TaskCgroup(ct->Task.Pid, cg) && cg != cpuCg) {
-                auto freezerCg = ct->GetCgroup(FreezerSubsystem);
-                bool smart;
-
-                /* Disable smart if we're moving tasks into another cgroup */
-                if (!cg.GetBool("cpu.smart", smart) && smart) {
-                    cg.SetBool("cpu.smart", false);
-                } else if (!CpuSubsystem.HasRtGroup) {
+            if (!CgroupDriver.CpuSubsystem->TaskCgroup(ct->Task.Pid, cg) && *cg != *cpuCg) {
+                auto freezerCg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.FreezerSubsystem.get());
+                if (!CgroupDriver.CpuSubsystem->HasRtGroup) {
                     std::vector<pid_t> prev, pids;
                     struct sched_param param;
                     param.sched_priority = 0;
@@ -756,7 +750,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
 
                     /* Disable RT for all task in freezer cgroup */
                     do {
-                        error = freezerCg.GetTasks(pids);
+                        error = freezerCg->GetTasks(pids);
                         retry = false;
                         for (auto pid: pids) {
                             if (std::find(prev.begin(), prev.end(), pid) == prev.end() &&
@@ -769,8 +763,8 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
                 }
 
                 /* Move tasks into correct cpu cgroup before enabling RT */
-                if (!CpuSubsystem.HasRtGroup && ct->SchedPolicy == SCHED_RR) {
-                    error = cpuCg.AttachAll(freezerCg);
+                if (!CgroupDriver.CpuSubsystem->HasRtGroup && ct->SchedPolicy == SCHED_RR) {
+                    error = cpuCg->AttachAll(*freezerCg);
                     if (error)
                         L_WRN("Cannot move to corrent cpu cgroup: {}", error);
                 }
@@ -779,10 +773,10 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
 
         /* Disable memory guarantee in old cgroup */
         if (ct->MemGuarantee) {
-            TCgroup memCg;
-            if (!MemorySubsystem.TaskCgroup(ct->Task.Pid, memCg) &&
-                    memCg != ct->GetCgroup(MemorySubsystem))
-                MemorySubsystem.SetGuarantee(memCg, 0);
+            std::unique_ptr<const TCgroup> memCg;
+            if (!CgroupDriver.MemorySubsystem->TaskCgroup(ct->Task.Pid, memCg) &&
+                    *memCg != *CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get()))
+                CgroupDriver.MemorySubsystem->SetGuarantee(*memCg, 0);
         }
 
         error = ct->ApplyDynamicProperties(true);
@@ -1055,7 +1049,7 @@ TError TContainer::UpdateSoftLimit() {
     auto lock = LockContainers();
     TError error;
 
-    for (auto ct = this; !ct->IsRoot(); ct = ct->Parent.get()) {
+    for (auto ct = shared_from_this(); !ct->IsRoot(); ct = ct->Parent) {
         if (!(ct->Controllers & CGROUP_MEMORY))
             continue;
 
@@ -1069,8 +1063,8 @@ TError TContainer::UpdateSoftLimit() {
             lim = config().container().dead_memory_soft_limit();
 
         if (ct->MemSoftLimit != lim) {
-            auto cg = ct->GetCgroup(MemorySubsystem);
-            error = MemorySubsystem.SetSoftLimit(cg, lim);
+            auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get());
+            error = CgroupDriver.MemorySubsystem->SetSoftLimit(*cg, lim);
             if (error && error.Errno != ENOENT)
                 return error;
             ct->MemSoftLimit = lim;
@@ -1241,11 +1235,11 @@ TError TContainer::GetThreadCount(uint64_t &count) const {
             return TError::System("sysinfo");
         count = si.procs;
     } else if (Controllers & CGROUP_PIDS) {
-        auto cg = GetCgroup(PidsSubsystem);
-        return PidsSubsystem.GetUsage(cg, count);
+        auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.PidsSubsystem.get());
+        return CgroupDriver.PidsSubsystem->GetUsage(*cg, count);
     } else {
-        auto cg = GetCgroup(FreezerSubsystem);
-        return cg.GetCount(true, count);
+        auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
+        return CgroupDriver.GetCgroupThreadCount(*cg, count);
     }
     return OK;
 }
@@ -1259,18 +1253,18 @@ TError TContainer::GetProcessCount(uint64_t &count) const {
             return error;
         count = st.st_nlink > ProcBaseDirs ? st.st_nlink  - ProcBaseDirs : 0;
     } else {
-        auto cg = GetCgroup(FreezerSubsystem);
-        return cg.GetCount(false, count);
+        auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
+        return CgroupDriver.GetCgroupProcessCount(*cg, count);
     }
     return OK;
 }
 
 TError TContainer::GetVmStat(TVmStat &stat) const {
-    auto cg = GetCgroup(FreezerSubsystem);
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     std::vector<pid_t> pids;
     TError error;
 
-    error = cg.GetProcesses(pids);
+    error = cg->GetProcesses(pids);
     if (error)
         return error;
 
@@ -1285,8 +1279,8 @@ void TContainer::CollectOomKills() {
         return;
 
     uint64_t kills = 0;
-    auto cg = GetCgroup(MemorySubsystem);
-    if (MemorySubsystem.GetOomKills(cg, kills))
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
+    if (CgroupDriver.MemorySubsystem->GetOomKills(*cg, kills))
         return;
 
     if (kills <= OomKills)
@@ -1406,8 +1400,8 @@ TError TContainer::ChooseDirtyMemLimit() {
         DirtyMemLimitBound = DirtyMemLimit;
 
     if (Controllers & CGROUP_MEMORY) {
-        auto memcg = GetCgroup(MemorySubsystem);
-        return MemorySubsystem.SetDirtyLimit(memcg, DirtyMemLimit > 0 ? DirtyMemLimitBound : 0);
+        auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
+        return CgroupDriver.MemorySubsystem->SetDirtyLimit(*memcg, DirtyMemLimit > 0 ? DirtyMemLimitBound : 0);
     }
 
     return OK;
@@ -1425,7 +1419,7 @@ void TContainer::PropagateDirtyMemLimit() {
 }
 
 TError TContainer::ApplyUlimits() {
-    auto cg = GetCgroup(FreezerSubsystem);
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     std::map<int, struct rlimit> map;
     std::vector<pid_t> prev, pids;
     TError error;
@@ -1434,7 +1428,7 @@ TError TContainer::ApplyUlimits() {
     L_ACT("Apply ulimits");
     auto lim = GetUlimit();
     do {
-        error = cg.GetTasks(pids);
+        error = cg->GetTasks(pids);
         if (error)
             return error;
         retry = false;
@@ -1495,7 +1489,7 @@ static bool CPU_SUBSET(cpu_set_t *srcset1, cpu_set_t *srcset2)
 }
 
 TError TContainer::ApplySchedPolicy() {
-    auto cg = GetCgroup(FreezerSubsystem);
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     struct sched_param param;
     param.sched_priority = SchedPrio;
     TError error;
@@ -1503,18 +1497,18 @@ TError TContainer::ApplySchedPolicy() {
     std::vector<pid_t> prev, pids;
     bool retry;
 
-    L_ACT("Set {} scheduler policy {}", cg, CpuPolicy);
+    L_ACT("Set {} scheduler policy {}", *cg, CpuPolicy);
 
     // Extention of SCHED_IDLE to cgroups on kernel 5.15 and above. More details:
     // https://lore.kernel.org/lkml/20210608231132.32012-1-joshdon@google.com
-    if (CpuSubsystem.HasIdle && Controllers & CGROUP_CPU) {
-        auto cpucg = GetCgroup(CpuSubsystem);
+    if (CgroupDriver.CpuSubsystem->HasIdle && Controllers & CGROUP_CPU) {
+        auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
 
-        if (CpuSubsystem.EnableIdle && SchedPolicy == SCHED_IDLE) {
-            cpucg.Set(TCpuSubsystem::CPU_IDLE, "1");
+        if (CgroupDriver.CpuSubsystem->EnableIdle && SchedPolicy == SCHED_IDLE) {
+            CgroupDriver.CpuSubsystem->SetCpuIdle(*cpucg, true);
             ExtSchedIdle = true;
         } else {
-            cpucg.Set(TCpuSubsystem::CPU_IDLE, "0");
+            CgroupDriver.CpuSubsystem->SetCpuIdle(*cpucg, false);
             ExtSchedIdle = false;
         }
     }
@@ -1532,7 +1526,7 @@ TError TContainer::ApplySchedPolicy() {
     taskAffinity.FillCpuSet(&taskMask);
 
     do {
-        error = cg.GetTasks(pids);
+        error = cg->GetTasks(pids);
         retry = false;
 
         for (auto pid: pids) {
@@ -1564,15 +1558,15 @@ TError TContainer::ApplySchedPolicy() {
 }
 
 TError TContainer::ApplyIoPolicy() const {
-    auto cg = GetCgroup(FreezerSubsystem);
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     TError error;
 
     std::vector<pid_t> prev, pids;
     bool retry;
 
-    L_ACT("Set {} io policy {} ioprio {}", cg, IoPolicy, IoPrio);
+    L_ACT("Set {} io policy {} ioprio {}", *cg, IoPolicy, IoPrio);
     do {
-        error = cg.GetTasks(pids);
+        error = cg->GetTasks(pids);
         retry = false;
         for (auto pid: pids) {
             if (std::find(prev.begin(), prev.end(), pid) != prev.end())
@@ -1701,11 +1695,11 @@ TError TContainer::JailCpus() {
         return TError(EError::ResourceNotAvailable, "Invalid jail value {} (max {}) for CT{}:{}", NewCpuJail, JailCpuPermutation.size() - 1, Id, Name);
 
     /* read current cpus from cgroup */
-    auto cg = GetCgroup(CpusetSubsystem);
-    if (!cg.Exists())
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get());
+    if (!cg->Exists())
         return OK;
 
-    error = CpusetSubsystem.GetCpus(cg, affinity);
+    error = CgroupDriver.CpusetSubsystem->GetCpus(*cg, affinity);
     if (error) {
         L_ERR("Cannot get cpuset.cpus: {}", error);
         return error;
@@ -1776,7 +1770,7 @@ TError TContainer::JailCpus() {
         for (auto &ct : subtree)
             ct->CpuAffinity = affinity;
 
-        error = CommitSubtreeCpus(cg, subtree);
+        error = CommitSubtreeCpus(*cg, subtree);
         if (error)
             return error;
     } else if (!CpuJail)
@@ -1830,25 +1824,25 @@ public:
                 !(ct->Controllers & CGROUP_CPUSET))
                 continue;
 
-            auto cg = ct->GetCgroup(CpusetSubsystem);
-            if (!cg.Exists()) {
+            auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpusetSubsystem.get());
+            if (!cg->Exists()) {
                 L_WRN(" CT{}:{} with cpuset controller does not have cpuset cgroup",
                       ct->Id, ct->Name);
                 continue;
             }
 
-            Index.emplace(cg.Name + "/", ct->CpuAffinity);
+            Index.emplace(cg->GetName() + "/", ct->CpuAffinity);
         }
     }
 
     // Find target affinity for cgroup or its closest ancestor
     bool GetAffinity(const TCgroup &cg, TBitMap &affinity) const {
-        auto name = cg.Name + "/";
+        auto name = cg.GetName() + "/";
         auto it = Index.lower_bound(name);
         if (it == Index.end())
             return false;
         // exact match or some other ancestor
-        if (name != it->first && !StringStartsWith(cg.Name, it->first))
+        if (name != it->first && !StringStartsWith(cg.GetName(), it->first))
             return false;
 
         affinity = it->second;
@@ -1856,46 +1850,46 @@ public:
     }
 };
 
-static TError WidenSubtreeCpus(const std::list<TCgroup> &cgroups,
+static TError WidenSubtreeCpus(const std::list<std::unique_ptr<const TCgroup>> &cgroups,
                                const TCgroupAffinityIndex &index,
                                std::map<std::string, TBitMap> &cpusets) {
-    for (auto &cg : cgroups) {
+    for (auto& cg : cgroups) {
         TBitMap affinity;
-        if (!index.GetAffinity(cg, affinity))
-            return TError("Cannot find target affinity for cgroup {}", cg);
+        if (!index.GetAffinity(*cg, affinity))
+            return TError("Cannot find target affinity for cgroup {}", *cg);
 
         TBitMap cur;
-        auto error = CpusetSubsystem.GetCpus(cg, cur);
+        auto error = CgroupDriver.CpusetSubsystem->GetCpus(*cg, cur);
         if (error)
             return error;
 
         if (!affinity.IsSubsetOf(cur)) {
             cur.Set(affinity); // union
 
-            error = CpusetSubsystem.SetCpus(cg, cur);
+            error = CgroupDriver.CpusetSubsystem->SetCpus(*cg, cur);
             if (error)
                 return error;
         }
-        cpusets.emplace(cg.Name, std::move(cur));
+        cpusets.emplace(cg->GetName(), std::move(cur));
     }
     return OK;
 }
 
-static TError NarrowSubtreeCpus(const std::list<TCgroup> &cgroups,
+static TError NarrowSubtreeCpus(const std::list<std::unique_ptr<const TCgroup>> &cgroups,
                                 const TCgroupAffinityIndex &index,
                                 std::map<std::string, TBitMap> &cpusets) {
     for (auto it = cgroups.rbegin(); it != cgroups.rend(); ++it) {
-        auto &cg = *it;
+        auto& cg = *it;
 
         TBitMap affinity;
-        if (!index.GetAffinity(cg, affinity))
-            return TError("Cannot find target affinity for cgroup {}", cg);
+        if (!index.GetAffinity(*cg, affinity))
+            return TError("Cannot find target affinity for cgroup {}", *cg);
 
-        auto kt = cpusets.find(cg.Name); // use find just in case
+        auto kt = cpusets.find(cg->GetName()); // use find just in case
         if (kt != cpusets.end() && kt->second.IsEqual(affinity))
             continue;
 
-        auto error = CpusetSubsystem.SetCpus(cg, affinity);
+        auto error = CgroupDriver.CpusetSubsystem->SetCpus(*cg, affinity);
         if (error)
             return error;
     }
@@ -1904,13 +1898,14 @@ static TError NarrowSubtreeCpus(const std::list<TCgroup> &cgroups,
 
 static TError ApplySubtreeCpus(const TCgroup &root, const std::list<std::shared_ptr<TContainer>> &subtree) {
     TCgroupAffinityIndex index(subtree);
-    std::list<TCgroup> cgroups;
+    std::list<std::unique_ptr<const TCgroup>> cgroups;
     std::map<std::string, TBitMap> cpusets;
 
-    auto error = root.ChildsAll(cgroups, true);
+    auto error = CgroupDriver.CgroupChildren(root, cgroups, true);
     if (error)
         return error;
-    cgroups.push_front(root);
+
+    cgroups.push_front(root.GetUniquePtr());
 
     // Step 1: widen to union of current and target affinity
     error = WidenSubtreeCpus(cgroups, index, cpusets);
@@ -1931,11 +1926,11 @@ static TError RevertSubtreeCpus(std::list<std::shared_ptr<TContainer>> &subtree)
             !(ct->Controllers & CGROUP_CPUSET))
             continue;
 
-        auto cg = ct->GetCgroup(CpusetSubsystem);
-        if (!cg.Exists())
+        auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpusetSubsystem.get());
+        if (!cg->Exists())
             continue;
 
-        auto error = CpusetSubsystem.GetCpus(cg, ct->CpuAffinity);
+        auto error = CgroupDriver.CpusetSubsystem->GetCpus(*cg, ct->CpuAffinity);
         if (error)
             return error;
     }
@@ -2070,7 +2065,7 @@ TError TContainer::ApplyCpuSet() {
         ct->CpuAffinity = affinity;
     }
 
-    auto error = CommitSubtreeCpus(GetCgroup(CpusetSubsystem), subtree);
+    auto error = CommitSubtreeCpus(*(CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get())), subtree);
     if (error)
         return error;
 
@@ -2097,8 +2092,8 @@ TError TContainer::ApplyCpuGuarantee() {
     if (!IsRoot() && (Controllers & CGROUP_CPU) && cur != CpuGuaranteeCur) {
         L_ACT("Set cpu guarantee CT{}:{} {} -> {}", Id, Name,
                 CpuPowerToString(CpuGuaranteeCur), CpuPowerToString(cur));
-        auto cpucg = GetCgroup(CpuSubsystem);
-        error = CpuSubsystem.SetGuarantee(cpucg, CpuPeriod, cur);
+        auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
+        error = CgroupDriver.CpuSubsystem->SetGuarantee(*cpucg, CpuPeriod, cur);
         if (error) {
             L_ERR("Cannot set cpu guarantee: {}", error);
             return error;
@@ -2113,8 +2108,8 @@ TError TContainer::ApplyCpuShares() {
     TError error;
 
     if (!IsRoot() && (Controllers & CGROUP_CPU) && !ExtSchedIdle) {
-        auto cpucg = GetCgroup(CpuSubsystem);
-        error = CpuSubsystem.SetShares(cpucg, CpuPolicy, CpuWeight, CpuGuaranteeCur);
+        auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
+        error = CgroupDriver.CpuSubsystem->SetShares(*cpucg, CpuPolicy, CpuWeight, CpuGuaranteeCur);
         if (error) {
             L_ERR("Cannot set cpu shares: {}", error);
             return error;
@@ -2305,20 +2300,20 @@ TError TContainer::SetSeccomp(const std::string &name) {
 
 
 TError TContainer::SetCpuLimit(uint64_t limit) {
-    auto cpucg = GetCgroup(CpuSubsystem);
+    auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
     TError error;
 
     L_ACT("Set cpu limit CT{}:{} {} -> {}", Id, Name,
             CpuPowerToString(CpuLimitCur), CpuPowerToString(limit));
 
-    error = CpuSubsystem.SetRtLimit(cpucg, CpuPeriod, limit);
+    error = CgroupDriver.CpuSubsystem->SetRtLimit(*cpucg, CpuPeriod, limit);
     if (error) {
         if (CpuPolicy == "rt")
             return error;
         L_WRN("Cannot set rt cpu limit: {}", error);
     }
 
-    error = CpuSubsystem.SetLimit(cpucg, CpuPeriod, limit);
+    error = CgroupDriver.CpuSubsystem->SetLimit(*cpucg, CpuPeriod, limit);
     if (error)
         return error;
 
@@ -2370,8 +2365,8 @@ TError TContainer::ApplyCpuLimit() {
 
 
 TError TContainer::ApplyDynamicProperties(bool onRestore) {
-    auto memcg = GetCgroup(MemorySubsystem);
-    auto blkcg = GetCgroup(BlkioSubsystem);
+    auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
+    auto blkcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.BlkioSubsystem.get());
     TError error;
 
     if ((Controllers & CGROUP_CPU) &&
@@ -2402,7 +2397,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         error = ApplyCpuLimit();
         if (error)
             return error;
-        if (MemorySubsystem.SupportHighLimit() && (Controllers & CGROUP_MEMORY))
+        if (CgroupDriver.MemorySubsystem->SupportHighLimit() && (Controllers & CGROUP_MEMORY))
             SetPropDirty(EProperty::MEM_HIGH_LIMIT);
     }
 
@@ -2411,8 +2406,8 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
 
     if (TestClearPropDirty(EProperty::CPU_PERIOD)) {
         if (Controllers & CGROUP_CPU) {
-            auto cg = GetCgroup(CpuSubsystem);
-            error = CpuSubsystem.SetPeriod(cg, CpuPeriod);
+            auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
+            error = CgroupDriver.CpuSubsystem->SetPeriod(*cg, CpuPeriod);
             if (error) {
                 L_ERR("Cannot update cpu period for cgroup: {}", error);
                 return error;
@@ -2433,12 +2428,12 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
                 return error;
         }
 
-        if ((Controllers & CGROUP_MEMORY) && MemorySubsystem.SupportNumaBalance()) {
-            auto memcg = GetCgroup(MemorySubsystem);
+        if ((Controllers & CGROUP_MEMORY) && CgroupDriver.MemorySubsystem->SupportNumaBalance()) {
+            auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
             if (config().container().enable_numa_migration() && !RootPath.IsRoot() && CpuSetType == ECpuSetType::Node)
-                error = MemorySubsystem.SetNumaBalance(memcg, 0, 0);
+                error = CgroupDriver.MemorySubsystem->SetNumaBalance(*memcg, 0, 0);
             else
-                error = MemorySubsystem.SetNumaBalance(memcg, 0, 4);
+                error = CgroupDriver.MemorySubsystem->SetNumaBalance(*memcg, 0, 4);
 
             if (error)
                 return error;
@@ -2456,7 +2451,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     }
 
     if (TestClearPropDirty(EProperty::MEM_GUARANTEE)) {
-        error = MemorySubsystem.SetGuarantee(memcg, MemGuarantee);
+        error = CgroupDriver.MemorySubsystem->SetGuarantee(*memcg, MemGuarantee);
         if (error) {
             if (error.Errno != EINVAL)
                 L_ERR("Cannot set {}: {}", P_MEM_GUARANTEE, error);
@@ -2465,7 +2460,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     }
 
     if (TestClearPropDirty(EProperty::MEM_LIMIT)) {
-        error = MemorySubsystem.SetLimit(memcg, MemLimit);
+        error = CgroupDriver.MemorySubsystem->SetLimit(*memcg, MemLimit);
         if (error) {
             if (error.Errno == EBUSY)
                 return TError(EError::Busy, "Memory limit is too low for current memory usage");
@@ -2473,7 +2468,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
                 L_ERR("Cannot set {}: {}", P_MEM_LIMIT, error);
             return error;
         }
-        if (MemorySubsystem.SupportHighLimit())
+        if (CgroupDriver.MemorySubsystem->SupportHighLimit())
             SetPropDirty(EProperty::MEM_HIGH_LIMIT);
     }
 
@@ -2485,7 +2480,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
             highLimit = MemLimit - std::min(MemLimit / 4, highMargin);
         }
 
-        error = MemorySubsystem.SetHighLimit(memcg, highLimit);
+        error = CgroupDriver.MemorySubsystem->SetHighLimit(*memcg, highLimit);
         if (error) {
             L_ERR("Cannot set high_limit_in_bytes: {}", error);
             return error;
@@ -2493,7 +2488,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     }
 
     if (TestClearPropDirty(EProperty::MEM_LOCK_POLICY)) {
-        error = memcg.SetUint64("memory.mlock_policy", static_cast<uint64_t>(MemLockPolicy));
+        error = memcg->SetUint64("memory.mlock_policy", static_cast<uint64_t>(MemLockPolicy));
         if (error) {
             L_ERR("Cannot set {}: {}", P_MEM_LOCK_POLICY, error);
             return error;
@@ -2501,7 +2496,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     }
 
     if (TestClearPropDirty(EProperty::ANON_LIMIT)) {
-        error = MemorySubsystem.SetAnonLimit(memcg, AnonMemLimit);
+        error = CgroupDriver.MemorySubsystem->SetAnonLimit(*memcg, AnonMemLimit);
         if (error) {
             if (error.Errno == EBUSY)
                 return TError(EError::Busy, "Memory limit is too low for current memory usage");
@@ -2512,7 +2507,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     }
 
     if (TestClearPropDirty(EProperty::ANON_ONLY)) {
-        error = MemorySubsystem.SetAnonOnly(memcg, AnonOnly);
+        error = CgroupDriver.MemorySubsystem->SetAnonOnly(*memcg, AnonOnly);
         if (error) {
             if (error.Errno != EINVAL)
                 L_ERR("Cannot set {}: {}", P_ANON_ONLY, error);
@@ -2524,7 +2519,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         PropagateDirtyMemLimit();
 
     if (TestClearPropDirty(EProperty::RECHARGE_ON_PGFAULT)) {
-        error = MemorySubsystem.RechargeOnPgfault(memcg, RechargeOnPgfault);
+        error = CgroupDriver.MemorySubsystem->RechargeOnPgfault(*memcg, RechargeOnPgfault);
         if (error) {
             if (error.Errno != EINVAL)
                 L_ERR("Cannot set {}: {}", P_RECHARGE_ON_PGFAULT, error);
@@ -2543,36 +2538,36 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
 
     if (TestClearPropDirty(EProperty::IO_LIMIT)) {
         if (IoBpsLimit.count("fs")) {
-            error = MemorySubsystem.SetIoLimit(memcg, IoBpsLimit["fs"]);
+            error = CgroupDriver.MemorySubsystem->SetIoLimit(*memcg, IoBpsLimit["fs"]);
             if (error) {
                 if (error.Errno != EINVAL)
                     L_ERR("Can't set {}: {}", P_IO_LIMIT, error);
                 return error;
             }
         }
-        error = BlkioSubsystem.SetIoLimit(blkcg, RootPath, IoBpsLimit);
+        error = CgroupDriver.BlkioSubsystem->SetIoLimit(*blkcg, RootPath, IoBpsLimit);
         if (error)
             return error;
     }
 
     if (TestClearPropDirty(EProperty::IO_OPS_LIMIT)) {
         if (IoOpsLimit.count("fs")) {
-            error = MemorySubsystem.SetIopsLimit(memcg, IoOpsLimit["fs"]);
+            error = CgroupDriver.MemorySubsystem->SetIopsLimit(*memcg, IoOpsLimit["fs"]);
             if (error) {
                 if (error.Errno != EINVAL)
                     L_ERR("Can't set {}: {}", P_IO_OPS_LIMIT, error);
                 return error;
             }
         }
-        error = BlkioSubsystem.SetIoLimit(blkcg, RootPath, IoOpsLimit, true);
+        error = CgroupDriver.BlkioSubsystem->SetIoLimit(*blkcg, RootPath, IoOpsLimit, true);
         if (error)
             return error;
     }
 
-    if (TestClearPropDirty(EProperty::IO_WEIGHT) |
+    if (TestClearPropDirty(EProperty::IO_WEIGHT) ||
             TestPropDirty(EProperty::IO_POLICY)) {
         if (Controllers & CGROUP_BLKIO) {
-            error = BlkioSubsystem.SetIoWeight(blkcg, IoPolicy, IoWeight);
+            error = CgroupDriver.BlkioSubsystem->SetIoWeight(*blkcg, IoPolicy, IoWeight);
             if (error) {
                 if (error.Errno != EINVAL)
                     L_ERR("Can't set {}: {}", P_IO_POLICY, error);
@@ -2590,22 +2585,22 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     }
 
     if (TestClearPropDirty(EProperty::HUGETLB_LIMIT)) {
-        auto cg = GetCgroup(HugetlbSubsystem);
-        error = HugetlbSubsystem.SetHugeLimit(cg, HugetlbLimit ?: -1);
+        auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.HugetlbSubsystem.get());
+        error = CgroupDriver.HugetlbSubsystem->SetHugeLimit(*cg, HugetlbLimit ?: -1);
         if (error) {
             if (error.Errno != EINVAL)
                 L_ERR("Can't set {}: {}", P_HUGETLB_LIMIT, error);
             return error;
         }
-        if (HugetlbSubsystem.SupportGigaPages()) {
-            error = HugetlbSubsystem.SetGigaLimit(cg, 0);
+        if (CgroupDriver.HugetlbSubsystem->SupportGigaPages()) {
+            error = CgroupDriver.HugetlbSubsystem->SetGigaLimit(*cg, 0);
             if (error)
                 L_WRN("Cannot forbid 1GB pages: {}", error);
         }
     }
 
-    if (TestClearPropDirty(EProperty::NET_LIMIT) |
-            TestClearPropDirty(EProperty::NET_GUARANTEE) |
+    if (TestClearPropDirty(EProperty::NET_LIMIT) ||
+            TestClearPropDirty(EProperty::NET_GUARANTEE) ||
             TestClearPropDirty(EProperty::NET_RX_LIMIT)) {
         if (Net) {
             error = Net->SetupClasses(NetClass, true);
@@ -2624,8 +2619,8 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
 
     if ((Controllers & CGROUP_NETCLS) &&
             TestClearPropDirty(EProperty::NET_TOS)) {
-        auto netcls = GetCgroup(NetclsSubsystem);
-        error = NetclsSubsystem.SetClass(netcls, NetClass.LeafHandle | NetClass.DefaultTos);
+        auto netcls = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.NetclsSubsystem.get());
+        error = CgroupDriver.NetclsSubsystem->SetClass(*netcls, NetClass.LeafHandle | NetClass.DefaultTos);
         if (error) {
             L_ERR("Can't set classid: {}", error);
             return error;
@@ -2646,8 +2641,8 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     }
 
     if (TestClearPropDirty(EProperty::THREAD_LIMIT)) {
-        auto cg = GetCgroup(PidsSubsystem);
-        error = PidsSubsystem.SetLimit(cg, ThreadLimit);
+        auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.PidsSubsystem.get());
+        error = CgroupDriver.PidsSubsystem->SetLimit(*cg, ThreadLimit);
         if (error) {
             L_ERR("Cannot set thread limit: {}", error);
             return error;
@@ -2698,10 +2693,10 @@ TError TContainer::PrepareOomMonitor() {
     if (IsRoot() || !(Controllers & CGROUP_MEMORY))
         return OK;
 
-    TCgroup memoryCg = GetCgroup(MemorySubsystem);
+    auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
     TError error;
 
-    error = MemorySubsystem.SetupOOMEvent(memoryCg, OomEvent);
+    error = CgroupDriver.MemorySubsystem->SetupOOMEvent(*memcg, OomEvent);
     if (error)
         return error;
 
@@ -2720,8 +2715,8 @@ TError TContainer::ApplyDeviceConf() const {
         return OK;
 
     if (Controllers & CGROUP_DEVICES) {
-        TCgroup cg = GetCgroup(DevicesSubsystem);
-        error = Devices.Apply(cg, TaskCred.IsRootUser());
+        auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.DevicesSubsystem.get());
+        error = Devices.Apply(*cg, TaskCred.IsRootUser());
         if (error)
             return error;
     }
@@ -2785,11 +2780,11 @@ TError TContainer::PrepareCgroups(bool onRestore) {
     } else {
         Controllers |= CGROUP_FREEZER;
         RequiredControllers |= CGROUP_FREEZER;
-        if (Cgroup2Subsystem.Supported) {
+        if (CgroupDriver.Cgroup2Subsystem->Supported) {
             Controllers |= CGROUP2;
             RequiredControllers |= CGROUP2;
         }
-        if (Level == 1 && PidsSubsystem.Supported)
+        if (Level == 1 && CgroupDriver.PidsSubsystem->Supported)
             Controllers |= CGROUP_PIDS;
     }
 
@@ -2797,7 +2792,7 @@ TError TContainer::PrepareCgroups(bool onRestore) {
         SetProp(EProperty::CPU_SET);
 
     if (OsMode && Isolate && config().container().detect_systemd() &&
-            SystemdSubsystem.Supported &&
+            CgroupDriver.SystemdSubsystem->Supported &&
             !(Controllers & CGROUP_SYSTEMD) &&
             !RootPath.IsRoot()) {
         TPath cmd = RootPath / Command;
@@ -2808,74 +2803,33 @@ TError TContainer::PrepareCgroups(bool onRestore) {
         }
     }
 
-    auto missing = Controllers | RequiredControllers;
-
-    for (auto hy: Hierarchies) {
-        TCgroup cg = GetCgroup(*hy);
-
-        if (!(Controllers & hy->Controllers))
-            continue;
-
-        if ((Controllers & hy->Controllers) != hy->Controllers) {
-            Controllers |= hy->Controllers;
-            SetProp(EProperty::CONTROLLERS);
-        }
-
-        missing &= ~hy->Controllers;
-
-        if (cg.Exists())
-            continue;
-
-        error = cg.Create();
-        if (error)
-            return error;
-
-        if (onRestore) {
-            L_WRN("No {} cgroup for CT{}:{}", TSubsystem::Format(hy->Controllers), Id, Name);
-            if (hy->Controllers & CGROUP_FREEZER)
-                continue;
-
-            // freezer is first in Hierarchies
-            auto freezer = GetCgroup(FreezerSubsystem);
-
-            error = cg.AttachAll(freezer, true);
-            if (error)
-                return error;
-        }
-    }
-
-    if (missing) {
-        std::string types;
-        for (auto subsys: Subsystems)
-            if (subsys->Kind & missing)
-                types += " " + subsys->Type;
-        return TError(EError::NotSupported, "Some cgroup controllers are not available:" + types);
-    }
+    error = CgroupDriver.CreateContainerCgroups(*this, onRestore);
+    if (error)
+        return error;
 
     if (!IsRoot() && (Controllers & CGROUP_MEMORY)) {
-        TCgroup memcg = GetCgroup(MemorySubsystem);
-
-        error = memcg.SetBool(MemorySubsystem.USE_HIERARCHY, true);
+        auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
+        error = CgroupDriver.MemorySubsystem->SetUseHierarchy(*memcg, true);
         if (error)
             return error;
 
         /* Link memory cgroup writeback with related blkio cgroup */
         if (LinkMemoryWritebackBlkio) {
-            TCgroup blkcg = GetCgroup(BlkioSubsystem);
-            error = MemorySubsystem.LinkWritebackBlkio(memcg, blkcg);
+            auto blkcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.BlkioSubsystem.get());
+            error = CgroupDriver.MemorySubsystem->LinkWritebackBlkio(*memcg, *blkcg);
             if (error)
                 return error;
         }
     }
 
     if (Controllers & CGROUP_DEVICES) {
-        TCgroup devcg = GetCgroup(DevicesSubsystem);
+        auto devcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.DevicesSubsystem.get());
         /* Nested cgroup makes a copy from parent at creation */
         if (!HostMode) {
             if (State == EContainerState::Starting) {
                 /* on StartContainer() */
-                if (Level == 1 || TPath(devcg.Name).IsSimple()) {
-                    error = RootContainer->Devices.Apply(devcg, TaskCred.IsRootUser(), true);
+                if (Level == 1 || TPath(devcg->GetName()).IsSimple()) {
+                    error = RootContainer->Devices.Apply(*devcg, TaskCred.IsRootUser(), true);
                     if (error)
                         return error;
                 }
@@ -2886,7 +2840,7 @@ TError TContainer::PrepareCgroups(bool onRestore) {
                 for (auto p = Parent; p; p = p->Parent)
                     all_devices.Merge(p->Devices);
 
-                error = all_devices.Apply(devcg, TaskCred.IsRootUser());
+                error = all_devices.Apply(*devcg, TaskCred.IsRootUser());
                 if (error)
                     return error;
 
@@ -2905,8 +2859,8 @@ TError TContainer::PrepareCgroups(bool onRestore) {
     }
 
     if (Controllers & CGROUP_NETCLS) {
-        auto netcls = GetCgroup(NetclsSubsystem);
-        error = NetclsSubsystem.SetClass(netcls, NetClass.LeafHandle | NetClass.DefaultTos);
+        auto netcls = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.NetclsSubsystem.get());
+        error = CgroupDriver.NetclsSubsystem->SetClass(*netcls, NetClass.LeafHandle | NetClass.DefaultTos);
         if (error)
             return error;
     }
@@ -3008,8 +2962,7 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
     TaskEnv.CT = shared_from_this();
     TaskEnv.Client = CL;
 
-    for (auto hy: Hierarchies)
-        TaskEnv.Cgroups.push_back(GetCgroup(*hy));
+    TaskEnv.Cgroups = CgroupDriver.GetContainerCgroups(*this);
 
     TaskEnv.Mnt.Cwd = GetCwd();
 
@@ -3023,7 +2976,7 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
     TaskEnv.Mnt.BindCred = Parent->RootPath.IsRoot() ? CL->TaskCred : TCred(RootUser, RootGroup);
 
     if (OsMode && Isolate && (Controllers & CGROUP_SYSTEMD))
-        TaskEnv.Mnt.Systemd = GetCgroup(SystemdSubsystem).Name;
+        TaskEnv.Mnt.Systemd = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.SystemdSubsystem.get())->GetName();
 
     TaskEnv.Cred = TaskCred;
 
@@ -3254,8 +3207,8 @@ TError TContainer::StartParents() {
     if (!Parent)
         return OK;
 
-    auto cg = Parent->GetCgroup(FreezerSubsystem);
-    if (FreezerSubsystem.IsFrozen(cg))
+    auto cg = CgroupDriver.GetContainerCgroup(*Parent, CgroupDriver.FreezerSubsystem.get());
+    if (CgroupDriver.FreezerSubsystem->IsFrozen(*cg))
         return TError(EError::InvalidState, "Parent container is frozen");
 
     if (IsRunningOrMeta(Parent->State))
@@ -3306,7 +3259,7 @@ TError TContainer::PrepareStart() {
         return error;
 
     if (Parent) {
-        CT = this;
+        CT = std::const_pointer_cast<TContainer>(shared_from_this());
         LockStateWrite();
 
         error = ApplyExtraProperties();
@@ -3708,21 +3661,9 @@ TError TContainer::FreeResources(bool ignore) {
     OomKills = 0;
     ClearProp(EProperty::OOM_KILLS);
 
-    /* Dispose freezer at last because of recovery */
-
-    for (auto hy: Hierarchies) {
-        if (Controllers & hy->Controllers &&
-            !(hy->Controllers & CGROUP_FREEZER)) {
-
-            error = FreeCgroup(*hy);
-            if (!ignore && error)
-                return error;
-        }
-    }
-
-    if (Controllers & CGROUP_FREEZER) {
-        error = FreeCgroup(FreezerSubsystem);
-        if (!ignore && error)
+    if (!JobMode) {
+        error = CgroupDriver.RemoveContainerCgroups(*this, ignore);
+        if (error)
             return error;
     }
 
@@ -3743,7 +3684,6 @@ TError TContainer::Kill(int sig) {
 }
 
 TError TContainer::Terminate(uint64_t deadline) {
-    auto cg = GetCgroup(FreezerSubsystem);
     TError error;
 
     if (IsRoot())
@@ -3757,7 +3697,8 @@ TError TContainer::Terminate(uint64_t deadline) {
         return OK;
     }
 
-    if (cg.IsEmpty())
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
+    if (cg->IsEmpty())
         return OK;
 
     if (Task.Pid && deadline && !IsMeta()) {
@@ -3793,10 +3734,10 @@ TError TContainer::Terminate(uint64_t deadline) {
             return error;
     }
 
-    if (cg.IsEmpty())
+    if (cg->IsEmpty())
         return OK;
 
-    error = cg.KillAll(SIGKILL, EnableFuse);
+    error = cg->KillAll(SIGKILL, EnableFuse);
     if (error)
         return error;
 
@@ -3814,7 +3755,7 @@ void TContainer::ForgetPid() {
 
 TError TContainer::Stop(uint64_t timeout) {
     uint64_t deadline = timeout ? GetCurrentTimeMs() + timeout : 0;
-    auto freezer = GetCgroup(FreezerSubsystem);
+    auto freezer = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     TError error;
 
     if (State == EContainerState::Stopped)
@@ -3823,7 +3764,7 @@ TError TContainer::Stop(uint64_t timeout) {
     if (!(Controllers & CGROUP_FREEZER) && !JobMode) {
         if (Task.Pid)
             return TError(EError::NotSupported, "Cannot stop without freezer");
-    } else if (FreezerSubsystem.IsParentFreezing(freezer))
+    } else if (CgroupDriver.FreezerSubsystem->IsParentFreezing(*freezer))
             return TError(EError::InvalidState, "Parent container is paused");
 
     auto subtree = Subtree();
@@ -3840,8 +3781,6 @@ TError TContainer::Stop(uint64_t timeout) {
     }
 
     for (auto &ct : subtree) {
-        auto cg = ct->GetCgroup(FreezerSubsystem);
-
         if (ct->IsRoot() || ct->State == EContainerState::Stopped)
             continue;
 
@@ -3856,9 +3795,10 @@ TError TContainer::Stop(uint64_t timeout) {
         if (error)
             L_ERR("Cannot terminate tasks in CT{}:{}: {}", ct->Id, ct->Name, error);
 
-        if (FreezerSubsystem.IsSelfFreezing(cg) && !JobMode) {
+        auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.FreezerSubsystem.get());
+        if (CgroupDriver.FreezerSubsystem->IsSelfFreezing(*cg) && !JobMode) {
             L_ACT("Thaw terminated paused CT{}:{}", ct->Id, ct->Name);
-            error = FreezerSubsystem.Thaw(cg, false);
+            error = CgroupDriver.FreezerSubsystem->Thaw(*cg, false);
             if (error)
                 L_ERR("Cannot thaw CT{}:{}: {}", ct->Id, ct->Name, error);
         }
@@ -4002,8 +3942,8 @@ TError TContainer::Pause() {
     if (!(Controllers & CGROUP_FREEZER))
         return TError(EError::NotSupported, "Cannot pause without freezer");
 
-    auto cg = GetCgroup(FreezerSubsystem);
-    TError error = FreezerSubsystem.Freeze(cg);
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
+    TError error = CgroupDriver.FreezerSubsystem->Freeze(*cg);
     if (error)
         return error;
 
@@ -4022,24 +3962,24 @@ TError TContainer::Pause() {
 }
 
 TError TContainer::Resume() {
-    auto cg = GetCgroup(FreezerSubsystem);
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     if (!(Controllers & CGROUP_FREEZER))
         return TError(EError::NotSupported, "Cannot resume without freezer");
 
-    if (FreezerSubsystem.IsParentFreezing(cg))
+    if (CgroupDriver.FreezerSubsystem->IsParentFreezing(*cg))
         return TError(EError::InvalidState, "Parent container is paused");
 
-    if (!FreezerSubsystem.IsSelfFreezing(cg))
+    if (!CgroupDriver.FreezerSubsystem->IsSelfFreezing(*cg))
         return TError(EError::InvalidState, "Container not paused");
 
-    TError error = FreezerSubsystem.Thaw(cg);
+    TError error = CgroupDriver.FreezerSubsystem->Thaw(*cg);
     if (error)
         return error;
 
     for (auto &ct: Subtree()) {
-        auto cg = ct->GetCgroup(FreezerSubsystem);
-        if (FreezerSubsystem.IsSelfFreezing(cg))
-            FreezerSubsystem.Thaw(cg, false);
+        auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.FreezerSubsystem.get());
+        if (CgroupDriver.FreezerSubsystem->IsSelfFreezing(*cg))
+            CgroupDriver.FreezerSubsystem->Thaw(*cg, false);
         if (ct->State == EContainerState::Paused) {
             ct->SetState(IsMeta() ? EContainerState::Meta : EContainerState::Running);
             ct->PropagateCpuLimit();
@@ -4212,14 +4152,10 @@ TError TContainer::HasProperty(const std::string &property) const {
             if (State == EContainerState::Stopped)
                 return TError(EError::InvalidState, "Not available in stopped state");
 
-            for (auto subsys: Subsystems) {
-                if (subsys->Type != type)
-                    continue;
-                if (subsys->Kind & Controllers)
-                    return OK;
-                return TError(EError::NoValue, "Controllers is disabled");
-            }
-            return TError(EError::InvalidProperty, "Unknown controller");
+            if (!CgroupDriver.HasContainerCgroupsKnob(*this, property))
+                return TError(EError::InvalidProperty, "Unknown cgroup attribute: {}", property);
+
+            return OK;
         }
     }
 
@@ -4242,7 +4178,7 @@ TError TContainer::HasProperty(const std::string &property) const {
             return TError(EError::NoValue, "Controllers is disabled");
     }
 
-    CT = const_cast<TContainer *>(this);
+    CT = std::const_pointer_cast<TContainer>(shared_from_this());
     error = prop->Has();
     CT = nullptr;
 
@@ -4268,16 +4204,8 @@ TError TContainer::GetProperty(const std::string &origProperty, std::string &val
             if (State == EContainerState::Stopped)
                 return TError(EError::InvalidState,
                         "Not available in stopped state: " + property);
-            for (auto subsys: Subsystems) {
-                if (subsys->Type == type) {
-                    auto cg = GetCgroup(*subsys);
-                    if (!cg.Has(property))
-                        break;
-                    return cg.Get(property, value);
-                }
-            }
-            return TError(EError::InvalidProperty,
-                    "Unknown cgroup attribute: " + property);
+
+            return CgroupDriver.GetContainerCgroupsKnob(*this, property, value);
         }
     } else if (!idx.length()) {
         return TError(EError::InvalidProperty, "Empty property index");
@@ -4289,7 +4217,7 @@ TError TContainer::GetProperty(const std::string &origProperty, std::string &val
                               "Unknown container property: " + property);
     auto prop = it->second;
 
-    CT = const_cast<TContainer *>(this);
+    CT = std::const_pointer_cast<TContainer>(shared_from_this());
     error = prop->CanGet();
     if (!error) {
         if (idx.length())
@@ -4339,7 +4267,7 @@ TError TContainer::SetProperty(const std::string &origProperty,
     }
     auto prop = it->second;
 
-    CT = this;
+    CT = std::const_pointer_cast<TContainer>(shared_from_this());
 
     error = prop->CanSet();
 
@@ -4404,7 +4332,7 @@ TError TContainer::Load(const rpc::TContainerSpec &spec, bool restoreOnError) {
     rpc::TContainerSpec oldSpec;
 
     PORTO_ASSERT(!CT);
-    CT = this;
+    CT = std::const_pointer_cast<TContainer>(shared_from_this());
     LockStateWrite();
     ChangeTime = time(nullptr);
     for (auto &it :ContainerProperties) {
@@ -4440,7 +4368,7 @@ TError TContainer::Load(const rpc::TContainerSpec &spec, bool restoreOnError) {
 
 void TContainer::Dump(const std::vector<std::string> &props, std::unordered_map<std::string, std::string> &propsOps, rpc::TContainer &spec) {
     PORTO_ASSERT(!CT);
-    CT = this;
+    CT = std::const_pointer_cast<TContainer>(shared_from_this());
     LockStateRead();
     if (props.empty()) {
         for (auto &it :ContainerProperties) {
@@ -4493,7 +4421,7 @@ TError TContainer::Save(void) {
     node.Set(P_RAW_NAME, Name);
 
     auto prev_ct = CT;
-    CT = this;
+    CT = std::const_pointer_cast<TContainer>(shared_from_this());
 
     for (auto knob : ContainerProperties) {
         std::string value;
@@ -4527,7 +4455,7 @@ TError TContainer::Load(const TKeyValue &node) {
     uint64_t controllers = 0;
     TError error;
 
-    CT = this;
+    CT = std::const_pointer_cast<TContainer>(shared_from_this());
     LockStateWrite();
 
     OwnerCred = CL->Cred;
@@ -4584,14 +4512,14 @@ TError TContainer::Load(const TKeyValue &node) {
     if (!node.Has(P_CONTROLLERS) && State != EContainerState::Stopped)
         Controllers = RootContainer->Controllers;
 
-    if (Level == 1 && CpusetSubsystem.Supported)
+    if (Level == 1 && CgroupDriver.CpusetSubsystem->Supported)
         Controllers |= CGROUP_CPUSET;
 
     if (!JobMode) {
-        if (PerfSubsystem.Supported)
+        if (CgroupDriver.PerfSubsystem->Supported)
             Controllers |= CGROUP_PERF;
 
-        if (Cgroup2Subsystem.Supported)
+        if (CgroupDriver.Cgroup2Subsystem->Supported)
             Controllers |= CGROUP2;
     }
 
@@ -4631,7 +4559,7 @@ TError TContainer::Seize() {
         NULL,
     };
 
-    auto cg = GetCgroup(FreezerSubsystem);
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     TPath path = TPath(PORTO_HELPERS_PATH) / "portoinit";
 
     TError error = SeizeTask.Fork(true);
@@ -4643,7 +4571,7 @@ TError TContainer::Seize() {
         return OK;
     }
 
-    if (cg.Attach(GetPid()))
+    if (cg->Attach(GetPid()))
         _exit(EXIT_FAILURE);
 
     execv(path.c_str(), (char *const *)argv);
@@ -4661,12 +4589,13 @@ TError TContainer::Seize() {
 }
 
 void TContainer::SyncState() {
-    TCgroup taskCg, freezerCg = GetCgroup(FreezerSubsystem);
     TError error;
+    std::unique_ptr<const TCgroup> taskCg;
+    auto freezerCg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
 
     L_ACT("Sync CT{}:{} state {}", Id, Name, StateName(State));
 
-    if (!freezerCg.Exists()) {
+    if (!freezerCg->Exists()) {
         if (State != EContainerState::Stopped &&
                 State != EContainerState::Stopping)
             L("Freezer not found");
@@ -4679,9 +4608,9 @@ void TContainer::SyncState() {
             State == EContainerState::Respawning)
         SetState(IsMeta() ? EContainerState::Meta : EContainerState::Running);
 
-    if (FreezerSubsystem.IsFrozen(freezerCg)) {
+    if (CgroupDriver.FreezerSubsystem->IsFrozen(*freezerCg)) {
         if (State != EContainerState::Paused)
-            FreezerSubsystem.Thaw(freezerCg);
+            CgroupDriver.FreezerSubsystem->Thaw(*freezerCg);
     } else if (State == EContainerState::Paused)
         SetState(IsMeta() ? EContainerState::Meta : EContainerState::Running);
 
@@ -4698,11 +4627,11 @@ void TContainer::SyncState() {
     } else if (WaitTask.IsZombie()) {
         L("Task is zombie");
         Task.Pid = 0;
-    } else if (FreezerSubsystem.TaskCgroup(WaitTask.Pid, taskCg)) {
+    } else if (CgroupDriver.FreezerSubsystem->TaskCgroup(WaitTask.Pid, taskCg)) {
         L("Cannot check freezer");
         Reap(false);
-    } else if (taskCg != freezerCg) {
-        L("Task in wrong freezer");
+    } else if (*taskCg != *freezerCg) {
+        L("Task in wrong freezer {} but must be in {}", *taskCg, *freezerCg);
         if (WaitTask.GetPPid() == getppid()) {
             if (Task.Pid != WaitTask.Pid && Task.GetPPid() == WaitTask.Pid)
                 Task.Kill(SIGKILL);
@@ -4757,49 +4686,6 @@ void TContainer::SyncState() {
         RealDeathTime = time(nullptr);
         SetProp(EProperty::DEATH_TIME);
     }
-}
-
-TCgroup TContainer::GetCgroup(const TSubsystem &subsystem) const {
-    if (IsRoot())
-        return subsystem.RootCgroup();
-
-    if (subsystem.Controllers & (CGROUP_FREEZER | CGROUP2)) {
-        if (JobMode)
-            return subsystem.Cgroup(std::string(PORTO_CGROUP_PREFIX) + "/" + Parent->Name);
-        return subsystem.Cgroup(std::string(PORTO_CGROUP_PREFIX) + "/" + Name);
-    }
-
-    if (subsystem.Controllers & CGROUP_SYSTEMD) {
-        if (Controllers & CGROUP_SYSTEMD)
-            return subsystem.Cgroup(std::string(PORTO_CGROUP_PREFIX) + "%" +
-                                    StringReplaceAll(Name, "/", "%"));
-        return SystemdSubsystem.PortoService;
-    }
-
-    std::string cg;
-    for (auto ct = this; !ct->IsRoot(); ct = ct->Parent.get()) {
-        auto enabled = ct->Controllers & subsystem.Controllers;
-
-        if (!cg.empty())
-            cg = (enabled ? "/" : "%") + cg;
-        if (!cg.empty() || enabled)
-            cg = ct->FirstName + cg;
-    }
-
-    if (cg.empty())
-        return subsystem.RootCgroup();
-
-    return subsystem.Cgroup(std::string(PORTO_CGROUP_PREFIX) + "%" + cg);
-}
-
-TError TContainer::FreeCgroup(const TSubsystem &subsystem) {
-    auto cg = GetCgroup(subsystem);
-
-    TError error = cg.Remove(); //Logged inside
-    if (error && error.Errno != ENOENT)
-        return error;
-
-    return OK;
 }
 
 TError TContainer::EnableControllers(uint64_t controllers) {

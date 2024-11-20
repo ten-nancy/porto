@@ -352,7 +352,7 @@ TError TDevices::Apply(const TCgroup &cg, bool rootUser, bool reset) const {
     TError error;
 
     if (reset && (!rootUser || !EnableDockerMode)) {
-        error = cg.Set("devices.deny", "a");
+        error = CgroupDriver.DevicesSubsystem->SetDeny(cg, "a");
         if (error)
             return error;
     }
@@ -362,7 +362,7 @@ TError TDevices::Apply(const TCgroup &cg, bool rootUser, bool reset) const {
 
         rule = device.CgroupRule(true);
         if (rule != "") {
-            error = cg.Set("devices.allow", rule);
+            error = CgroupDriver.DevicesSubsystem->SetAllow(cg, rule);
             if (error) {
                 if (error.Errno == EPERM)
                     return TError(EError::Permission, "Device {} is not permitted for parent container", device.Path);
@@ -372,7 +372,7 @@ TError TDevices::Apply(const TCgroup &cg, bool rootUser, bool reset) const {
 
         rule = device.CgroupRule(false);
         if (rule != "" && (!rootUser || !EnableDockerMode)) {
-            error = cg.Set("devices.deny", rule);
+            error = CgroupDriver.DevicesSubsystem->SetDeny(cg, rule);
             if (error)
                 return error;
         }

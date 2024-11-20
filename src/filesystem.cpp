@@ -699,7 +699,7 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
             return error;
     }
 
-    if (HugetlbSubsystem.Supported) {
+    if (CgroupDriver.HugetlbSubsystem->Supported) {
         TPath path("dev/hugepages");
         error = path.Mkdir(0755);
         if (error)

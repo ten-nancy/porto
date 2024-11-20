@@ -39,7 +39,6 @@ TError RunCommand(const std::vector<std::string> &command,
                   const std::string &memCgroup,
                   bool verboseError,
                   bool interruptible) {
-    TCgroup memcg = MemorySubsystem.Cgroup(memCgroup);
     TError error;
     TFile err;
     TTask task;
@@ -92,8 +91,9 @@ TError RunCommand(const std::vector<std::string> &command,
 
     SetProcessName("portod-" + command[0]);
 
-    if (!memcg.Secondary()) {
-        error = memcg.Attach(GetPid());
+    auto memcg = CgroupDriver.MemorySubsystem->Cgroup(memCgroup);
+    if (!memcg->IsSecondary()) {
+        error = memcg->Attach(GetPid());
         if (error)
             HelperError(err, "Cannot attach to helper cgroup", error);
     }

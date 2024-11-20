@@ -1,10 +1,11 @@
+#pragma once
+
 #include <vector>
 #include <cstdint>
 
 extern "C" {
 #include <seccomp.h>
 }
-
 
 struct TSeccompRule {
     int Syscall;

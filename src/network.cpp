@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <sstream>
 #include <fstream>
 
 #include "bpf.hpp"
@@ -1248,7 +1247,7 @@ TError TNetwork::SetupQueue(TNetDevice &dev, bool force) {
      * This does not work for traffic crossing net-ns in veth,
      * it will flow through fallback classes.
      */
-    if (!NetclsSubsystem.HasPriority) {
+    if (!CgroupDriver.NetclsSubsystem->HasPriority) {
         error = filter.Create(*Nl);
         if (error) {
             L_ERR("Can't create tc filter: {}", error);
@@ -2015,7 +2014,7 @@ void TNetwork::UnregisterClass(TNetClass &cls) {
     if (pos == NetClasses.end())
         return;
 
-    if (cls.Parent && (NetclsSubsystem.HasPriority || cls.OriginNet.get() == this)) {
+    if (cls.Parent && (CgroupDriver.NetclsSubsystem->HasPriority || cls.OriginNet.get() == this)) {
         for (int cs = 0; cs < NR_TC_CLASSES; cs++)
             cls.Parent->ClassStat[fmt::format("Saved CS{}", cs)] += cls.ClassStat[fmt::format("CS{}", cs)];
     }
@@ -2221,10 +2220,10 @@ void TNetwork::UpdateSockDiag() {
     for (auto ct: hostNetUsers) {
         if (ct->State != EContainerState::Running)
             continue;
-        auto freezer = ct->GetCgroup(FreezerSubsystem);
+        auto freezer = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.FreezerSubsystem.get());
 
         std::vector<pid_t> pids;
-        error = freezer.GetProcesses(pids);
+        error = freezer->GetProcesses(pids);
 
         if (error) {
             L_ERR("Cannot get pids for CT{}:{}: {}", ct->Id, ct->Name, error);
@@ -2566,7 +2565,7 @@ void TNetwork::SyncStatLocked() {
             if (dev.Owner && dev.Owner != cls->Owner)
                 continue;
 
-            if (!NetclsSubsystem.HasPriority && cls->OriginNet.get() != this)
+            if (!CgroupDriver.NetclsSubsystem->HasPriority && cls->OriginNet.get() != this)
                 continue;
 
             for (int cs = 0; cs < NR_TC_CLASSES; cs++) {
@@ -2610,7 +2609,7 @@ void TNetwork::SyncStatLocked() {
             if (dev.Owner && dev.Owner != cls->Owner)
                 continue;
 
-            if (!NetclsSubsystem.HasPriority && cls->OriginNet.get() != this)
+            if (!CgroupDriver.NetclsSubsystem->HasPriority && cls->OriginNet.get() != this)
                 continue;
 
             for (int cs = 0; cs < NR_TC_CLASSES; cs++) {
@@ -2629,7 +2628,7 @@ void TNetwork::SyncStatLocked() {
     }
 
     /* Mock statistics if traffic goes into fallback tc class in host. */
-    if (!NetclsSubsystem.HasPriority) {
+    if (!CgroupDriver.NetclsSubsystem->HasPriority) {
         for (auto cls: NetClasses) {
             if (cls->OriginNet.get() != this) {
                 for (auto &dev: cls->OriginNet->Devices) {

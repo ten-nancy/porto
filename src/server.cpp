@@ -509,66 +509,6 @@ static TError CreateRootContainer() {
     return OK;
 }
 
-static void CleanupCgroups() {
-    TError error;
-    int pass = 0;
-    bool retry;
-
-again:
-    retry = false;
-
-    /* freezer must be first */
-    for (auto hy: Hierarchies) {
-        std::list<TCgroup> cgroups;
-
-        error = hy->RootCgroup().ChildsAll(cgroups);
-        if (error)
-            L_ERR("Cannot dump porto {} cgroups : {}", hy->Type, error);
-
-        for (auto cg = cgroups.rbegin(); cg != cgroups.rend(); ++cg) {
-            if (!StringStartsWith(cg->Name, PORTO_CGROUP_PREFIX))
-                continue;
-
-            if (cg->Name == PORTO_DAEMON_CGROUP &&
-                    (hy->Controllers & (CGROUP_FREEZER | CGROUP_MEMORY | CGROUP_CPUACCT | CGROUP2 | CGROUP_PERF)))
-                continue;
-
-            if (cg->Name == PORTO_HELPERS_CGROUP &&
-                    (hy->Controllers & CGROUP_MEMORY))
-                continue;
-
-            if (cg->Name == PORTO_CGROUP_PREFIX &&
-                    (hy->Controllers & (CGROUP_FREEZER | CGROUP2)))
-                continue;
-
-            bool found = false;
-            for (auto &it: Containers) {
-                TCgroup ctCg(it.second->GetCgroup(*hy));
-                if (it.second->State != EContainerState::Stopped && (ctCg == *cg ||
-                    (it.second->CgroupFs == ECgroupFs::Rw && cg->IsChildOf(ctCg)))) {
-                    found = true;
-                    break;
-                }
-            }
-            if (found)
-                continue;
-
-            if (hy == &FreezerSubsystem && FreezerSubsystem.IsFrozen(*cg)) {
-                (void)FreezerSubsystem.Thaw(*cg, false);
-                if (FreezerSubsystem.IsParentFreezing(*cg)) {
-                    retry = true;
-                    continue;
-                }
-            }
-
-            (void)cg->Remove();
-        }
-    }
-
-    if (retry && pass++ < 3)
-        goto again;
-}
-
 static void CleanupWorkdir() {
     TPath temp(PORTO_WORKDIR);
     std::vector<std::string> list;
@@ -720,11 +660,11 @@ void PrepareServer() {
     if (error)
         FatalError("Can't adjust OOM score", error);
 
-    error = InitializeCgroups();
+    error = CgroupDriver.InitializeCgroups();
     if (error)
         FatalError("Cannot initalize cgroups", error);
 
-    error = InitializeDaemonCgroups();
+    error = CgroupDriver.InitializeDaemonCgroups();
     if (error)
         FatalError("Cannot initalize daemon cgroups", error);
 
@@ -949,7 +889,7 @@ void RestoreState() {
     SystemClient.FinishRequest();
 
     L_SYS("Cleanup cgroup...");
-    CleanupCgroups();
+    CgroupDriver.CleanupCgroups();
 
     L_SYS("Cleanup workdir...");
     CleanupWorkdir();
@@ -1015,7 +955,7 @@ void CleanupServer() {
     ServerPidFile.Remove();
 
     // move master to root, otherwise older version will kill itself
-    FreezerSubsystem.RootCgroup().Attach(MasterPid);
+    CgroupDriver.FreezerSubsystem->RootCgroup()->Attach(MasterPid);
 
     L_SYS("Shutdown complete. time={} ms", GetCurrentTimeMs() - ShutdownStart);
 }
