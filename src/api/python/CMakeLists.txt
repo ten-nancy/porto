@@ -4,15 +4,15 @@ project(python-portopy)
 # use a system protoc for backward compatibility
 add_custom_command(
 	OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/porto/rpc_pb2.py
-	DEPENDS ${porto_SOURCE_DIR}/rpc.proto
-	COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --python_out=${CMAKE_CURRENT_SOURCE_DIR}/porto/ --proto_path=${porto_SOURCE_DIR} ${porto_SOURCE_DIR}/rpc.proto
+	DEPENDS ${src_SOURCE_DIR}/rpc.proto
+	COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --python_out=${CMAKE_CURRENT_SOURCE_DIR}/porto/ --proto_path=${src_SOURCE_DIR} ${src_SOURCE_DIR}/rpc.proto
 	COMMAND sed -i "s@import seccomp_pb2@from . import seccomp_pb2@" ${CMAKE_CURRENT_SOURCE_DIR}/porto/rpc_pb2.py
 	VERBATIM)
 
 add_custom_command(
 	OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/porto/seccomp_pb2.py
-	DEPENDS ${porto_SOURCE_DIR}/seccomp.proto
-	COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --python_out=${CMAKE_CURRENT_SOURCE_DIR}/porto/ --proto_path=${porto_SOURCE_DIR} ${porto_SOURCE_DIR}/seccomp.proto
+	DEPENDS ${src_SOURCE_DIR}/seccomp.proto
+	COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --python_out=${CMAKE_CURRENT_SOURCE_DIR}/porto/ --proto_path=${src_SOURCE_DIR} ${src_SOURCE_DIR}/seccomp.proto
 	VERBATIM)
 
 add_custom_target(python_rpc_proto ALL DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/porto/rpc_pb2.py ${CMAKE_CURRENT_SOURCE_DIR}/porto/seccomp_pb2.py)

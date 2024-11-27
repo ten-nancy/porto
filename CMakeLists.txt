@@ -22,6 +22,7 @@ OPTION(USE_SYSTEM_LIBZ "Use system libz" ON)
 OPTION(USE_SYSTEM_LIBELF "Use system libelf" ON)
 OPTION(USE_SYSTEM_LIBBPF "Use system libbpf" ON)
 OPTION(USE_SYSTEM_PROTOBUF "Use system protobuf" OFF)
+OPTION(USE_SYSTEM_OPENSSL "Use system openssl" OFF)
 OPTION(ENABLE_ASAN "Enables address sanitizer" OFF)
 OPTION(ENABLE_GCOV "Enables coverage" OFF)
 OPTION(USE_CLANG "Compile with clang" OFF)
@@ -92,21 +93,25 @@ else()
 	SET(LIBNL_ROUTE ${INSTALL_DIR}/lib/libnl-route-3.a)
 endif()
 
-if(NOT OPENSSL_TGZ_URL)
-    set(OPENSSL_TGZ_URL "https://github.com/openssl/openssl/archive/refs/tags/OpenSSL_1_1_1o.tar.gz")
-endif()
+if(USE_SYSTEM_OPENSSL)
+	find_package(OpenSSL REQUIRED)
+else()
+	if(NOT OPENSSL_TGZ_URL)
+	    set(OPENSSL_TGZ_URL "https://github.com/openssl/openssl/archive/refs/tags/OpenSSL_1_1_1o.tar.gz")
+	endif()
 
-ExternalProject_Add(openssl
-    URL ${OPENSSL_TGZ_URL}
-    URL_MD5 8c7daf923abc12d4492e82d576c779f2
-    CONFIGURE_COMMAND <SOURCE_DIR>/config --prefix=<INSTALL_DIR> no-dso
-    BUILD_COMMAND $(MAKE)
-    INSTALL_COMMAND $(MAKE) install_sw)
-ExternalProject_Get_Property(openssl INSTALL_DIR)
-include_directories(${INSTALL_DIR}/include)
-SET(LIBSSL ${INSTALL_DIR}/lib/libssl.a)
-SET(LIBCRYPTO ${INSTALL_DIR}/lib/libcrypto.a)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCPPHTTPLIB_OPENSSL_SUPPORT")
+	ExternalProject_Add(openssl
+	    URL ${OPENSSL_TGZ_URL}
+	    URL_MD5 8c7daf923abc12d4492e82d576c779f2
+	    CONFIGURE_COMMAND <SOURCE_DIR>/config --prefix=<INSTALL_DIR> no-dso
+	    BUILD_COMMAND $(MAKE)
+	    INSTALL_COMMAND $(MAKE) install_sw)
+	ExternalProject_Get_Property(openssl INSTALL_DIR)
+	include_directories(${INSTALL_DIR}/include)
+	SET(LIBSSL ${INSTALL_DIR}/lib/libssl.a)
+	SET(LIBCRYPTO ${INSTALL_DIR}/lib/libcrypto.a)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCPPHTTPLIB_OPENSSL_SUPPORT")
+endif()
 
 if(USE_SYSTEM_LIBZ)
        find_library(LIBZ NAMES libz.a libz)
@@ -129,19 +134,15 @@ if(USE_SYSTEM_LIBELF)
 	find_path(LIBELF_INCLUDE_DIR NAMES libelf.h)
 	include_directories(${LIBELF_INCLUDE_DIR})
 else()
-       ExternalProject_Add(elfutils
-               URL https://sourceware.org/elfutils/ftp/0.186/elfutils-0.186.tar.bz2
-               URL_MD5 2c095e31e35d6be7b3718477b6d52702
-               CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR> --enable-static --disable-debuginfod
-               BUILD_COMMAND $(MAKE)
-               INSTALL_COMMAND $(MAKE) install)
-       ExternalProject_Get_Property(elfutils INSTALL_DIR)
-       include_directories(${INSTALL_DIR}/include)
-       set(LIBELF ${INSTALL_DIR}/lib/libelf.a)
-endif()
-
-if(NOT LIBBPF_TGZ_URL)
-	set(LIBBPF_TGZ_URL "https://github.com/libbpf/libbpf/archive/refs/tags/v1.2.2.tar.gz")
+	ExternalProject_Add(elfutils
+	       URL https://sourceware.org/elfutils/ftp/0.186/elfutils-0.186.tar.bz2
+	       URL_MD5 2c095e31e35d6be7b3718477b6d52702
+	       CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR> --enable-static --disable-debuginfod
+	       BUILD_COMMAND $(MAKE)
+	       INSTALL_COMMAND $(MAKE) install)
+	ExternalProject_Get_Property(elfutils INSTALL_DIR)
+	include_directories(${INSTALL_DIR}/include)
+	set(LIBELF ${INSTALL_DIR}/lib/libelf.a)
 endif()
 
 if(USE_SYSTEM_LIBBPF)
@@ -149,6 +150,10 @@ if(USE_SYSTEM_LIBBPF)
 	find_path(LIBBPF_INCLUDE_DIR NAMES libbpf.h PATH_SUFFIXES bpf)
 	include_directories(${LIBBPF_INCLUDE_DIR})
 else()
+	if(NOT LIBBPF_TGZ_URL)
+		set(LIBBPF_TGZ_URL "https://github.com/libbpf/libbpf/archive/refs/tags/v1.2.2.tar.gz")
+	endif()
+
 	# because recent libbpf versions fail to compile with older gcc (e.g. on xenial) the
 	# CFLAGS=-Wno-address is needed
 	# https://github.com/libbpf/libbpf/issues/691

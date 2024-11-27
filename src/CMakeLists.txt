@@ -1,6 +1,4 @@
-project(porto)
-
-include_directories(${CURSES_INCLUDE_DIR})
+project(src)
 
 function(PORTO_PROTOBUF_GENERATE_CPP SRCS HDRS)
 	set(${SRCS})
@@ -94,6 +92,7 @@ set_target_properties(portoctl PROPERTIES LINK_FLAGS "-static -Wl,--whole-archiv
 
 add_executable(portoctl-top portotop.cpp)
 target_link_libraries(portoctl-top version porto util pthread rt menu fmt ${PROTOBUF_STATIC_LIBRARY} ${CURSES_LIBRARIES})
+target_include_directories(portoctl-top PUBLIC ${CURSES_INCLUDE_DIR})
 
 add_executable(portoinit portoinit.c)
 target_link_libraries(portoinit version)

@@ -2,6 +2,8 @@ project(tests)
 
 include_directories(${util_SOURCE_DIR})
 include_directories(${libporto_SOURCE_DIR})
+include_directories(${src_SOURCE_DIR})
+include_directories(${src_BINARY_DIR})
 include_directories(${porto_SOURCE_DIR})
 include_directories(${porto_BINARY_DIR})
 include_directories(${PROTOBUF_INCLUDE_DIRS})
