@@ -41,6 +41,7 @@ sudo apt install -y \
     zlib1g-dev \
     pandoc \
     libseccomp-dev \
+    libtool-bin \
     libbpf-dev # for focal or newer
 
 # dependencies for deb package building
