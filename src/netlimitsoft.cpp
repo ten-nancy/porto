@@ -10,10 +10,9 @@
 // FIXME: libbpf is broken when building with C++
 // https://github.com/libbpf/libbpf/issues/820
 
-enum bpf_link_type {};
-
+extern "C" {
 #include <libbpf.h>
-
+}
 
 // FIXME: required linux-headers from 5.8
 #include <linux/version.h>
