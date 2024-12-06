@@ -3,6 +3,7 @@
 #include "util/path.hpp"
 
 #include <mutex>
+#include <shared_mutex>
 
 class LockTimer {
     static __thread uint64_t LockTime;
@@ -39,6 +40,17 @@ public:
     std::unique_lock<std::mutex> UniqueLock();
 };
 
+class MeasuredRwMutex : public std::shared_mutex {
+    const std::string Name;
+
+public:
+    MeasuredRwMutex(const std::string &name) : Name(name) { }
+
+    void lock();
+    void lock_shared();
+    std::shared_lock<std::shared_mutex> SharedLock();
+    std::unique_lock<std::shared_mutex> UniqueLock();
+};
 
 class TFileMutex {
     TFile File;

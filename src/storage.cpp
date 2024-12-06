@@ -70,7 +70,7 @@ static TError RemoveActiveInode(const TFile &f) {
     return OK;
 }
 
-static std::condition_variable StorageCv;
+static std::condition_variable_any StorageCv;
 
 static TUintMap PlaceLoad;
 static TUintMap PlaceLoadLimit;
