@@ -79,6 +79,21 @@ or
 sudo dpkg -i ../porto_*.deb
 ```
 
+## Build in Docker
+
+To build in docker's container docker and docker-buildx should be installed
+
+```bash
+sudo apt install -y \
+    docker.io \
+    docker-buildx 
+```
+Command as follows creates necessary binaries in build directory of porto source tree
+```bash
+docker build -t env_ubuntu22.04 -f scripts/Dockerfile .
+docker run -v $(pwd):/porto docker.io/library/env_ubuntu22.04 bash -c "mkdir /porto/build; cd /porto/build; cmake ..; make -j4"
+```
+
 ## Run
 
 ```bash
