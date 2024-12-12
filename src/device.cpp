@@ -52,6 +52,7 @@ TError TDevice::Parse(TTuple &opt, const TCred &cred) {
                 Wildcard = true;
                 break;
             case '-':
+                Optional = true;
                 break;
             case '?':
                 Optional = true;
@@ -412,8 +413,10 @@ TError TDevices::InitDefault() {
 
 void TDevices::Merge(const TDevices &devices, bool overwrite, bool replace) {
     if (replace) {
-        for (auto &device: Devices)
+        for (auto &device: Devices) {
             device.MayRead = device.MayWrite = device.MayMknod = false;
+            device.Optional = true;
+        }
     }
     for (auto &device: devices.Devices) {
         bool found = false;
