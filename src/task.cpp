@@ -349,12 +349,9 @@ TError TTaskEnv::ConfigureChild() {
 
     umask(0);
 
-    TDevices devices = CT->Devices;
-    for (auto p = CT->Parent; p; p = p->Parent)
-        devices.Merge(p->Devices);
+    TDevices devices = CT->EffectiveDevices();
 
     if (NewMountNs) {
-
         error = Mnt.Setup(*CT);
         if (error)
             return error;
@@ -489,7 +486,7 @@ TError TTaskEnv::ConfigureChild() {
         int unshareFlags = CLONE_NEWUSER | CLONE_NEWNET;
 
         // TODO: remove it later
-        if (CT->EnableFuse && CT->NetInherit)
+        if (CT->Fuse && CT->NetInherit)
             unshareFlags &= ~CLONE_NEWNET;
 
         if (SupportCgroupNs)

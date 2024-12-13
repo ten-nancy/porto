@@ -1362,7 +1362,9 @@ public:
             L_TAINT("virt_mode=fuse is deprecated. Please use devices property explicitly and enable_fuse property");
             if (!config().daemon().enable_fuse())
                 return TError(EError::InvalidValue, "virt_mode={} is disabled due to Porto config", value);
-            CT->EnableFuse = true;
+            auto error = CT->EnableFuse(true);
+            if (error)
+                return error;
         }
 
         if (CT->HostMode || CT->JobMode)
@@ -1482,14 +1484,12 @@ public:
     }
 
     TError Get(std::string &value) const override {
-        value = BoolToString(CT->EnableFuse);
+        value = BoolToString(CT->Fuse);
         return OK;
     }
 
     TError Set(bool value) {
-        CT->EnableFuse = value;
-        CT->SetProp(EProperty::ENABLE_FUSE);
-        return OK;
+        return CT->EnableFuse(value);
     }
 
     TError Set(const std::string &value) override {
@@ -1501,7 +1501,7 @@ public:
     }
 
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_enable_fuse(CT->EnableFuse);
+        spec.set_enable_fuse(CT->Fuse);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
@@ -2915,7 +2915,8 @@ public:
 
         // reset to default + extra + parent devices if empty string is given by user
         if (value.empty()) {
-            CT->Devices.Devices.clear();
+            CT->Devices = TDevices();
+            CT->ClearProp(EProperty::DEVICE_CONF);
         } else {
             TError error = devices.Parse(value, CL->Cred);
             if (error)
@@ -2933,6 +2934,7 @@ public:
         CT->SetProp(EProperty::DEVICE_CONF);
         return OK;
     }
+
     TError SetIndexed(const std::string &index, const std::string &value) override {
         TDevices devices;
         TError error = devices.Parse(index + " " + value, CL->Cred);

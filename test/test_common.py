@@ -76,6 +76,9 @@ def ExpectFile(path, mode, dev=0):
     except OSError:
         assert mode == None, "file {} not found".format(path)
 
+def ExpectNotExists(path):
+    assert not os.path.exists(path), "path {} must not exist".format(path)
+
 def ParseMountinfo(pid="self"):
     ret = {}
     for line in open("/proc/{}/mountinfo".format(pid), "r"):

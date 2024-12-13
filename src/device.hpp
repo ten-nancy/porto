@@ -43,6 +43,12 @@ struct TDevices {
     bool NeedCgroup = false;
     bool AllOptional = false;
 
+    TDevices() = default;
+    TDevices(const TDevices &other) = default;
+    TDevices(TDevices &&other) = default;
+
+    TDevices& operator=(const TDevices &other) = default;
+
     TError Parse(const std::string &str, const TCred &cred);
     std::string Format() const;
 
@@ -52,4 +58,5 @@ struct TDevices {
 
     TError InitDefault();
     void Merge(const TDevices &devices, bool overwrite = false, bool replace = false);
+    bool Empty() const { return Devices.empty(); }
 };

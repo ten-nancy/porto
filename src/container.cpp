@@ -2657,24 +2657,13 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if (TestClearPropDirty(EProperty::DEVICE_CONF)) {
-        bool was_empty = false;
-        if (Devices.Devices.empty()) {
-            for (auto p = Parent; p; p = p->Parent)
-                Devices.Merge(p->Devices);
-
-            was_empty = true;
-        }
-
+    if (TestClearPropDirty(EProperty::DEVICE_CONF) || TestClearPropDirty(EProperty::ENABLE_FUSE)) {
         error = ApplyDeviceConf();
         if (error) {
             if (error != EError::Permission && error != EError::DeviceNotFound)
                 L_WRN("Cannot change allowed devices: {}", error);
             return error;
         }
-
-        if (was_empty)
-            Devices.Devices.clear();
     }
 
     return OK;
@@ -2708,15 +2697,35 @@ TError TContainer::PrepareOomMonitor() {
     return error;
 }
 
+TDevices TContainer::EffectiveDevices() const {
+    TDevices devices = Devices;
+    if (devices.Empty()) {
+        for (auto p = Parent; p != RootContainer; p = p->Parent) {
+            if (p->HasProp(EProperty::DEVICE_CONF)) {
+                devices.Merge(p->Devices);
+                break;
+            }
+        }
+    }
+    // abomination
+    // We have implicit rule that root container devices
+    // allowed if not explicitly denied.
+    devices.Merge(RootContainer->Devices);
+    devices.Merge(FuseDevices);
+    return devices;
+}
+
 TError TContainer::ApplyDeviceConf() const {
     TError error;
 
     if (IsRoot())
         return OK;
 
+    TDevices devices = EffectiveDevices();
+
     if (Controllers & CGROUP_DEVICES) {
         auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.DevicesSubsystem.get());
-        error = Devices.Apply(*cg, TaskCred.IsRootUser());
+        error = devices.Apply(*cg, TaskCred.IsRootUser());
         if (error)
             return error;
     }
@@ -2724,8 +2733,6 @@ TError TContainer::ApplyDeviceConf() const {
     /* We also setup devices during container mnt ns setup in task.cpp */
     if (State != EContainerState::Starting &&
         Task.Pid && !RootPath.IsRoot() && !TPath(Root).IsRoot()) {
-        auto devices = Devices;
-
         if (InUserNs())
             devices.PrepareForUserNs(UserNsCred);
 
@@ -2733,6 +2740,12 @@ TError TContainer::ApplyDeviceConf() const {
 
         /* Ignore errors while recreating devices for recently died tasks */
         if (error && error.Errno != ENOENT)
+            return error;
+    }
+
+    for (auto &child : Children) {
+        error = child->ApplyDeviceConf();
+        if (error)
             return error;
     }
 
@@ -3068,7 +3081,7 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
                           !TaskEnv.Mnt.Root.IsRoot() ||
                           TaskEnv.Mnt.RootRo ||
                           !TaskEnv.Mnt.Systemd.empty() ||
-                          EnableFuse;
+                          Fuse;
 
     if (TaskEnv.NewMountNs && (HostMode || JobMode))
         return TError(EError::InvalidValue, "Cannot change mount-namespace in this virt_mode");
@@ -3371,29 +3384,12 @@ TError TContainer::PrepareStart() {
             return TError(EError::InvalidValue, "userns=true incompatible with virt_mode");
         else if (!UserNs && DockerMode)
             return TError(EError::InvalidValue, "userns=false incompatible with virt_mode");
-    // TODO: perhaps remove EnableFuse here later
-    } else if (DockerMode || EnableFuse) {
+    // TODO: perhaps remove Fuse here later
+    } else if (DockerMode || Fuse) {
         LockStateWrite();
         UserNs = true;
         UnshareOnExec = true;
         SetProp(EProperty::USERNS);
-        UnlockState();
-    }
-
-    // add /dev/fuse device for fuse before start
-    if (EnableFuse) {
-        LockStateWrite();
-        error = EnableControllers(CGROUP_DEVICES);
-        if (error)
-            return error;
-
-        TDevices devices;
-        error = devices.Parse("/dev/fuse rw", CL->Cred);
-        if (error)
-            return error;
-
-        Devices.Merge(devices, true, true);
-        SetProp(EProperty::DEVICE_CONF);
         UnlockState();
     }
 
@@ -3737,7 +3733,7 @@ TError TContainer::Terminate(uint64_t deadline) {
     if (cg->IsEmpty())
         return OK;
 
-    error = cg->KillAll(SIGKILL, EnableFuse);
+    error = cg->KillAll(SIGKILL, Fuse);
     if (error)
         return error;
 
@@ -4686,6 +4682,25 @@ void TContainer::SyncState() {
         RealDeathTime = time(nullptr);
         SetProp(EProperty::DEATH_TIME);
     }
+}
+
+TError TContainer::EnableFuse(bool value) {
+    if (Fuse == value)
+        return OK;
+
+    if (value) {
+        TDevices devices;
+        auto error = devices.Parse("/dev/fuse rw", CL->Cred);
+        if (error)
+            return error;
+        FuseDevices = devices;
+    } else
+        FuseDevices = TDevices();
+
+    CT->Fuse = value;
+    CT->SetProp(EProperty::ENABLE_FUSE);
+
+    return OK;
 }
 
 TError TContainer::EnableControllers(uint64_t controllers) {

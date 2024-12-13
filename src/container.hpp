@@ -183,7 +183,7 @@ public:
     TCred UserNsCred;
     bool UnshareOnExec = false;
     ECgroupFs CgroupFs = ECgroupFs::None;
-    bool EnableFuse = false;
+    bool Fuse = false;
     TSeccompProfile Seccomp;
     std::string SeccompName;
     TSessionInfo SessionInfo;
@@ -214,6 +214,7 @@ public:
     std::string ResolvConf;
     std::string EtcHosts;
     TDevices Devices;
+    TDevices FuseDevices;
     TStringMap Sysctl;
 
     time_t RealCreationTime;
@@ -463,6 +464,7 @@ public:
     TError ApplyResolvConf() const;
     TError SetSymlink(const TPath &symlink, const TPath &target);
 
+    TError EnableFuse(bool value);
     TError EnableControllers(uint64_t controllers);
     TError HasProperty(const std::string &property) const;
     TError GetProperty(const std::string &property, std::string &value) const;
@@ -500,6 +502,7 @@ public:
     TError GetEnvironment(TEnv &env) const;
 
     TError ResolvePlace(TPath &place, bool strict = false) const;
+    TDevices EffectiveDevices() const;
 
     static TError ValidName(const std::string &name, bool superuser);
     static std::string ParentName(const std::string &name);
