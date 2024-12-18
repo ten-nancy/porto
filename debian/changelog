@@ -1,3 +1,15 @@
+porto (5.3.44) unstable; urgency=low
+  [ ovov ]
+      container: propogate device changes
+      device: mark no-access devices as optional
+      log: fix milliseconds formatting
+  [ kndrvt ]
+      build: fix build for cmake 3.30.3
+      cgroup: add CgroupDriver and change all usages of cgroup to CgroupDriver
+  last commit: be7556559344534c4eecd008dc4056dda5feb299
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 16 Dec 2024 19:57:44 -0000
+
 porto (5.3.43) unstable; urgency=low
   [ kndrvt ]
       capabilities: temporary ignore parsing error
