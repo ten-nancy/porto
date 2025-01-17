@@ -1292,7 +1292,7 @@ noinline TError UnlinkVolume(const rpc::TVolumeUnlinkRequest &req) {
         CL->ReleaseContainer();
         TVolume::DestroyUnlinked(unlinked);
     } else {
-        auto volumes_lock = LockVolumes();
+        auto volumes_lock = RLockVolumes();
         bool valid_for_removal = volume->State == EVolumeState::Ready;
         volumes_lock.unlock();
 

@@ -3157,11 +3157,11 @@ public:
         IsDynamic = true;
     }
     TError Get(std::string &value) const override {
-        auto lock = LockVolumes();
+        auto lock = RLockVolumes();
         return UintMapToString(CT->PlaceLimit, value);
     }
     TError GetIndexed(const std::string &index, std::string &value) override {
-        auto lock = LockVolumes();
+        auto lock = RLockVolumes();
         if (!CT->PlaceLimit.count(index))
             return TError(EError::InvalidValue, "invalid index " + index);
         value = std::to_string(CT->PlaceLimit.at(index));
@@ -3216,11 +3216,11 @@ public:
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
-        auto lock = LockVolumes();
+        auto lock = RLockVolumes();
         return UintMapToString(CT->PlaceUsage, value);
     }
     TError GetIndexed(const std::string &index, std::string &value) override {
-        auto lock = LockVolumes();
+        auto lock = RLockVolumes();
         if (!CT->PlaceUsage.count(index))
             return TError(EError::InvalidValue, "invalid index " + index);
         value = std::to_string(CT->PlaceUsage.at(index));
@@ -3272,7 +3272,7 @@ public:
     TError Get(std::string &value) const override {
         TMultiTuple links;
 
-        auto volumes_lock = LockVolumes();
+        auto volumes_lock = RLockVolumes();
         links.reserve(CT->VolumeLinks.size());
 
         for (auto &link: CT->VolumeLinks) {
@@ -3296,7 +3296,7 @@ public:
     void Dump(rpc::TContainerStatus &spec) const override {
         auto out = spec.mutable_volumes_linked();
 
-        auto volumes_lock = LockVolumes();
+        auto volumes_lock = RLockVolumes();
         for (auto &link: CT->VolumeLinks) {
             auto l = out->add_link();
 
@@ -3327,7 +3327,7 @@ public:
         return OK;
     }
     TError Set(const std::string &value) override {
-        auto volumes_lock = LockVolumes();
+        auto volumes_lock = RLockVolumes();
         auto prev = CT->RequiredVolumes;
         CT->RequiredVolumes = SplitEscapedString(value, ';');
         if (CT->HasResources()) {

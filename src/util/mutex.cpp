@@ -50,6 +50,26 @@ std::unique_lock<std::mutex> MeasuredMutex::UniqueLock() {
     return std::unique_lock<std::mutex>(*this);
 }
 
+void MeasuredRwMutex::lock() {
+    LockTimer timer(Name);
+    std::shared_mutex::lock();
+}
+
+void MeasuredRwMutex::lock_shared() {
+    LockTimer timer(Name);
+    std::shared_mutex::lock_shared();
+}
+
+std::shared_lock<std::shared_mutex> MeasuredRwMutex::SharedLock() {
+    LockTimer timer(Name);
+    return std::shared_lock<std::shared_mutex>(*this);
+}
+
+std::unique_lock<std::shared_mutex> MeasuredRwMutex::UniqueLock() {
+    LockTimer timer(Name);
+    return std::unique_lock<std::shared_mutex>(*this);
+}
+
 TFileMutex::TFileMutex(const TPath &path, int flags) {
     TError error = File.Open(path, flags);
     if (error)

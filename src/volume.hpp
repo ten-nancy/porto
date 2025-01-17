@@ -319,14 +319,18 @@ extern std::vector<TVolumeProperty> VolumeProperties;
 extern std::vector<std::string> AuxPlacesPaths;
 extern std::vector<std::string> InsecureUserPaths;
 
-extern MeasuredMutex VolumesMutex;
+extern MeasuredRwMutex VolumesMutex;
 extern std::map<TPath, std::shared_ptr<TVolume>> Volumes;
 extern std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
 extern TPath VolumesKV;
 extern TPath NbdKV;
 
-static inline std::unique_lock<std::mutex> LockVolumes() {
+static inline std::unique_lock<std::shared_mutex> LockVolumes() {
     return VolumesMutex.UniqueLock();
+}
+
+static inline std::shared_lock<std::shared_mutex> RLockVolumes() {
+    return VolumesMutex.SharedLock();
 }
 
 extern TError PutLoopDev(const int loopNr); /* Legacy */
