@@ -19,19 +19,17 @@ def readme():
 if __name__ == '__main__':
 
     for x in ['rpc', 'seccomp']:
-        if not os.path.exists("porto/{}.proto".format(x)):
-            with open("../../{}.proto".format(x), 'r') as src, open("porto/{}.proto".format(x), 'w') as dst:
-                dst.write(src.read())
-
         try:
             import subprocess
-            subprocess.check_call(['protoc', '--python_out=porto', '--proto_path=porto', 'porto/{}.proto'.format(x)])
+            subprocess.check_call(['protoc', '--python_out=porto', '--proto_path=../..', '{}.proto'.format(x)])
         except Exception as e:
             sys.stderr.write("Cannot compile {}.proto: {}\n".format(x, e))
 
         if not os.path.exists("porto/{}_pb2.py".format(x)):
             sys.stderr.write("Compiled {}.proto not found\n".format(x))
             sys.exit(-1)
+
+    subprocess.check_call(['sed', '-i', 's/^import seccomp_pb2/from . import seccomp_pb2/', 'porto/rpc_pb2.py'])
 
     setup(name='portopy',
           version=version(),
