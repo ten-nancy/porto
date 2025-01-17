@@ -4,22 +4,19 @@
 #include <fcntl.h>
 #include <linux/version.h>
 
-
-// FIXME: libbpf is broken when building with C++
-// https://github.com/libbpf/libbpf/issues/820
-
-enum bpf_link_type {};
-
-#include <libbpf.h>
-
 // FIXME: required linux-headers from 5.8
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
 enum bpf_stats_type {
         /* enabled run_time_ns and run_cnt */
         BPF_STATS_RUN_TIME = 0,
 };
+// FIXME: libbpf is broken when building with C++
+// https://github.com/libbpf/libbpf/issues/820
+
+enum bpf_link_type {};
 #endif
 
+#include <libbpf.h>
 #include <bpf.h>
 
 TError TBpfMap::Open(uint32_t id)

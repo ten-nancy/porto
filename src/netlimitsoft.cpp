@@ -6,26 +6,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-// FIXME: libbpf is broken when building with C++
-// https://github.com/libbpf/libbpf/issues/820
-
-enum bpf_link_type {};
-
-#include <libbpf.h>
-
+#include <linux/version.h>
 
 // FIXME: required linux-headers from 5.8
-#include <linux/version.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
 enum bpf_stats_type {
         /* enabled run_time_ns and run_cnt */
         BPF_STATS_RUN_TIME = 0,
 };
+// FIXME: libbpf is broken when building with C++
+// https://github.com/libbpf/libbpf/issues/820
+
+enum bpf_link_type {};
 #endif
 
-#define p_err(fmt, ...) fprintf(stderr, fmt "\n",  __VA_ARGS__)
-
+#include <libbpf.h>
 #include <bpf.h>
 
 class TNetLimitSoft::TImpl {
