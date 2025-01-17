@@ -26,7 +26,7 @@ override_dh_auto_configure:
 	$(sedpkgprefix) debian/porto.service.in         > debian/$(PKGPREFIX)porto.service
 	$(sedpkgprefix) debian/porto.upstart.in         > debian/$(PKGPREFIX)porto.upstart
 
-	dh_auto_configure -- -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DOPENSSL_TGZ_URL=$(OPENSSL_TGZ_URL) -DLIBBPF_TGZ_URL=$(LIBBPF_TGZ_URL) -DUSE_SYSTEM_LIBBPF=OFF
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DOPENSSL_TGZ_URL=$(OPENSSL_TGZ_URL) -DLIBBPF_TGZ_URL=$(LIBBPF_TGZ_URL)
 
 override_dh_installinit:
 	dh_installinit --no-restart-on-upgrade
