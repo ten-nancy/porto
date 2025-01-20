@@ -13,11 +13,16 @@ a = None
 b = None
 c = None
 
+USE_CGROUP2 = GetUseCgroup2()
+print("use {} hierarchy".format("cgroup2" if USE_CGROUP2 else "cgroup1"))
+
+knob_pattern = '/sys/fs/cgroup/porto/{}/cpuset.cpus' if USE_CGROUP2 else '/sys/fs/cgroup/cpuset/porto%{}/cpuset.cpus'
+
 def check_affinity(ct, affinity, cgroup = None):
     if not cgroup:
         cgroup = ct
     ct_affinity = ct['cpu_set_affinity']
-    with open('/sys/fs/cgroup/cpuset/porto%{}/cpuset.cpus'.format(cgroup)) as f:
+    with open(knob_pattern.format(cgroup)) as f:
         cg_affinity = str(f.read()).strip()
     if affinity.startswith('!'):
         assert ct_affinity != affinity, '{} != {}'.format(ct_affinity, affinity)
@@ -248,7 +253,10 @@ try:
 
     check_affinity(a, '0')
     check_affinity(b, '0', 'a')
-    check_affinity(c, '0', 'a/b%c')
+    if USE_CGROUP2:
+        check_affinity(c, '0', 'a/b/c')
+    else:
+        check_affinity(c, '0', 'a/b%c')
 
     c.Destroy()
     b.Destroy()

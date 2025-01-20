@@ -1769,6 +1769,7 @@ undo:
 
 noinline TError LocateProcess(const rpc::TLocateProcessRequest &req,
                               rpc::TContainerResponse &rsp) {
+    TError error;
     std::shared_ptr<TContainer> ct;
     pid_t pid = req.pid();
     std::string name;
@@ -1779,8 +1780,9 @@ noinline TError LocateProcess(const rpc::TLocateProcessRequest &req,
     if (req.comm().size() && req.comm() != GetTaskName(pid))
         return TError(EError::InvalidValue, "wrong comm");
 
-    if (TContainer::FindTaskContainer(pid, ct))
-        return TError(EError::InvalidValue, "task not found");
+    error = TContainer::FindTaskContainer(pid, ct);
+    if (error)
+        return TError(EError::InvalidValue, "task not found: {}", error);
 
     if (ct->IsRoot())
         name = ROOT_CONTAINER;

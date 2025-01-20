@@ -4,7 +4,6 @@
 #include "container.hpp"
 #include "util/log.hpp"
 
-
 extern "C" {
 #include <sys/fcntl.h>
 #include <sys/stat.h>
@@ -499,7 +498,7 @@ TError TMountNamespace::MountSystemd() {
 }
 
 TError TMountNamespace::MountCgroups(const TContainer &ct) {
-    bool rw = ct.DockerMode || ct.CgroupFs == ECgroupFs::Rw;
+    bool rwCgroupFs = ct.DockerMode || ct.CgroupFs == ECgroupFs::Rw;
     TError error;
     TPath tmpfs = "sys/fs/cgroup";
 
@@ -515,33 +514,45 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         std::string Type;
         std::string Path;
         std::vector<std::string> Options;
-        bool ForceRo;
+        bool Cgroup1;
+        bool Cgroup2;
     } cgroups[] = {
-        { "cgroup",  "freezer",          { "freezer" },             false},
-        { "cgroup",  "pids",             { "pids" },                false},
-        { "cgroup",  "cpuset",           { "cpuset" },              false},
-        { "cgroup",  "memory",           { "memory" },              false},
-        { "cgroup",  "blkio",            { "blkio" },               false},
-        { "cgroup",  "cpu,cpuacct",      { "cpu", "cpuacct" },      false},
-        { "cgroup",  "devices",          { "devices" },             false},
-        { "cgroup",  "hugetlb",          { "hugetlb" },             false},
-        { "cgroup",  "net_cls,net_prio", { "net_cls", "net_prio" }, !config().container().enable_rw_net_cgroups()},
-        { "cgroup",  "perf_event",       { "perf_event" },          false},
-        { "cgroup",  "systemd",          { "name=systemd" },        false},
-        { "cgroup2", "unified",          {},                        false}
+        { "cgroup",  "freezer",          { "freezer" },             true,  true},
+        { "cgroup",  "pids",             { "pids" },                true,  false},
+        { "cgroup",  "cpuset",           { "cpuset" },              true,  false},
+        { "cgroup",  "memory",           { "memory" },              true,  false},
+        { "cgroup",  "blkio",            { "blkio" },               true,  false},
+        { "cgroup",  "cpu,cpuacct",      { "cpu", "cpuacct" },      true,  false},
+        { "cgroup",  "cpuacct",          { "cpuacct" },             false, true},
+        { "cgroup",  "devices",          { "devices" },             true,  true},
+        { "cgroup",  "hugetlb",          { "hugetlb" },             true,  true},
+        { "cgroup",  "net_cls,net_prio", { "net_cls", "net_prio" }, true,  false},
+        { "cgroup",  "perf_event",       { "perf_event" },          true,  true},
+        { "cgroup",  "systemd",          { "name=systemd" },        true,  true},
+        { "cgroup2", "unified",          {},                        true,  true}
     };
 
     for (const auto &cg : cgroups) {
+        if (CgroupDriver.UseCgroup2()) {
+            if (!cg.Cgroup2)
+                continue;
+        } else {
+            if (!cg.Cgroup1)
+                continue;
+        }
+
         TPath cgroup = tmpfs / cg.Path;
         error = cgroup.MkdirAll(0755);
         if (error)
             return error;
 
-        error = cgroup.Mount(cg.Type, cg.Type, MS_NOSUID | MS_NOEXEC | MS_NODEV | (rw && !cg.ForceRo ? MS_ALLOW_WRITE : (uint64_t)MS_RDONLY), cg.Options);
+        bool rw = rwCgroupFs && !(cg.Path == "net_cls,net_prio" && !config().container().enable_rw_net_cgroups());
+
+        error = cgroup.Mount(cg.Type, cg.Type, MS_NOSUID | MS_NOEXEC | MS_NODEV | (rw ? MS_ALLOW_WRITE : MS_RDONLY), cg.Options);
         if (error)
             return error;
 
-        if (rw && !cg.ForceRo) {
+        if (rw) {
             error = cgroup.Chmod(0777);
             if (error)
                 return error;
@@ -564,10 +575,12 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         { "sys/fs/cgroup/net_prio", "net_cls,net_prio" },
     };
 
-    for (auto &s : symlinks) {
-        error = s.path.Symlink(s.target);
-        if (error)
-            return error;
+    if (!CgroupDriver.UseCgroup2()) {
+        for (auto &s : symlinks) {
+            error = s.path.Symlink(s.target);
+            if (error)
+                return error;
+        }
     }
 
     if (ct.InUserNs()) {
@@ -575,14 +588,20 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         if (error)
             return error;
 
-        for (auto &s : symlinks) {
-            error = s.path.Lchown(ct.UserNsCred);
-            if (error)
-                return error;
+        if (!CgroupDriver.UseCgroup2()) {
+            for (auto &s : symlinks) {
+                error = s.path.Lchown(ct.UserNsCred);
+                if (error)
+                    return error;
+            }
         }
     }
 
-    return tmpfs.Remount(MS_RDONLY);
+    error = tmpfs.Remount(MS_RDONLY);
+    if (error)
+        return error;
+
+    return OK;
 }
 
 TError TMountNamespace::SetupRoot(const TContainer &ct) {

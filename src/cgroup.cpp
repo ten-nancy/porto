@@ -3,7 +3,6 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
-#include <string>
 #include <unordered_set>
 #include <mutex>
 
@@ -43,8 +42,12 @@ const TFlagsNames ControllersName = {
 };
 
 static constexpr const char *CGROUP_PROCS = "cgroup.procs";
-static constexpr const char *CGROUP_THREADS = "cgroup.threads";
+static constexpr const char *CGROUP_SUBTREE_CONTROL = "cgroup.subtree_control";
+static constexpr const char *CGROUP_THEADS = "cgroup.threads";
+static constexpr const char *CGROUP_KILL = "cgroup.kill";
 static constexpr const char *TASKS = "tasks";
+
+static constexpr const char *LEAF = "leaf";
 
 extern pid_t MasterPid;
 extern pid_t ServerPid;
@@ -111,24 +114,24 @@ std::unique_ptr<const TCgroup> TCgroup::GetUniquePtr() const {
 
 // TCgroup processes
 
-TError TCgroup::SetPids(const std::string &knobPath, const std::vector<pid_t> &pids) const {
+TError TCgroup::SetPids(const std::string &knob, const std::vector<pid_t> &pids) const {
     if (!HasSubsystem())
         return TError("Cannot get from null cgroup");
 
-    FILE *file;
+    TError error;
+    TFile file;
 
-    file = fopen(knobPath.c_str(), "w");
-    if (!file)
-        return TError::System("Cannot open knob " + knobPath);
+    error = file.OpenWrite(Knob(knob));
+    if (error)
+        return TError::System("Cannot set pids to knob " + knob);
 
     for (pid_t pid: pids)
-        fprintf(file, "%d\n", pid);
+        file.WriteAll(std::to_string(pid));
 
-    fclose(file);
     return OK;
 }
 
-TError TCgroup::GetPids(const std::string &knobPath, std::vector<pid_t> &pids) const {
+TError TCgroup::GetPids(const std::string &knob, std::vector<pid_t> &pids) const {
     if (!HasSubsystem())
         return TError("Cannot get from null cgroup");
 
@@ -136,9 +139,9 @@ TError TCgroup::GetPids(const std::string &knobPath, std::vector<pid_t> &pids) c
     int pid;
 
     pids.clear();
-    file = fopen(knobPath.c_str(), "r");
+    file = fopen(Knob(knob).ToString().c_str(), "r");
     if (!file)
-        return TError::System("Cannot open knob " + knobPath);
+        return TError::System("Cannot open knob " + knob);
 
     while (fscanf(file, "%d", &pid) == 1)
         pids.push_back(pid);
@@ -148,7 +151,7 @@ TError TCgroup::GetPids(const std::string &knobPath, std::vector<pid_t> &pids) c
 }
 
 TError TCgroup::GetProcesses(std::vector<pid_t> &pids) const {
-    return GetPids(Knob(CGROUP_PROCS).ToString(), pids);
+    return GetPids(CGROUP_PROCS, pids);
 }
 
 // TCgroup knobs
@@ -168,12 +171,14 @@ bool TCgroup::Has(const std::string &knob) const {
 TError TCgroup::Get(const std::string &knob, std::string &value) const {
     if (!HasSubsystem())
         return TError("Cannot get from null cgroup");
+
     return Knob(knob).ReadAll(value);
 }
 
 TError TCgroup::Set(const std::string &knob, const std::string &value) const {
     if (!HasSubsystem())
         return TError("Cannot set to null cgroup");
+
     L_CG("Set {} {} = {}", *this, knob, value);
     TError error = Knob(knob).WriteAll(value);
     if (error)
@@ -396,7 +401,7 @@ TError TCgroup1::Attach(pid_t pid, bool thread) const {
     L_CG("Attach {} {} to {}", thread ? "thread" : "process", pid, *this);
     TError error;
 
-    error = Knob(thread ? "tasks" : "cgroup.procs").WriteAll(std::to_string(pid));
+    error = SetPids(thread ? TASKS : CGROUP_PROCS, {pid});
     if (error)
         L_ERR("Cannot attach {} {} to {} : {}", thread ? "thread" : "process", pid, *this, error);
 
@@ -412,17 +417,13 @@ TError TCgroup1::AttachAll(const TCgroup &cg,  bool thread) const {
 
     L_CG("Attach all processes from {} to {}", cg, *this);
 
-    std::vector<pid_t> pids, prev;
-
-    bool retry;
     TError error;
+    std::vector<pid_t> pids, prev;
+    bool retry;
 
     error = cg.GetProcesses(pids);
     if (error)
         return error;
-
-    if (thread && IsCgroup2())
-        return OK;
 
     unsigned int now, startTime = GetCurrentTimeMs();
     do {
@@ -432,7 +433,7 @@ TError TCgroup1::AttachAll(const TCgroup &cg,  bool thread) const {
 
         retry = false;
         for (auto pid: pids) {
-            error = Knob(thread ? TASKS : CGROUP_PROCS).WriteAll(std::to_string(pid));
+            error = SetPids(thread ? TASKS : CGROUP_PROCS, {pid});
             if (error && error.Errno != ESRCH)
                 return error;
             retry = retry || std::find(prev.begin(), prev.end(), pid) == prev.end();
@@ -518,9 +519,7 @@ TError TCgroup1::KillAll(int signal, bool abortFuse) const {
 }
 
 TError TCgroup1::GetTasks(std::vector<pid_t> &pids) const {
-    if (IsCgroup2())
-        return GetPids(Knob(CGROUP_THREADS).ToString(), pids);
-    return GetPids(Knob(TASKS).ToString(), pids);
+    return GetPids(TASKS, pids);
 }
 
 TError TCgroup1::GetCount(uint64_t &count, bool thread) const {
@@ -530,7 +529,7 @@ TError TCgroup1::GetCount(uint64_t &count, bool thread) const {
     TError error;
     std::vector<pid_t> pids;
 
-    error = GetPids(Knob(thread ? TASKS : CGROUP_PROCS).ToString(), pids);
+    error = GetPids(thread ? TASKS : CGROUP_PROCS, pids);
     if (error)
         return error;
 
@@ -539,19 +538,444 @@ TError TCgroup1::GetCount(uint64_t &count, bool thread) const {
     return OK;
 }
 
+// TCgroup2
+
+class TCgroup2 : public TCgroup {
+    // cgroup2 specified
+    TPath LeafPath() const;
+    static std::string LeafKnob(const std::string &knob);
+
+public:
+    // constructors and destructor
+    TCgroup2() = delete;
+    TCgroup2(const TSubsystem *subsystem, const std::string &name): TCgroup(subsystem, name) {}
+    ~TCgroup2() = default;
+
+    // modifiers
+    TError Create() const override;
+    TError Remove() const override;
+
+    // processes
+    TError Attach(pid_t pid, bool thread = false) const override;
+    TError AttachAll(const TCgroup &cg, bool thread = false) const override;
+    TError KillAll(int signal, bool abortFuse = false) const override;
+
+    TError GetProcesses(std::vector<pid_t> &pids) const override;
+    TError GetTasks(std::vector<pid_t> &pids) const override;
+    TError GetCount(uint64_t &count, bool thread = false) const override;
+
+    // controllers
+    static inline std::string ConvertControllerToV2(const std::string &type);
+    bool HasEmptyControllers() const;
+
+    TError SetController(const std::string &type, bool add) const;
+    TError AddController(const std::string &type) const;
+    TError DelController(const std::string &type) const;
+
+    TError GetControllers(std::vector<std::string> &controllers) const;
+    TError GetControllers(std::string &controllers) const;
+
+    TError SetControllers(const std::vector<std::string> &controllers) const;
+    TError SetControllers(const std::string &controllers) const;
+
+    TError InitializeControllers() const;
+    TError InitializeSubsystems() const;
+};
+
+// TCgroup2 cgroup2 specified
+
+TPath TCgroup2::LeafPath() const {
+    return Path() / LEAF;
+}
+
+std::string TCgroup2::LeafKnob(const std::string &knob) {
+    return fmt::format("{}/{}", LEAF, knob);
+}
+
+// TCgroup2 modifiers
+
+TError TCgroup2::Create() const {
+    TError error;
+
+    if (Exists() && IsSecondary())
+        return OK;
+
+    if (StringEndsWith(GetName(), LEAF))
+        return TError("Cgroup name cannot be {}", LEAF);
+
+    L_CG("Create cgroup {}", *this);
+    error = Path().Mkdir(0755);
+    if (error)
+        return TError(error, "Cannot create cgroup {}", *this);
+
+    L_CG("Create leaf cgroup {}", LeafPath());
+    error = LeafPath().Mkdir(0755);
+    if (error) {
+        (void)Path().Rmdir();
+        return TError(error, "Cannot create leaf of cgroup {}", *this);
+    }
+
+    error = InitializeControllers();
+    if (error) {
+        (void)LeafPath().Rmdir();
+        (void)Path().Rmdir();
+        return TError(error, "Cannot initialize controllers of cgroup {}", *this);
+    }
+
+    error = InitializeSubsystems();
+    if (error) {
+        (void)LeafPath().Rmdir();
+        (void)Path().Rmdir();
+        return TError(error, "Cannot initialize cgroup {}", *this);
+    }
+
+    return OK;
+}
+
+TError TCgroup2::Remove() const {
+    TError error;
+    struct stat st;
+
+    if (IsSecondary())
+        return OK;
+
+    L_CG("Remove cgroup {}", *this);
+
+    error = LeafPath().Rmdir();
+
+    std::vector<pid_t> startTasks;
+    GetTasks(startTasks);
+    /* workaround for bad synchronization */
+    if (error && error.Errno == EBUSY && !LeafPath().StatStrict(st) && st.st_nlink == 2) {
+        uint64_t deadline = GetCurrentTimeMs() + config().daemon().cgroup_remove_timeout_s() * 1000;
+        uint64_t interval = 1;
+        do {
+            error = KillAll(SIGKILL);
+            if (error)
+                L_WRN("Cannot kill tasks of cgroup {}: {}", *this, error);
+
+            error = LeafPath().Rmdir();
+            if (!error || error.Errno != EBUSY)
+                break;
+
+            if (interval < 1000)
+                interval *= 10;
+
+        } while (!WaitDeadline(deadline, interval));
+    }
+
+    // TODO(kndrvt): return ENOENT and process his case later
+    if (error && (/*error.Errno != ENOENT || */ Exists())) {
+        std::vector<pid_t> tasks;
+        GetTasks(tasks);
+        L_CG_ERR("Cannot remove cgroup {}: {}, {} tasks inside",
+              *this, error, tasks.size());
+
+        L("Tasks before destroy:");
+        for (auto task : startTasks)
+            L("task: {}", task);
+
+        L("Tasks after destroy:");
+        for (size_t i = 0;
+             i < tasks.size() && i < config().daemon().debug_hung_tasks_count();
+             ++i) {
+            auto task = tasks[i];
+            PrintProc("status", task);
+            PrintProc("wchan", task);
+            PrintStack(task);
+        }
+    }
+
+    error = Path().Rmdir();
+    if (error && error.Errno != ENOENT)
+        L_WRN("Cannot remove cgroup {}: {}", *this, error);
+
+    return OK;
+}
+
+// TCgroup2 processes
+
+TError TCgroup2::Attach(pid_t pid, bool thread) const {
+    L_CG("Attach {} {} to {}", thread ? "thread" : "process", pid, *this);
+    TError error;
+
+    // TODO(kndrvt): remove this backward compatibility later
+    TPath leafPath = LeafPath();
+    if (!leafPath.PathExists()) {
+        L_CG("Create leaf cgroup {}", leafPath);
+        error = leafPath.Mkdir(0755);
+        if (error)
+            L_ERR("Cannot create leaf of cgroup {}", *this);
+    }
+
+    error = SetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS), {pid});
+    if (error)
+        L_ERR("Cannot attach {} {} to {} : {}", thread ? "thread" : "process", pid, *this, error);
+
+    return error;
+}
+
+TError TCgroup2::AttachAll(const TCgroup &cg, bool thread) const {
+    L_CG("Attach all processes from {} to {}", cg, *this);
+
+    // TODO(kndrvt): remove this backward compatibility later
+    TError error;
+    TPath leafPath = LeafPath();
+    if (!leafPath.PathExists()) {
+        L_CG("Create leaf cgroup {}", leafPath);
+        error = leafPath.Mkdir(0755);
+        if (error)
+            L_ERR("Cannot create leaf of cgroup {}", *this);
+    }
+
+    std::vector<pid_t> pids, prev;
+    bool retry;
+
+    error = cg.GetProcesses(pids);
+    if (error)
+        return error;
+
+    unsigned int now, startTime = GetCurrentTimeMs();
+    do {
+        error = thread ? cg.GetTasks(pids) : cg.GetProcesses(pids);
+        if (error)
+            return error;
+
+        retry = false;
+        for (auto pid: pids) {
+            error = SetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS), {pid});
+            if (error && error.Errno != ESRCH)
+                return error;
+            retry = retry || std::find(prev.begin(), prev.end(), pid) == prev.end();
+        }
+        prev = pids;
+
+        now = GetCurrentTimeMs();
+        if (startTime + 10000 < now) {
+            startTime = now;
+            L_WRN("Too long attachment of processes from {} to {}", cg, *this);
+        }
+    } while (retry);
+
+    return OK;
+}
+
+TError TCgroup2::KillAll(int signal, bool) const {
+    TError error;
+
+    L_CG("KillAll {} {}", signal, *this);
+
+    if (IsRoot())
+        return TError(EError::Permission, "Bad idea");
+
+    if (Has(CGROUP_KILL)) {
+        error = Set(CGROUP_KILL, "1");
+        if (error)
+            return error;
+        return OK;
+    }
+
+    L_CG("Downgrade to cgroup v1 killing, cause there is no {} in {}", CGROUP_KILL, *this);
+
+    std::vector<pid_t> tasks, killed;
+    TError error2;
+    bool retry;
+    bool frozen = false;
+    int iteration = 0;
+
+    do {
+        if (++iteration > 10 && !frozen &&
+            CgroupDriver.FreezerSubsystem->IsBound(*this) &&
+            !CgroupDriver.FreezerSubsystem->IsFrozen(*this))
+        {
+            error = CgroupDriver.FreezerSubsystem->Freeze(*this, false);
+            if (error)
+                L_ERR("Cannot freeze cgroup for killing {}: {}", *this, error);
+            else
+                frozen = true;
+        }
+
+        error = GetTasks(tasks);
+        if (error)
+            break;
+
+        retry = false;
+        for (auto pid: tasks) {
+            if (pid == MasterPid || pid == ServerPid || pid <= 0) {
+                L_TAINT(fmt::format("Cannot kill portod thread {}", pid));
+                continue;
+            }
+
+            if (std::find(killed.begin(), killed.end(), pid) == killed.end()) {
+                if (kill(pid, signal) && errno != ESRCH && !error) {
+                    error = TError::System("kill");
+                    L_ERR("Cannot kill process {}: {}", pid, error);
+                }
+                retry = true;
+            }
+        }
+        killed = tasks;
+    } while (retry);
+
+    if (CgroupDriver.FreezerSubsystem->IsBound(*this) &&
+        CgroupDriver.FreezerSubsystem->IsFrozen(*this)) {
+        if (!frozen)
+            L_TAINT(fmt::format("Rogue freeze in cgroup {}", *this));
+
+        error = CgroupDriver.FreezerSubsystem->Thaw(*this, false);
+        if (error)
+            L_WRN("Cannot thaw cgroup {}: {}", *this, error);
+    }
+
+    return error;
+}
+
+TError TCgroup2::GetProcesses(std::vector<pid_t> &pids) const {
+    return GetPids(LeafKnob(CGROUP_PROCS), pids);
+}
+
+TError TCgroup2::GetTasks(std::vector<pid_t> &pids) const {
+    return GetPids(LeafKnob(CGROUP_THEADS), pids);
+}
+
+TError TCgroup2::GetCount(uint64_t &count, bool thread) const {
+    if (!GetSubsystem())
+        TError("Cannot get from null cgroup");
+
+    TError error;
+    std::vector<pid_t> pids;
+
+    error = GetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS), pids);
+    if (error)
+        return error;
+
+    count = pids.size();
+
+    return OK;
+}
+
+// TCgroup2 controllers
+
+std::string TCgroup2::ConvertControllerToV2(const std::string &type) {
+    if (type == "blkio")
+        return "io";
+    else if (type == "unified" || type == "cgroup2")
+        return "";
+    else
+        return type;
+}
+
+bool TCgroup2::HasEmptyControllers() const {
+    TError error;
+    std::string value;
+
+    error = Get(CGROUP_SUBTREE_CONTROL, value);
+    if (error)
+        return false;
+
+    return value.empty();
+}
+
+TError TCgroup2::SetController(const std::string &type, bool add) const {
+    std::string t = ConvertControllerToV2(type);
+    if (t.empty())
+        return OK;
+    return Set(CGROUP_SUBTREE_CONTROL, (add ? "+" : "-") + t);
+}
+
+TError TCgroup2::AddController(const std::string &type) const {
+    return SetController(type, true);
+}
+
+TError TCgroup2::DelController(const std::string &type) const {
+    return SetController(type, false);
+}
+
+TError TCgroup2::GetControllers(std::vector<std::string> &controllers) const {
+    TError error;
+    std::string buf;
+
+    error = GetControllers(buf);
+    if (error)
+        return error;
+
+    controllers = SplitString(buf, ' ');
+
+    return OK;
+}
+
+TError TCgroup2::GetControllers(std::string &controllers) const {
+    return Get(CGROUP_SUBTREE_CONTROL, controllers);
+}
+
+TError TCgroup2::SetControllers(const std::vector<std::string> &controllers) const {
+    TError error;
+    std::string value;
+
+    for (auto &c: controllers) {
+        std::string type = ConvertControllerToV2(c);
+        if (!type.empty())
+            value += " +" + type;
+    }
+
+    error = Set(CGROUP_SUBTREE_CONTROL, value);
+    if (error)
+        return error;
+
+    return OK;
+}
+
+TError TCgroup2::SetControllers(const std::string &controllers) const {
+    return SetControllers(SplitString(controllers, ' '));
+}
+
+TError TCgroup2::InitializeControllers() const {
+    TError error;
+    std::vector<std::string> controllers;
+
+    for (auto subsys: CgroupDriver.Cgroup2Subsystems) {
+        if (CgroupDriver.Cgroup2Subsystem->Controllers & subsys->Kind)
+            controllers.push_back(subsys->Type);
+    }
+
+    error = SetControllers(controllers);
+    if (error)
+        return error;
+
+    return OK;
+}
+
+TError TCgroup2::InitializeSubsystems() const {
+    TError error;
+
+    for (auto subsys: CgroupDriver.Cgroup2Subsystems) {
+        if (CgroupDriver.Cgroup2Subsystem->Controllers & subsys->Kind) {
+            error = subsys->InitializeCgroup(*this);
+            if (error)
+                return error;
+        }
+    }
+
+    return OK;
+}
+
 std::unique_ptr<const TCgroup> TSubsystem::RootCgroup() const {
-    return Cgroup("/");
+    return Cgroup(IsCgroup2() ? "/porto" : "/");
 }
 
 std::unique_ptr<const TCgroup> TSubsystem::Cgroup(const std::string &name) const {
     PORTO_ASSERT(name[0] == '/');
-    return std::unique_ptr<const TCgroup1>(new TCgroup1(this, name));
+    if (CgroupDriver.UseCgroup2() && IsCgroup2())
+        return std::unique_ptr<const TCgroup2>(new TCgroup2(this, name));
+    else
+        return std::unique_ptr<const TCgroup1>(new TCgroup1(this, name));
 }
 
+// TODO(kndrvt): remove leaf if exists
 TError TSubsystem::TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cgroup) const {
     std::vector<std::string> lines;
     auto cg_file = TPath("/proc/" + std::to_string(pid) + "/cgroup");
-    auto type = TestOption();
+    auto type = CgroupDriver.UseCgroup2() && IsCgroup2() ? "" : TestOption();
     std::unordered_set<std::string> cgroupTypes;
 
     TError error = cg_file.ReadLines(lines);
@@ -566,7 +990,7 @@ TError TSubsystem::TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cgroup)
             continue;
 
         auto cgroups = SplitString(fields[1], ',');
-        if (Kind == CGROUP2 && cgroups.empty())
+        if (cgroups.empty())
             cgroups.push_back("");
 
         for (auto &cg : cgroups) {
@@ -576,8 +1000,11 @@ TError TSubsystem::TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cgroup)
             cgroupTypes.insert(cg);
 
             if (!found && cg == type) {
+                TPath cgroup_path = fields[2];
+                if (type == "" && cgroup_path.BaseName() == LEAF)
+                    cgroup_path = cgroup_path.DirName();
                 found = true;
-                cgroup = Cgroup(fields[2]);
+                cgroup = Cgroup(cgroup_path.ToString());
             }
         }
     }
@@ -592,73 +1019,22 @@ bool TSubsystem::IsBound(const TCgroup &cg) const {
 // Memory
 
 TError TMemorySubsystem::InitializeSubsystem() {
+    TError error;
     auto cg = RootCgroup();
 
-    HasWritebackBlkio = cg->Has(CgroupDriver.MemorySubsystem->WRITEBACK_BLKIO);
+    HasWritebackBlkio = cg->Has(WRITEBACK_BLKIO);
     if (HasWritebackBlkio)
-        L_CG("Supports {}", CgroupDriver.MemorySubsystem->WRITEBACK_BLKIO);
+        L_CG("Supports {}", std::string(WRITEBACK_BLKIO));
 
-    HasMemoryLockPolicy = cg->Has(CgroupDriver.MemorySubsystem->MEMORY_LOCK_POLICY);
+    HasMemoryLockPolicy = cg->Has(MLOCK_POLICY);
     if (HasMemoryLockPolicy)
-        L_CG("Supports {}", CgroupDriver.MemorySubsystem->MEMORY_LOCK_POLICY);
+        L_CG("Supports {}", std::string(MLOCK_POLICY));
 
     return OK;
 }
 
-TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
-    uint64_t old_limit, old_high_limit = 0;
-    std::string value;
-    TError error;
-    const std::string knobLimitName = LIMIT;
-    const std::string knobHighLimitName = HIGH_LIMIT;
-    const std::string knobSwapName = MEM_SWAP_LIMIT;
-    /*
-     * Maxumum value depends on arch, kernel version and bugs
-     * "-1" works everywhere since 2.6.31
-     */
-    if (!limit) {
-        std::string value = "-1";
-        if (SupportSwap())
-            (void)cg.Set(knobSwapName, value);
-        return cg.Set(knobLimitName, value);
-    }
-
-    error = cg.GetUint64(knobLimitName, old_limit);
-    if (error)
-        return error;
-
-    if (old_limit == limit)
-        return OK;
-
-    /* reduce high limit first to fail faster */
-    if (limit < old_limit && SupportHighLimit()) {
-        auto error2 = cg.GetUint64(knobHighLimitName, old_high_limit);
-        if (!error2)
-            error = cg.SetUint64(knobHighLimitName, limit);
-        if (error)
-            return error;
-    }
-
-    /* Memory limit cannot be bigger than Memory+Swap limit. */
-    if (SupportSwap()) {
-        uint64_t cur_limit;
-        cg.GetUint64(knobSwapName, cur_limit);
-        if (cur_limit < limit)
-            (void)cg.SetUint64(knobSwapName, limit);
-    }
-
-    // this also updates high limit
-    error = cg.SetUint64(knobLimitName, limit);
-    if (!error && SupportSwap())
-        error = cg.SetUint64(knobSwapName, limit);
-
-    if (error) {
-        (void)cg.SetUint64(knobLimitName, old_limit);
-        if (old_high_limit)
-            (void)cg.SetUint64(knobHighLimitName, old_high_limit);
-    }
-
-    return error;
+TError TMemorySubsystem::Statistics(const TCgroup &cg, TUintMap &stat) const {
+    return cg.GetUintMap(STAT, stat);
 }
 
 TError TMemorySubsystem::GetCacheUsage(const TCgroup &cg, uint64_t &usage) const {
@@ -703,6 +1079,112 @@ TError TMemorySubsystem::GetMLockUsage(const TCgroup &cg, uint64_t &usage) const
     return error;
 }
 
+TError TMemorySubsystem::GetReclaimed(const TCgroup &cg, uint64_t &value) const {
+    TUintMap stat;
+    Statistics(cg, stat);
+    value = stat["total_pgpgout"] * 4096; /* Best estimation for now */
+    return OK;
+}
+
+TError TMemorySubsystem::Usage(const TCgroup &cg, uint64_t &value) const {
+        return cg.GetUint64(IsCgroup2() ? CURRENT : USAGE, value);
+}
+
+bool TMemorySubsystem::SupportSoftLimit() const {
+    return RootCgroup()->Has(SOFT_LIMIT);
+}
+
+TError TMemorySubsystem::SetSoftLimit(const TCgroup &cg, int64_t limit) const {
+    if (!SupportSoftLimit())
+        return OK;
+    return cg.SetInt64(SOFT_LIMIT, limit);
+}
+
+TError TMemorySubsystem::GetSoftLimit(const TCgroup &cg, int64_t &limit) const {
+    if (!SupportSoftLimit())
+        return OK;
+    return cg.GetInt64(SOFT_LIMIT, limit);
+}
+
+bool TMemorySubsystem::SupportGuarantee() const {
+    return RootCgroup()->Has(IsCgroup2() ? LOW : LOW_LIMIT);
+}
+
+TError TMemorySubsystem::SetGuarantee(const TCgroup &cg, uint64_t guarantee) const {
+    if (!SupportGuarantee())
+        return OK;
+    return cg.SetUint64(IsCgroup2() ? LOW : LOW_LIMIT, guarantee);
+}
+
+ bool TMemorySubsystem::SupportHighLimit() const {
+    return RootCgroup()->Has(IsCgroup2() ? HIGH : HIGH_LIMIT);
+}
+
+TError TMemorySubsystem::SetHighLimit(const TCgroup &cg, uint64_t limit) const {
+    if (!SupportHighLimit())
+        return OK;
+    if (!limit) {
+        if (IsCgroup2())
+            return cg.Set(HIGH, "max");
+        else
+            return cg.Set(HIGH_LIMIT, "-1");
+    }
+    return cg.SetUint64(IsCgroup2() ? HIGH : HIGH_LIMIT, limit);
+}
+
+bool TMemorySubsystem::SupportRechargeOnPgfault() const {
+    return RootCgroup()->Has(RECHARGE_ON_PAGE_FAULT);
+}
+
+TError TMemorySubsystem::RechargeOnPgfault(const TCgroup &cg, bool enable) const {
+    if (!SupportRechargeOnPgfault())
+        return OK;
+    return cg.SetBool(RECHARGE_ON_PAGE_FAULT, enable);
+}
+
+bool TMemorySubsystem::SupportNumaBalance() const {
+    return RootCgroup()->Has(NUMA_BALANCE_VMPROT);
+}
+TError TMemorySubsystem::SetNumaBalance(const TCgroup &cg, uint64_t flag, uint64_t mask) {
+    if (!SupportNumaBalance())
+        return OK;
+    return cg.Set(NUMA_BALANCE_VMPROT, fmt::format("{} {}", flag, mask));
+}
+
+bool TMemorySubsystem::SupportDirtyLimit() const {
+    return RootCgroup()->Has(DIRTY_LIMIT);
+}
+
+TError TMemorySubsystem::SetDirtyLimit(const TCgroup &cg, uint64_t limit) {
+    if (!SupportDirtyLimit())
+        return OK;
+    if (limit || !cg.Has(DIRTY_RATIO))
+        return cg.SetUint64(DIRTY_LIMIT, limit);
+    return cg.SetUint64(DIRTY_RATIO, 50);
+}
+
+bool TMemorySubsystem::SupportAnonLimit() const {
+    return RootCgroup()->Has(ANON_LIMIT);
+}
+
+TError TMemorySubsystem::SetAnonLimit(const TCgroup &cg, uint64_t limit) const {
+    if (!SupportAnonLimit())
+        return OK;
+    return cg.Set(ANON_LIMIT, limit ? std::to_string(limit) : "-1");
+}
+
+TError TMemorySubsystem::ResetAnonMaxUsage(const TCgroup &cg) const {
+    if (!cg.Has(ANON_MAX_USAGE))
+        return OK;
+    return cg.SetUint64(ANON_MAX_USAGE, 0);
+}
+
+TError TMemorySubsystem::GetAnonMaxUsage(const TCgroup &cg, uint64_t &usage) const {
+    if (!cg.Has(ANON_MAX_USAGE))
+        return OK;
+    return cg.GetUint64(ANON_MAX_USAGE, usage);
+}
+
 TError TMemorySubsystem::GetAnonUsage(const TCgroup &cg, uint64_t &usage) const {
     if (cg.Has(ANON_USAGE))
         return cg.GetUint64(ANON_USAGE, usage);
@@ -717,16 +1199,6 @@ TError TMemorySubsystem::GetAnonUsage(const TCgroup &cg, uint64_t &usage) const 
     return error;
 }
 
-bool TMemorySubsystem::SupportAnonLimit() const {
-    return Cgroup(PORTO_DAEMON_CGROUP)->Has(ANON_LIMIT);
-}
-
-TError TMemorySubsystem::SetAnonLimit(const TCgroup &cg, uint64_t limit) const {
-    if (cg.Has(ANON_LIMIT))
-        return cg.Set(ANON_LIMIT, limit ? std::to_string(limit) : "-1");
-    return OK;
-}
-
 bool TMemorySubsystem::SupportAnonOnly() const {
     return Cgroup(PORTO_DAEMON_CGROUP)->Has(ANON_ONLY);
 }
@@ -735,6 +1207,81 @@ TError TMemorySubsystem::SetAnonOnly(const TCgroup &cg, bool val) const {
     if (cg.Has(ANON_ONLY))
         return cg.SetBool(ANON_ONLY, val);
     return OK;
+}
+
+bool TMemorySubsystem::SupportSwap() const {
+    return RootCgroup()->Has(IsCgroup2()? SWAP_MAX : MEM_SWAP_LIMIT);
+}
+
+TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
+    TError error;
+    uint64_t old_limit, old_high_limit = 0;
+    std::string value;
+    const std::string knobLimitName = IsCgroup2() ? MAX : LIMIT;
+    const std::string knobHighLimitName = IsCgroup2() ? HIGH : HIGH_LIMIT;
+    const std::string knobSwapName = IsCgroup2() ? SWAP_MAX : MEM_SWAP_LIMIT;
+    /*
+     * Maxumum value depends on arch, kernel version and bugs
+     * "-1" works everywhere since 2.6.31
+     */
+    if (!limit) {
+        std::string value = IsCgroup2() ? "max" : "-1";
+        if (SupportSwap()) {
+            error = cg.Set(knobSwapName, value);
+            if (error)
+                L_WRN("Cannot set {}: {}", knobSwapName, value);
+        }
+        return cg.Set(knobLimitName, value);
+    }
+
+    if (IsCgroup2()) {
+        error = cg.Get(knobLimitName, value);
+        if (value == "max")
+            old_limit = INT64_MAX;
+    } else
+        error = cg.GetUint64(knobLimitName, old_limit);
+    if (error)
+        return error;
+
+    if (old_limit == limit)
+        return OK;
+
+    /* reduce high limit first to fail faster */
+    if (limit < old_limit && SupportHighLimit()) {
+        auto error2 = cg.GetUint64(knobHighLimitName, old_high_limit);
+        if (!error2)
+            error = cg.SetUint64(knobHighLimitName, limit);
+        if (error)
+            return error;
+    }
+
+    /* Memory limit cannot be bigger than Memory+Swap limit. */
+    if (SupportSwap()) {
+        uint64_t cur_limit;
+        cg.GetUint64(knobSwapName, cur_limit);
+        if (cur_limit < limit) {
+            error = cg.SetUint64(knobSwapName, limit);
+            if (error)
+                L_WRN("Cannot set {}: {}", knobSwapName, value);
+        }
+    }
+
+    // this also updates high limit
+    error = cg.SetUint64(knobLimitName, limit);
+    if (!error && SupportSwap())
+        error = cg.SetUint64(knobSwapName, limit);
+
+    if (error) {
+        (void)cg.SetUint64(knobLimitName, old_limit);
+        if (old_high_limit)
+            (void)cg.SetUint64(knobHighLimitName, old_high_limit);
+    }
+
+    return error;
+}
+
+bool TMemorySubsystem::SupportIoLimit() const {
+    return RootCgroup()->Has(FS_BPS_LIMIT);
 }
 
 TError TMemorySubsystem::SetIoLimit(const TCgroup &cg, uint64_t limit) {
@@ -749,14 +1296,6 @@ TError TMemorySubsystem::SetIopsLimit(const TCgroup &cg, uint64_t limit) {
     return cg.SetUint64(FS_IOPS_LIMIT, limit);
 }
 
-TError TMemorySubsystem::SetDirtyLimit(const TCgroup &cg, uint64_t limit) {
-    if (!SupportDirtyLimit())
-        return OK;
-    if (limit || !cg.Has(DIRTY_RATIO))
-        return cg.SetUint64(DIRTY_LIMIT, limit);
-    return cg.SetUint64(DIRTY_RATIO, 50);
-}
-
 TError TMemorySubsystem::LinkWritebackBlkio(const TCgroup &memcg, const TCgroup &blkcg) const {
     TError error;
     TFile file;
@@ -769,10 +1308,27 @@ TError TMemorySubsystem::LinkWritebackBlkio(const TCgroup &memcg, const TCgroup 
         return error;
 
     L_CG("Link writeback of {} with {}", memcg, blkcg);
-    return memcg.SetUint64(CgroupDriver.MemorySubsystem->WRITEBACK_BLKIO, file.Fd);
+    return memcg.SetUint64(WRITEBACK_BLKIO, file.Fd);
 }
 
-TError TMemorySubsystem::SetupOOMEvent(const TCgroup &cg, TFile &event) {
+TError TMemorySubsystem::SetupOomEvent(const TCgroup &cg, TFile &event) const {
+    event.Close();
+
+    if (!IsCgroup2())
+        return SetupOomEventLegacy(cg, event);
+
+    TError error;
+
+    error = event.OpenRead(cg.Knob(EVENTS));
+    if (error)
+        return error;
+
+    PORTO_ASSERT(event.Fd > 2);
+
+    return OK;
+}
+
+TError TMemorySubsystem::SetupOomEventLegacy(const TCgroup &cg, TFile &event) const {
     TError error;
     TFile knob;
 
@@ -782,7 +1338,6 @@ TError TMemorySubsystem::SetupOOMEvent(const TCgroup &cg, TFile &event) {
 
     PORTO_ASSERT(knob.Fd > 2);
 
-    event.Close();
     event.SetFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (event.Fd < 0)
         return TError::System("Cannot create eventfd");
@@ -790,37 +1345,63 @@ TError TMemorySubsystem::SetupOOMEvent(const TCgroup &cg, TFile &event) {
     PORTO_ASSERT(event.Fd > 2);
 
     error = cg.Set(EVENT_CONTROL, std::to_string(event.Fd) + " " + std::to_string(knob.Fd));
-    if (error)
+    if (error) {
         event.Close();
-    return error;
+        return error;
+    }
+
+    return OK;
 }
 
-TError TMemorySubsystem::GetOomKills(const TCgroup &cg, uint64_t &count) {
+uint64_t TMemorySubsystem::NotifyOomEvents(TFile &event) const {
+    if (!event)
+        return 0;
+
+    uint64_t value = 0;
+    int ret = read(event.Fd, &value, sizeof(value));
+    if (ret != sizeof(value))
+        return 0;
+
+    return value;
+}
+
+std::string TMemorySubsystem::ChooseMemoryEventsKnob(bool local) const {
+    if (IsCgroup2())
+        if (local)
+            return EVENTS_LOCAL;
+        else
+            return EVENTS;
+    else
+        return OOM_CONTROL;
+}
+
+TError TMemorySubsystem::GetMemoryEventsField(const TCgroup &cg, uint64_t &value, const std::string &field, bool local) const {
+    TError error;
     TUintMap map;
-    TError error = cg.GetUintMap(OOM_CONTROL, map);
+
+    error = cg.GetUintMap(ChooseMemoryEventsKnob(local), map);
     if (error)
         return error;
-    if (!map.count("oom_kill"))
-        return TError(EError::NotSupported, "no oom kill counter");
-    count = map.at("oom_kill");
+
+    if (!map.count(field))
+        return TError(EError::NotSupported, "field {} not found", field);
+
+    value = map.at(field);
+
     return OK;
 }
 
-uint64_t TMemorySubsystem::GetOomEvents(const TCgroup &cg) {
-    TUintMap stat;
-    if (!Statistics(cg, stat))
-        return stat["oom_events"];
-    return 0;
+TError TMemorySubsystem::GetOomKills(const TCgroup &cg, uint64_t &value, bool local) const {
+    return GetMemoryEventsField(cg, value, "oom_kill", local);
 }
 
-TError TMemorySubsystem::GetReclaimed(const TCgroup &cg, uint64_t &count) const {
-    TUintMap stat;
-    Statistics(cg, stat);
-    count = stat["total_pgpgout"] * 4096; /* Best estimation for now */
-    return OK;
+TError TMemorySubsystem::GetOomEvents(const TCgroup &cg, uint64_t &value, bool local) const {
+    return GetMemoryEventsField(cg, value, "oom", local);
 }
 
 TError TMemorySubsystem::SetUseHierarchy(const TCgroup &cg, bool value) const {
+    if (IsCgroup2())
+        return OK;
     return cg.SetBool(USE_HIERARCHY, value);
 }
 
@@ -832,7 +1413,7 @@ TError TFreezerSubsystem::WaitState(const TCgroup &cg, const std::string &state)
     TError error;
 
     do {
-        error = cg.Get("freezer.state", cur);
+        error = cg.Get(STATE, cur);
         if (error || StringTrim(cur) == state)
             return error;
     } while (!WaitDeadline(deadline));
@@ -841,17 +1422,17 @@ TError TFreezerSubsystem::WaitState(const TCgroup &cg, const std::string &state)
 }
 
 TError TFreezerSubsystem::Freeze(const TCgroup &cg, bool wait) const {
-    TError error = cg.Set("freezer.state", "FROZEN");
+    TError error = cg.Set(STATE, "FROZEN");
     if (error || !wait)
         return error;
     error = WaitState(cg, "FROZEN");
     if (error)
-        (void)cg.Set("freezer.state", "THAWED");
+        (void)cg.Set(STATE, "THAWED");
     return error;
 }
 
 TError TFreezerSubsystem::Thaw(const TCgroup &cg, bool wait) const {
-    TError error = cg.Set("freezer.state", "THAWED");
+    TError error = cg.Set(STATE, "THAWED");
     if (error || !wait)
         return error;
     if (IsParentFreezing(cg))
@@ -861,17 +1442,17 @@ TError TFreezerSubsystem::Thaw(const TCgroup &cg, bool wait) const {
 
 bool TFreezerSubsystem::IsFrozen(const TCgroup &cg) const {
     std::string state;
-    return !cg.Get("freezer.state", state) && StringTrim(state) != "THAWED";
+    return !cg.Get(STATE, state) && StringTrim(state) != "THAWED";
 }
 
 bool TFreezerSubsystem::IsSelfFreezing(const TCgroup &cg) const {
     bool val;
-    return !cg.GetBool("freezer.self_freezing", val) && val;
+    return !cg.GetBool(SELF_FREEZING, val) && val;
 }
 
 bool TFreezerSubsystem::IsParentFreezing(const TCgroup &cg) const {
     bool val;
-    return !cg.GetBool("freezer.parent_freezing", val) && val;
+    return !cg.GetBool(PARENT_FREEZING, val) && val;
 }
 
 // Cpu
@@ -879,34 +1460,57 @@ bool TFreezerSubsystem::IsParentFreezing(const TCgroup &cg) const {
 TError TCpuSubsystem::InitializeSubsystem() {
     auto cg = RootCgroup();
 
-    HasShares = cg->Has(CPU_SHARES);
-    if (HasShares && cg->GetUint64(CPU_SHARES, BaseShares))
-        BaseShares = 1024;
-
-    MinShares = 2; /* kernel limit MIN_SHARES */
-    MaxShares = 1024 * 256; /* kernel limit MAX_SHARES */
-
-    HasQuota = cg->Has(CPU_CFS_QUOTA_US) &&
-               cg->Has(CPU_CFS_PERIOD_US);
-
-    HasRtGroup = cg->Has(CPU_RT_RUNTIME_US) &&
-                 cg->Has(CPU_RT_PERIOD_US);
-
-    HasReserve = HasShares && HasQuota &&
-                 cg->Has(CPU_CFS_RESERVE_US) &&
-                 cg->Has(CPU_CFS_RESERVE_SHARES);
-
-    HasIdle = cg->Has(CPU_IDLE);
-    if (HasIdle)
-        EnableIdle = config().container().enable_sched_idle();
-
     L_SYS("{} cores", GetNumCores());
+
+    // shares / weight
+    if (IsCgroup2()) {
+        HasShares = cg->Has(WEIGHT);
+        if (HasShares && cg->GetUint64(WEIGHT, BaseShares))
+            BaseShares = 100; /* kernel deafult CGROUP_WEIGHT_DFL */
+
+        MinShares = 1; /* kernel limit CGROUP_WEIGHT_MIN */
+        MaxShares = 10000; /* kernel limit CGROUP_WEIGHT_MAX */
+
+        SharesMultipliers = {100, 10, 10};
+    } else {
+        HasShares = cg->Has(SHARES);
+        if (HasShares && cg->GetUint64(SHARES, BaseShares))
+            BaseShares = 1024;
+
+        MinShares = 2; /* kernel limit MIN_SHARES */
+        MaxShares = 1024 * 256; /* kernel limit MAX_SHARES */
+
+        SharesMultipliers = {256, 16, 16};
+    }
+
     if (HasShares)
         L_CG("support shares {}", BaseShares);
+
+    // quota, rt, reserve
+    if (IsCgroup2()) {
+        HasQuota = cg->Has(MAX);
+    } else {
+        HasQuota = cg->Has(CFS_QUOTA_US) &&
+                   cg->Has(CFS_PERIOD_US);
+
+        HasRtGroup = cg->Has(RT_RUNTIME_US) &&
+                     cg->Has(RT_PERIOD_US);
+
+        HasReserve = HasShares && HasQuota &&
+                     cg->Has(CFS_RESERVE_US) &&
+                     cg->Has(CFS_RESERVE_SHARES) &&
+                     config().container().enable_cpu_reserve();
+    }
+
     if (HasRtGroup)
         L_CG("support rt group");
     if (HasReserve)
         L_CG("support reserves");
+
+    // idle
+    HasIdle = cg->Has(IDLE);
+    if (HasIdle)
+        EnableIdle = config().container().enable_sched_idle();
 
     if (EnableIdle)
         L_CG("support idle cgroups");
@@ -915,70 +1519,171 @@ TError TCpuSubsystem::InitializeSubsystem() {
 }
 
 TError TCpuSubsystem::InitializeCgroup(const TCgroup &cg) const {
-    if (HasRtGroup && config().container().rt_priority())
-        (void)cg.SetInt64(CPU_RT_RUNTIME_US, -1);
+    if (HasRtGroup)
+        (void)cg.SetInt64(RT_RUNTIME_US, -1);
     return OK;
 }
 
+TError TCpuSubsystem::Statistics(const TCgroup &cg, TUintMap &stat) const {
+    return cg.GetUintMap(STAT, stat);
+}
+
+inline std::string TCpuSubsystem::ChooseThrottledKnob() const {
+    return IsCgroup2() ? THROTTLED_USEC : THROTTLED_TIME;
+}
+
+bool TCpuSubsystem::SupportThrottled() const {
+    return RootCgroup()->Has(STAT);
+}
+
+TError TCpuSubsystem::GetThrottled(const TCgroup &cg, uint64_t &value) const {
+    TError error;
+    TUintMap stat;
+
+    error = cg.GetUintMap(STAT, stat);
+    if (error)
+        return error;
+
+    value = stat[ChooseThrottledKnob()];
+
+    return OK;
+}
+
+bool TCpuSubsystem::SupportUnconstrainedWait() const {
+    return RootCgroup()->Has(CgroupDriver.CpuacctSubsystem->WAIT) &&
+           RootCgroup()->Has(CFS_BURST_USAGE) &&
+           RootCgroup()->Has(CFS_BURST_LOAD) &&
+           RootCgroup()->Has(CFS_THROTTLED);
+}
+
+TError TCpuSubsystem::GetUnconstrainedWait(const TCgroup &cg, uint64_t &value) const {
+    TError error;
+    TUintMap stat;
+    int64_t wait, burstLoad, burstUsage, throttled;
+
+    error = cg.GetInt64(CgroupDriver.CpuacctSubsystem->WAIT, wait);
+    if (error)
+        return error;
+
+    error = cg.GetUintMap(STAT, stat);
+    if (error)
+        return error;
+
+    burstLoad = static_cast<int64_t>(stat[BURST_LOAD]);
+    burstUsage = static_cast<int64_t>(stat[BURST_USAGE]);
+    throttled = static_cast<int64_t>(stat[H_THROTTLED_TIME]);
+
+    value = static_cast<uint64_t>(std::max(
+            wait - std::max(burstLoad - burstUsage, static_cast<int64_t>(0)) - throttled,
+            static_cast<int64_t>(0)));
+
+    return OK;
+}
+
+bool TCpuSubsystem::SupportBurstUsage() const {
+    return RootCgroup()->Has(CFS_BURST_USAGE);
+}
+
+TError TCpuSubsystem::GetBurstUsage(const TCgroup &cg, uint64_t &value) const {
+    return cg.GetUint64(CFS_BURST_USAGE, value);
+}
+
+uint64_t TCpuSubsystem::PreparePeriod(uint64_t period) {
+    period = period / 1000; /* ns -> us */
+
+    if (period < 1000) /* 1ms */
+        period = 1000;
+
+    if (period > 1000000) /* 1s */
+        period = 1000000;
+
+    return period;
+}
+
+uint64_t TCpuSubsystem::PrepareQuota(uint64_t quota, uint64_t period) {
+    quota = std::ceil((double)quota * period / CPU_POWER_PER_SEC);
+    quota *= config().container().cpu_limit_scale();
+
+    if (0 < quota && quota < 1000) /* 1ms */
+        quota = 1000;
+
+    return quota;
+}
+
+/* quota == 0 -> -1 / max */
+TError TCpuSubsystem::SetQuotaAndPeriod(const TCgroup &cg, uint64_t quota, uint64_t period) const {
+    TError error;
+    std::string value;
+
+    if (quota)
+        value = std::to_string(quota);
+
+    if (IsCgroup2()) {
+        if (!quota)
+            value = "max";
+
+        if (period)
+            value += " " + std::to_string(period);
+
+        error = cg.Set(MAX, value);
+        if (error)
+            return error;
+
+    } else {
+        if (!quota)
+            value = "-1";
+
+        (void)cg.Set(CFS_QUOTA_US, value);
+
+        error = cg.Set(CFS_PERIOD_US, std::to_string(period));
+        if (error)
+            return error;
+
+        error = cg.Set(CFS_QUOTA_US, value);
+        if (error)
+            return error;
+    }
+
+    return OK;
+}
 
 TError TCpuSubsystem::SetPeriod(const TCgroup &cg, uint64_t period) {
-    TError error;
+    if (!HasQuota)
+        return OK;
 
-    period = period / 1000; /* ns -> us */
+    period = PreparePeriod(period);
 
-    if (HasQuota) {
-        if (period < 1000) /* 1ms */
-            period = 1000;
+    if (!IsCgroup2())
+        return cg.Set(CFS_PERIOD_US, std::to_string(period));
 
-        if (period > 1000000) /* 1s */
-            period = 1000000;
-
-        return cg.Set(CPU_CFS_PERIOD_US, std::to_string(period));
-    }
-
-    return OK;
+    uint64_t value;
+    // GetUint64 processes the first token and returns 0 in case of max
+    (void)cg.GetUint64(MAX, value);
+    return SetQuotaAndPeriod(cg, value, period);
 }
 
-TError TCpuSubsystem::SetLimit(const TCgroup &cg, uint64_t period, uint64_t limit) {
-    TError error;
+TError TCpuSubsystem::SetLimit(const TCgroup &cg, uint64_t quota, uint64_t period) {
+    if (!HasQuota)
+        return OK;
 
-    period = period / 1000; /* ns -> us */
+    period = PreparePeriod(period);
+    quota = PrepareQuota(quota, period);
 
-    if (HasQuota) {
-        int64_t quota = std::ceil((double)limit * period / CPU_POWER_PER_SEC);
-
-        quota *= config().container().cpu_limit_scale();
-
-        if (!quota)
-            quota = -1;
-        else if (quota < 1000) /* 1ms */
-            quota = 1000;
-
-        (void)cg.Set(CPU_CFS_QUOTA_US, std::to_string(quota));
-
-        error = cg.Set(CPU_CFS_PERIOD_US, std::to_string(period));
-        if (error)
-            return error;
-
-        error = cg.Set(CPU_CFS_QUOTA_US, std::to_string(quota));
-        if (error)
-            return error;
-    }
-    return OK;
+    return SetQuotaAndPeriod(cg, quota, period);
 }
 
 TError TCpuSubsystem::SetGuarantee(const TCgroup &cg, uint64_t period, uint64_t guarantee) {
+    if (!HasReserve || IsCgroup2())
+        return OK;
+
+    period = PreparePeriod(period);
+
     TError error;
+    uint64_t reserve = std::floor((double)guarantee * period / CPU_POWER_PER_SEC);
 
-    period = period / 1000; /* ns -> us */
-
-    if (HasReserve && config().container().enable_cpu_reserve()) {
-        uint64_t reserve = std::floor((double)guarantee * period / CPU_POWER_PER_SEC);
-
-        error = cg.SetUint64(CPU_CFS_RESERVE_US, reserve);
-        if (error)
-            return error;
-    }
+    error = cg.SetUint64(CFS_RESERVE_US, reserve);
+    if (error)
+        return error;
 
     return OK;
 }
@@ -986,7 +1691,8 @@ TError TCpuSubsystem::SetGuarantee(const TCgroup &cg, uint64_t period, uint64_t 
 TError TCpuSubsystem::SetShares(const TCgroup &cg, const std::string &policy, double weight, uint64_t guarantee) {
     TError error;
 
-    if (HasReserve && config().container().enable_cpu_reserve()) {
+    if (HasReserve) {
+        // cgroup v1 only
         uint64_t shares = BaseShares, reserve_shares = BaseShares;
 
         shares *= weight;
@@ -1009,11 +1715,11 @@ TError TCpuSubsystem::SetShares(const TCgroup &cg, const std::string &policy, do
         shares = std::min(std::max(shares, MinShares), MaxShares);
         reserve_shares = std::min(std::max(reserve_shares, MinShares), MaxShares);
 
-        error = cg.SetUint64(CPU_SHARES, shares);
+        error = cg.SetUint64(SHARES, shares);
         if (error)
             return error;
 
-        error = cg.SetUint64(CPU_CFS_RESERVE_SHARES, reserve_shares);
+        error = cg.SetUint64(CFS_RESERVE_SHARES, reserve_shares);
         if (error)
             return error;
 
@@ -1026,15 +1732,15 @@ TError TCpuSubsystem::SetShares(const TCgroup &cg, const std::string &policy, do
         shares *= weight;
 
         if (policy == "rt")
-            shares *= 256;
+            shares *= SharesMultipliers[0];
         else if (policy == "high" || policy == "iso")
-            shares *= 16;
+            shares *= SharesMultipliers[1];
         else if (policy == "idle")
-            shares /= 16;
+            shares /= SharesMultipliers[2];
 
         shares = std::min(std::max(shares, MinShares), MaxShares);
 
-        error = cg.SetUint64(CPU_SHARES, shares);
+        error = cg.SetUint64(IsCgroup2() ? WEIGHT : SHARES, shares);
         if (error)
             return error;
     }
@@ -1042,48 +1748,52 @@ TError TCpuSubsystem::SetShares(const TCgroup &cg, const std::string &policy, do
     return OK;
 }
 
+// SetCpuIdle is invoked inside HasIdle condition
 TError TCpuSubsystem::SetCpuIdle(const TCgroup &cg, bool value) {
-    return cg.SetBool(CPU_IDLE, value);
+    if (!HasIdle)
+        return OK;
+    return cg.SetBool(IDLE, value);
 }
 
-TError TCpuSubsystem::SetRtLimit(const TCgroup &cg, uint64_t period, uint64_t limit) {
+TError TCpuSubsystem::SetRtLimit(const TCgroup &cg, uint64_t quota, uint64_t period) {
+    if (!HasRtGroup || IsCgroup2())
+        return OK;
+
+    period = PreparePeriod(period);
+
     TError error;
+    uint64_t max = GetNumCores() * CPU_POWER_PER_SEC;
+    int64_t root_runtime, root_period, runtime;
 
-    period = period / 1000; /* ns -> us */
+    if (RootCgroup()->GetInt64(RT_PERIOD_US, root_period))
+        root_period = 1000000;
 
-    if (HasRtGroup && config().container().rt_priority()) {
-        uint64_t max = GetNumCores() * CPU_POWER_PER_SEC;
-        int64_t root_runtime, root_period, runtime;
+    if (RootCgroup()->GetInt64(RT_RUNTIME_US, root_runtime))
+        root_runtime = 950000;
+    else if (root_runtime < 0)
+        root_runtime = root_period;
 
-        if (RootCgroup()->GetInt64(CPU_RT_PERIOD_US, root_period))
-            root_period = 1000000;
-
-        if (RootCgroup()->GetInt64(CPU_RT_RUNTIME_US, root_runtime))
-            root_runtime = 950000;
-        else if (root_runtime < 0)
-            root_runtime = root_period;
-
-        if (limit <= 0 || limit >= max ||
-                (double)limit / max * root_period > root_runtime) {
-            runtime = -1;
-        } else {
-            runtime = (double)limit * period / max;
-            if (runtime < 1000)  /* 1ms */
-                runtime = 1000;
-        }
-
-        error = cg.SetInt64(CPU_RT_PERIOD_US, period);
-        if (error) {
-            (void)cg.SetInt64(CPU_RT_RUNTIME_US, runtime);
-            error = cg.SetInt64(CPU_RT_PERIOD_US, period);
-        }
-        if (!error)
-            error = cg.SetInt64(CPU_RT_RUNTIME_US, runtime);
-        if (error) {
-            (void)cg.SetInt64(CPU_RT_RUNTIME_US, 0);
-            return error;
-        }
+    if (quota <= 0 || quota >= max ||
+            (double)quota / max * root_period > root_runtime) {
+        runtime = -1;
+    } else {
+        runtime = (double)quota * period / max;
+        if (runtime < 1000)  /* 1ms */
+            runtime = 1000;
     }
+
+    error = cg.SetInt64(RT_PERIOD_US, period);
+    if (error) {
+        (void)cg.SetInt64(RT_RUNTIME_US, runtime);
+        error = cg.SetInt64(RT_PERIOD_US, period);
+    }
+    if (!error)
+        error = cg.SetInt64(RT_RUNTIME_US, runtime);
+    if (error) {
+        (void)cg.SetInt64(RT_RUNTIME_US, 0);
+        return error;
+    }
+
     return OK;
 }
 
@@ -1091,7 +1801,7 @@ TError TCpuSubsystem::SetRtLimit(const TCgroup &cg, uint64_t period, uint64_t li
 
 TError TCpuacctSubsystem::Usage(const TCgroup &cg, uint64_t &value) const {
     std::string s;
-    TError error = cg.Get("cpuacct.usage", s);
+    TError error = cg.Get(USAGE, s);
     if (error)
         return error;
     return StringToUint64(s, value);
@@ -1099,67 +1809,18 @@ TError TCpuacctSubsystem::Usage(const TCgroup &cg, uint64_t &value) const {
 
 TError TCpuacctSubsystem::SystemUsage(const TCgroup &cg, uint64_t &value) const {
     TUintMap stat;
-    TError error = cg.GetUintMap("cpuacct.stat", stat);
+    TError error = cg.GetUintMap(STAT, stat);
     if (error)
         return error;
     value = stat["system"] * (1000000000 / sysconf(_SC_CLK_TCK));
     return OK;
 }
 
+TError TCpuacctSubsystem::GetWait(const TCgroup &cg, uint64_t &value) const {
+    return cg.GetUint64(WAIT, value);
+}
+
 // Cpuset
-
-TError TCpusetSubsystem::SetCpus(const TCgroup &cg, const std::string &cpus) const {
-    std::string val;
-    TError error;
-    TPath copy;
-
-    if (cpus == "")
-        copy = cg.Path().DirName() / "cpuset.cpus";
-
-    if (cpus == "all")
-        copy = TPath("/sys/devices/system/cpu/present");
-
-    if (StringStartsWith(cpus, "node ")) {
-        int id;
-        error = StringToInt(cpus.substr(5), id);
-        if (error)
-            return error;
-        copy = TPath("/sys/devices/system/node/node" + std::to_string(id) + "/cpulist");
-    }
-
-    // cgroup v2 root doesn't contain cpuset.cpus
-    if (!copy.IsEmpty() && !IsCgroup2()) {
-        error = copy.ReadAll(val);
-        if (error)
-            return error;
-        val = StringTrim(val);
-    } else
-        val = cpus;
-
-    return cg.Set("cpuset.cpus", val);
-}
-
-TError TCpusetSubsystem::SetMems(const TCgroup &cg, const std::string &mems) const {
-    std::string val;
-    TError error;
-    TPath copy;
-
-    if (mems == "")
-        copy = cg.Path().DirName() / "cpuset.mems";
-
-    if (mems == "all")
-        copy = TPath("/sys/devices/system/node/online");
-
-    if (!copy.IsEmpty()) {
-        error = copy.ReadAll(val);
-        if (error)
-            return error;
-        val = StringTrim(val);
-    } else
-        val = mems;
-
-    return cg.Set("cpuset.mems", val);
-}
 
 TError TCpusetSubsystem::InitializeCgroup(const TCgroup &cg) const {
     TError error;
@@ -1175,12 +1836,86 @@ TError TCpusetSubsystem::InitializeCgroup(const TCgroup &cg) const {
     return OK;
 }
 
+TError TCpusetSubsystem::GetCpus(const TCgroup &cg, std::string &cpus) const {
+    return cg.Get(IsCgroup2() ? CPUS_EFFECTIVE : CPUS, cpus);
+}
+
+TError TCpusetSubsystem::SetCpus(const TCgroup &cg, const std::string &cpus) const {
+    TError error;
+    TPath copy;
+    std::string value;
+
+    if (cpus == "") {
+        if (IsCgroup2())
+            copy = TPath("/sys/devices/system/cpu/present");
+        else
+            // cgroup v1 does not support overcommit, so dirty hack is used
+            copy = cg.Path().DirName() / CPUS;
+    }
+
+    if (cpus == "all")
+        copy = TPath("/sys/devices/system/cpu/present");
+
+    if (StringStartsWith(cpus, "node ")) {
+        int id;
+        error = StringToInt(cpus.substr(5), id);
+        if (error)
+            return error;
+
+        copy = TPath("/sys/devices/system/node/node" + std::to_string(id) + "/cpulist");
+    }
+
+    if (!copy.IsEmpty()) {
+        error = copy.ReadAll(value);
+        if (error)
+            return error;
+
+        value = StringTrim(value);
+
+    } else
+        value = cpus;
+
+    return cg.Set(CPUS, value);
+}
+
+TError TCpusetSubsystem::SetMems(const TCgroup &cg, const std::string &mems) const {
+    TError error;
+    TPath copy;
+    std::string value;
+
+    if (mems == "") {
+        if (IsCgroup2())
+            copy = TPath("/sys/devices/system/node/online");
+        else
+            // cgroup v1 does not support overcommit, so dirty hack is used
+            copy = cg.Path().DirName() / MEMS;
+    }
+
+    if (mems == "all")
+        copy = TPath("/sys/devices/system/node/online");
+
+    if (!copy.IsEmpty()) {
+        error = copy.ReadAll(value);
+        if (error)
+            return error;
+
+        value = StringTrim(value);
+
+    } else
+        value = mems;
+
+    return cg.Set(MEMS, value);
+}
+
 TError TCpusetSubsystem::GetCpus(const TCgroup &cg, TBitMap &cpus) const {
-    std::string s;
-    auto error = GetCpus(cg, s);
+    TError error;
+    std::string value;
+
+    error = GetCpus(cg, value);
     if (error)
         return error;
-    return cpus.Parse(s);
+
+    return cpus.Parse(value);
 }
 
 TError TCpusetSubsystem::SetCpus(const TCgroup &cg, const TBitMap &cpus) const {
@@ -1191,7 +1926,7 @@ TError TCpusetSubsystem::SetCpus(const TCgroup &cg, const TBitMap &cpus) const {
 
 TError TNetclsSubsystem::InitializeSubsystem() {
     HasPriority = config().network().enable_netcls_priority() &&
-                  RootCgroup()->Has("net_cls.priority");
+                  RootCgroup()->Has(PRIORITY);
     if (HasPriority)
         L_CG("support netcls priority");
     return OK;
@@ -1205,17 +1940,17 @@ TError TNetclsSubsystem::SetClass(const TCgroup &cg, uint32_t classid) const {
         return OK;
 
     if (HasPriority) {
-        error = cg.GetUint64("net_cls.priority", cur);
+        error = cg.GetUint64(PRIORITY, cur);
         if (error || cur != classid) {
-            error = cg.SetUint64("net_cls.priority", classid);
+            error = cg.SetUint64(PRIORITY, classid);
             if (error)
                 return error;
         }
     }
 
-    error = cg.GetUint64("net_cls.classid", cur);
+    error = cg.GetUint64(CLASSID, cur);
     if (error || cur != classid) {
-        error = cg.SetUint64("net_cls.classid", classid);
+        error = cg.SetUint64(CLASSID, classid);
         if (error)
             return error;
     }
@@ -1272,89 +2007,144 @@ TError TBlkioSubsystem::ResolveDisk(const TPath &root, const std::string &key, s
     return OK;
 }
 
-TError TDevicesSubsystem::SetAllow(const TCgroup &cg, const std::string &value) const {
-    return cg.Set(DEVICES_ALLOW, value);
-}
-
-TError TDevicesSubsystem::SetDeny(const TCgroup &cg, const std::string &value) const {
-    return cg.Set(DEVICES_DENY, value);
-}
-
 TError TBlkioSubsystem::InitializeSubsystem() {
+    if (IsCgroup2())
+        return OK;
+
     HasThrottler = RootCgroup()->Has("blkio.throttle.io_serviced");
     auto sched = HasThrottler ? "throttle." : "";
     auto recOpsKnob = fmt::format("blkio.{}io_serviced_recursive", sched);
     auto recur =  RootCgroup()->Has(recOpsKnob) ? "_recursive" : "";
 
-    TimeKnob = fmt::format("blkio.{}io_service_time{}", sched, recur);
-    OpsKnob = fmt::format("blkio.{}io_serviced{}", sched, recur);
     BytesKnob = fmt::format("blkio.{}io_service_bytes{}", sched, recur);
+    OpsKnob = fmt::format("blkio.{}io_serviced{}", sched, recur);
+    TimeKnob = fmt::format("blkio.{}io_service_time{}", sched, recur);
 
     return OK;
 }
 
-TError TBlkioSubsystem::GetIoStat(const TCgroup &cg, enum IoStat stat, TUintMap &map) const {
-    std::vector<std::string> lines;
-    std::string knob, prev, name;
-    bool summ = false, hide = false;
-    TError error;
-
-    if (stat & IoStat::Time)
-        knob = TimeKnob;
-    else if (stat & IoStat::Iops)
-        knob = OpsKnob;
-    else
-        knob = BytesKnob;
-
-    error = cg.Knob(knob).ReadLines(lines);
-    if (error)
-        return error;
-
+void TBlkioSubsystem::ParseIoStatV1(const std::vector<std::string> &lines, enum IoStat stat, TUintMap &map) const {
+    std::string prev, name;
+    bool sum = false, hide = false;
     uint64_t total = 0;
+
     for (auto &line: lines) {
-        auto word = SplitString(line, ' ');
-        if (word.size() != 3)
+        auto words = SplitString(line, ' ');
+        if (words.size() != 3)
             continue;
 
-        if (word[1] == "Read") {
-            if (stat & IoStat::Write)
+        if (words[1] == "Read") {
+            if (!(stat & IoStat::Read))
                 continue;
-        } else if (word[1] == "Write") {
-            if (stat & IoStat::Read)
+        } else if (words[1] == "Write") {
+            if (!(stat & IoStat::Write))
                 continue;
         } else
             continue;
 
-        if (word[0] != prev) {
-            if (DiskName(word[0], name))
+        if (words[0] != prev) {
+            if (DiskName(words[0], name))
                 continue;
-            prev = word[0];
-            summ = StringStartsWith(name, "sd") ||
-                   StringStartsWith(name, "nvme") ||
-                   StringStartsWith(name, "vd");
+
+            prev = words[0];
+            sum = StringStartsWith(name, "sd") ||
+                  StringStartsWith(name, "nvme") ||
+                  StringStartsWith(name, "vd");
             hide = StringStartsWith(name, "ram");
         }
 
         if (hide)
             continue;
 
-        uint64_t val;
-        if (!StringToUint64(word[2], val) && val) {
-            map[name] += val;
-            if (summ)
-                total += val;
+        uint64_t value;
+        if (!StringToUint64(words[2], value) && value) {
+            map[name] += value;
+            if (sum)
+                total += value;
         }
     }
     map["hw"] = total;
+}
+
+void TBlkioSubsystem::ParseIoStatV2(const std::vector<std::string> &lines, enum IoStat stat, TUintMap &map) const {
+    bool sum = false;
+    uint64_t total = 0;
+
+    for (auto &line: lines) {
+        // separates device numbers and stats
+        auto sep = line.find(' ');
+
+        TUintMap statMap;
+        if (StringToUintMap(line.substr(sep + 1), statMap, ' ', '=') || statMap.size() < 6)
+            continue;
+
+        std::string name;
+        if (DiskName(line.substr(0, sep), name))
+            continue;
+
+        // hide
+        if (StringStartsWith(name, "ram"))
+            continue;
+
+        sum = StringStartsWith(name, "sd") ||
+              StringStartsWith(name, "nvme") ||
+              StringStartsWith(name, "vd");
+
+        std::string kind;
+        if (stat & IoStat::Bytes)
+            kind = "bytes";
+        else if (stat & IoStat::Iops)
+            kind = "ios";
+        else
+            return;
+
+        std::string prefixes = fmt::format("{}{}", stat & IoStat::Read ? "r" : "",  stat & IoStat::Write ? "w" : "");
+        for (char prefix: prefixes) {
+            auto value = statMap[prefix + kind];
+            map[name] += value;
+            if (sum)
+                total += value;
+        }
+    }
+    map["hw"] = total;
+}
+
+TError TBlkioSubsystem::GetIoStat(const TCgroup &cg, enum IoStat stat, TUintMap &map) const {
+    TError error;
+    std::string knob;
+    std::vector<std::string> lines;
+
+    if (IsCgroup2() && (stat & IoStat::Time))
+        return OK;
+
+    if (IsCgroup2())
+        knob = STAT;
+    else if (stat & IoStat::Bytes)
+        knob = BytesKnob;
+    else if (stat & IoStat::Iops)
+        knob = OpsKnob;
+    else if (stat & IoStat::Time)
+        knob = TimeKnob;
+    else
+        return TError(EError::InvalidValue, "Cannot get io stat of {}, invalid stat: {}", cg, static_cast<int>(stat));
+
+    error = cg.Knob(knob).ReadLines(lines);
+    if (error)
+        return error;
+
+    if (IsCgroup2())
+        ParseIoStatV2(lines, stat, map);
+    else
+        ParseIoStatV1(lines, stat, map);
 
     return OK;
 }
 
-TError TBlkioSubsystem::SetIoLimit(const TCgroup &cg, const TPath &root,
-                                   const TUintMap &map, bool iops) {
+TError TBlkioSubsystem::SetIoLimitV1(const TCgroup &cg, const TPath &root,
+                                     const TUintMap &map, bool iops) {
     std::string knob[2] = {
-        iops ? "blkio.throttle.read_iops_device" : "blkio.throttle.read_bps_device",
-        iops ? "blkio.throttle.write_iops_device" : "blkio.throttle.write_bps_device",
+        iops ? READ_IOPS_DEVICE : READ_BPS_DEVICE,
+        iops ? WRITE_IOPS_DEVICE : WRITE_BPS_DEVICE,
     };
     TError error, result;
     TUintMap plan[2];
@@ -1410,10 +2200,80 @@ TError TBlkioSubsystem::SetIoLimit(const TCgroup &cg, const TPath &root,
     return result;
 }
 
+TError TBlkioSubsystem::SetIoLimitV2(const TCgroup &cg, const TPath &root,
+                                     const TUintMap &map, bool iops) {
+    TError error, result;
+    TUintPairMap plan; // <dev>: (<read limit>, <write limit>)
+    std::string disk, kind;
+    std::vector<std::string> lines;
+    int dir;
+
+    error = cg.Knob(MAX).ReadLines(lines);
+    if (error)
+        return error;
+
+    for (auto &line: lines) {
+        auto sep = line.find(' ');
+        if (sep != std::string::npos)
+            plan[line.substr(0, sep)] = {0, 0}; // 0 => max
+    }
+
+    for (auto &it: map) {
+        auto key = it.first;
+        auto sep = key.rfind(' ');
+
+        dir = 2;
+        if (sep != std::string::npos) {
+            if (sep != key.size() - 2 || (key[sep+1] != 'r' && key[sep+1] != 'w'))
+                return TError(EError::InvalidValue, "Invalid io limit key: " + key);
+            dir = key[sep+1] == 'r' ? 0 : 1;
+            key = key.substr(0, sep);
+        }
+
+        if (key == "fs")
+            continue;
+
+        error = ResolveDisk(root, key, disk);
+        if (error)
+            return error;
+
+        if (dir == 0 || dir == 2)
+            plan[disk].first = it.second;
+        if (dir == 1 || dir == 2)
+            plan[disk].second = it.second;
+    }
+
+    if (iops)
+        kind = "iops";
+    else
+        kind = "bps";
+
+    for (auto &it: plan) {
+        auto rlimit = it.second.first ? std::to_string(it.second.first) : "max";
+        auto wlimit = it.second.second ? std::to_string(it.second.second) : "max";
+
+        error = cg.Set(MAX, fmt::format("{} r{}={} w{}={}", it.first, kind, rlimit, kind, wlimit));
+        if (error && !result)
+            result = error;
+    }
+
+    return result;
+}
+
+TError TBlkioSubsystem::SetIoLimit(const TCgroup &cg, const TPath &root,
+                                   const TUintMap &map, bool iops) {
+    if (IsCgroup2())
+        return SetIoLimitV2(cg, root, map, iops);
+    else
+        return SetIoLimitV1(cg, root, map, iops);
+}
+
 TError TBlkioSubsystem::SetIoWeight(const TCgroup &cg, const std::string &policy,
                                     double weight) const {
-    double bfq_weight = weight;
     TError error;
+    double bfqWeight = weight;
+    const std::string weightKnob = IsCgroup2() ? WEIGHT : LEGACY_WEIGHT;
+    const std::string bfqKnob = IsCgroup2() ? BFQ_WEIGHT : LEGACY_BFQ_WEIGHT;
 
     /*
      * Cgroup v1 mess:
@@ -1423,24 +2283,24 @@ TError TBlkioSubsystem::SetIoWeight(const TCgroup &cg, const std::string &policy
 
     if (policy == "rt" || policy == "high") {
         weight *= 1000;
-        bfq_weight *= 1000;
+        bfqWeight *= 1000;
     } else if (policy == "" || policy == "none" || policy == "normal") {
         weight *= 500;
-        bfq_weight *= 100;
+        bfqWeight *= 100;
     } else if (policy == "batch" || policy == "idle") {
         weight *= 10;
-        bfq_weight *= 1;
+        bfqWeight *= 1;
     } else
         return TError(EError::InvalidValue, "unknown policy: " + policy);
 
-    if (cg.Has(CFQ_WEIGHT)) {
-        error = cg.SetUint64(CFQ_WEIGHT, std::min(std::max(weight, 10.), 1000.));
+    if (cg.Has(weightKnob)) {
+        error = cg.SetUint64(weightKnob, std::min(std::max(weight, 10.), 1000.));
         if (error)
             return error;
     }
 
-    if (cg.Has(BFQ_WEIGHT)) {
-        error = cg.SetUint64(BFQ_WEIGHT, std::min(std::max(bfq_weight, 1.), 1000.));
+    if (cg.Has(bfqKnob)) {
+        error = cg.SetUint64(bfqKnob, std::min(std::max(bfqWeight, 1.), 1000.));
         if (error)
             return error;
     }
@@ -1450,16 +2310,24 @@ TError TBlkioSubsystem::SetIoWeight(const TCgroup &cg, const std::string &policy
 
 // Devices
 
+TError TDevicesSubsystem::SetAllow(const TCgroup &cg, const std::string &value) const {
+    return cg.Set(ALLOW, value);
+}
+
+TError TDevicesSubsystem::SetDeny(const TCgroup &cg, const std::string &value) const {
+    return cg.Set(DENY, value);
+}
+
 // Pids
 
 TError TPidsSubsystem::GetUsage(const TCgroup &cg, uint64_t &usage) const {
-    return cg.GetUint64("pids.current", usage);
+    return cg.GetUint64(CURRENT, usage);
 }
 
 TError TPidsSubsystem::SetLimit(const TCgroup &cg, uint64_t limit) const {
     if (!limit)
-        return cg.Set("pids.max", "max");
-    return cg.SetUint64("pids.max", limit);
+        return cg.Set(MAX, "max");
+    return cg.SetUint64(MAX, limit);
 }
 
 // Systemd
@@ -1471,9 +2339,7 @@ TError TSystemdSubsystem::InitializeSubsystem() {
     return error;
 }
 
-// Cgroup v2
-
-// Nothing for now
+// Cgroup Driver
 
 TCgroupDriver::TCgroupDriver() {
     MemorySubsystem = std::unique_ptr<TMemorySubsystem>(new TMemorySubsystem());
@@ -1503,11 +2369,16 @@ TCgroupDriver::TCgroupDriver() {
     AllSubsystems.push_back(PerfSubsystem.get());
     AllSubsystems.push_back(SystemdSubsystem.get());
     AllSubsystems.push_back(Cgroup2Subsystem.get());
+
+    Cgroup2Subsystems.push_back(MemorySubsystem.get());
+    Cgroup2Subsystems.push_back(CpuSubsystem.get());
+    Cgroup2Subsystems.push_back(CpusetSubsystem.get());
+    Cgroup2Subsystems.push_back(BlkioSubsystem.get());
+    Cgroup2Subsystems.push_back(PidsSubsystem.get());
 }
 
 TError TCgroupDriver::InitializeCgroups() {
     TPath root("/sys/fs/cgroup");
-    TPath cgroup2root = root / "porto";
     std::vector<TMount> mounts;
     TMount mount;
     TError error;
@@ -1518,8 +2389,16 @@ TError TCgroupDriver::InitializeCgroups() {
         return error;
     }
 
+    if (mount.Type == "cgroup2") {
+        Cgroup2Hierarchy = true;
+        L_CG("Using cgroup v2 hierarchy due to {}", mount);
+    }
+
     if (mount.Target != root) {
-        error = root.Mount("cgroup", "tmpfs", 0, {});
+        if (Cgroup2Hierarchy)
+            error = root.Mount("cgroup2", "cgroup2", MS_NOEXEC | MS_NOSUID | MS_NODEV | MS_RELATIME, {"nsdelegate", "memory_recursiveprot"});
+        else
+            error = root.Mount("cgroup", "tmpfs", 0, {});
         if (error) {
             L_ERR("Cannot mount cgroups root: {}", error);
             return error;
@@ -1548,9 +2427,9 @@ TError TCgroupDriver::InitializeCgroups() {
         }
     }
 
-    if (config().daemon().merge_memory_blkio_controllers() &&
-            !CgroupDriver.MemorySubsystem->IsDisabled() && !CgroupDriver.BlkioSubsystem->IsDisabled() &&
-            CgroupDriver.MemorySubsystem->Root.IsEmpty() && CgroupDriver.BlkioSubsystem->Root.IsEmpty()) {
+    if (!Cgroup2Hierarchy && config().daemon().merge_memory_blkio_controllers() &&
+            !MemorySubsystem->IsDisabled() && !BlkioSubsystem->IsDisabled() &&
+            MemorySubsystem->Root.IsEmpty() && BlkioSubsystem->Root.IsEmpty()) {
         TPath path = root / "memory,blkio";
 
         if (!path.Exists())
@@ -1559,11 +2438,24 @@ TError TCgroupDriver::InitializeCgroups() {
         if (!error) {
             (root / "memory").Symlink("memory,blkio");
             (root / "blkio").Symlink("memory,blkio");
-            CgroupDriver.MemorySubsystem->Root = path;
-            CgroupDriver.BlkioSubsystem->Root = path;
+            MemorySubsystem->Root = path;
+            BlkioSubsystem->Root = path;
         } else {
             L_CG("Cannot merge memory and blkio {}", error);
             (void)path.Rmdir();
+        }
+    }
+
+    if (Cgroup2Hierarchy) {
+        for (auto subsys: Cgroup2Subsystems) {
+            if (subsys->IsDisabled() || subsys->Root)
+                continue;
+
+            subsys->MountType = "cgroup2";
+            subsys->Root = root;
+            subsys->Supported = true;
+            Cgroup2Subsystem->Controllers |= subsys->Kind;
+            L_CG("Mount cgroup2 subsysem {} at {}", subsys->Type, root);
         }
     }
 
@@ -1573,7 +2465,7 @@ TError TCgroupDriver::InitializeCgroups() {
 
         TPath path = root / subsys->Type;
 
-        L_CG("Mount cgroup subsysem {} at {}", subsys->Type, path);
+        L_CG("Mount cgroup subsystem {} at {}", subsys->Type, path);
         if (!path.Exists()) {
             error = path.Mkdir(0755);
             if (error) {
@@ -1603,9 +2495,12 @@ TError TCgroupDriver::InitializeCgroups() {
         }
     }
 
+    if (Cgroup2Hierarchy)
+        Hierarchies.push_back(Cgroup2Subsystem.get());
+
     for (auto subsys: AllSubsystems) {
         if (subsys->IsDisabled()) {
-            L_CG("Cgroup subsysem {} is disabled", subsys->Type);
+            L_CG("Cgroup subsystem {} is disabled", subsys->Type);
             continue;
         }
 
@@ -1660,9 +2555,6 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
         PerfSubsystem.get()
     };
 
-    if (Cgroup2Subsystem->Supported)
-        DaemonSubsystems.push_back(Cgroup2Subsystem.get());
-
     for (auto subsys : DaemonSubsystems) {
         auto hy = subsys->Hierarchy;
         TError error;
@@ -1706,7 +2598,7 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
 
     cg = FreezerSubsystem->Cgroup(PORTO_CGROUP_PREFIX);
     if (!cg->Exists()) {
-        error = cg->Create();
+        error = CreateCgroup(*cg);
         if (error)
             return error;
     }
@@ -1714,13 +2606,17 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
     if (Cgroup2Subsystem->Supported) {
         cg = Cgroup2Subsystem->Cgroup(PORTO_CGROUP_PREFIX);
         if (!cg->Exists()) {
-            error = cg->Create();
+            error = CreateCgroup(*cg);
             if (error)
                 return error;
         }
     }
 
     return OK;
+}
+
+bool TCgroupDriver::UseCgroup2() const {
+    return Cgroup2Hierarchy;
 }
 
 void TCgroupDriver::CleanupCgroups() {
@@ -1735,7 +2631,7 @@ again:
     for (auto hy: Hierarchies) {
         std::list<std::unique_ptr<const TCgroup>> cgroups;
 
-        error = CgroupChildren(*(hy->RootCgroup()), cgroups);
+        error = CgroupSubtree(*(hy->RootCgroup()), cgroups);
         if (error)
             L_ERR("Cannot dump porto {} cgroups : {}", hy->Type, error);
 
@@ -1877,7 +2773,7 @@ TError TCgroupDriver::RemoveCgroup(const TCgroup &cg) const {
     TError error;
     std::list<std::unique_ptr<const TCgroup>> children;
 
-    error = CgroupChildren(cg, children, true);
+    error = CgroupSubtree(cg, children, true);
     if (error)
         return error;
 
@@ -2000,7 +2896,7 @@ TError TCgroupDriver::RemoveContainerCgroups(const TContainer &container, bool i
     return OK;
 }
 
-TError TCgroupDriver::CgroupChildren(const TCgroup &cg, std::list<std::unique_ptr<const TCgroup>> &cgroups, bool all) const {
+TError TCgroupDriver::CgroupSubtree(const TCgroup &cg, std::list<std::unique_ptr<const TCgroup>> &cgroups, bool all) const {
     TPathWalk walk;
     TError error;
 
@@ -2027,6 +2923,10 @@ TError TCgroupDriver::CgroupChildren(const TCgroup &cg, std::list<std::unique_pt
         if (!StringStartsWith(name, PORTO_CGROUP_PREFIX) && !all)
             continue;
 
+        /* Ingore leaf cgroups for cgroup2 */
+        if (StringEndsWith(name, LEAF) && cg.IsCgroup2())
+            continue;
+
         cgroups.push_back(cg.GetSubsystem()->Cgroup(name));
     }
 
@@ -2037,7 +2937,7 @@ TError TCgroupDriver::GetCgroupCount(const TCgroup &cgroup, uint64_t &count, boo
     TError error;
     std::list<std::unique_ptr<const TCgroup>> cgroups;
 
-    error = CgroupChildren(cgroup, cgroups);
+    error = CgroupSubtree(cgroup, cgroups);
     if (error)
         return error;
 

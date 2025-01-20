@@ -273,6 +273,9 @@ def GetKernelVersion():
     kver = re.match("([0-9])\.([0-9]{1,2})", platform.uname()[2]).groups()
     return (int(kver[0]), int(kver[1]))
 
+def GetUseCgroup2():
+    return ParseMountinfo()['/sys/fs/cgroup']['type'] == "cgroup2"
+
 if not os.environ.get('PORTO_TEST_NO_RESTART', None):
     CleanupConfigs()
     RestartPortod()

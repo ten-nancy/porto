@@ -6,6 +6,7 @@
 #include <memory>
 #include <atomic>
 
+#include "cgroup.hpp"
 #include "util/unix.hpp"
 #include "util/task.hpp"
 #include "util/idmap.hpp"
@@ -83,7 +84,6 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
     pid_t LastActionPid = 0;
 
     TFile OomEvent;
-
     std::shared_ptr<TEpollSource> Source;
 
     // data
@@ -314,7 +314,13 @@ public:
         bool BindWithSuid;
     } TaintFlags;
 
-    bool RecvOomEvents();
+    /* OOM processing */
+    bool ReceiveOomEvents();
+    bool ReceiveOomEventsV2();
+    bool ReceiveOomEventsV1();
+    void CollectOomKills();
+    void CollectOomKillsV1();
+    void CollectOomKillsV2();
 
     TPath RootPath; /* path in host namespace */
     std::vector<std::string> PlacePolicy;
@@ -443,7 +449,6 @@ public:
     TError GetThreadCount(uint64_t &count) const;
     TError GetProcessCount(uint64_t &count) const;
     TError GetVmStat(TVmStat &stat) const;
-    void CollectOomKills();
 
     TError StartTask();
     TError StartParents();

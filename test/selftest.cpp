@@ -84,7 +84,9 @@ static void ExpectCorrectCgroups(const string &pid, const string &name, const st
     auto cgmap = GetCgroups(pid);
 
     for (auto &subsys : subsystems) {
-        if (subsys == "freezer" || subsys == "cgroup2")
+        if (subsys == "cgroup2")
+            Expect(cgmap[subsys] ==  "/porto/" + name + "/leaf" || cgmap[subsys] ==  "/porto/" + name);
+        else if (subsys == "freezer")
             ExpectEq(cgmap[subsys], "/porto/" + name);
         else if (subsys == "cpuacct" && cgmap["cpuacct"] != cgmap["cpu"])
             ExpectEq(cgmap[subsys], "/porto%" + name);

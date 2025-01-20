@@ -4,13 +4,16 @@ import time
 
 conn = porto.Connection(timeout=30)
 
+USE_CGROUP2 = GetUseCgroup2()
+print("use {} hierarchy".format("cgroup2" if USE_CGROUP2 else "cgroup1"))
+
 try:
     def CheckCgroupfsNone():
         a = conn.Run('a', cgroupfs='none', wait=0, root_volume={'layers': ['ubuntu-xenial']})
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='cat /proc/self/cgroup')
         ExpectEq('0', b['exit_code'])
-        ExpectEq(8, b['stdout'].count('porto%a'))
+        ExpectEq(4 if USE_CGROUP2 else 8, b['stdout'].count('porto%a'))
         b.Destroy()
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='ls /sys/fs/cgroup')
@@ -31,14 +34,15 @@ try:
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='ls /sys/fs/cgroup')
         ExpectEq('0', b['exit_code'])
-        ExpectEq(16, len(b['stdout'].split()))
+        ExpectEq(7 if USE_CGROUP2 else 16, len(b['stdout'].split()))
         b.Destroy()
 
         # check cpu cgroup symlink
-        b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='bash -c "ls /sys/fs/cgroup/cpu | wc -l"')
-        ExpectEq('0', b['exit_code'])
-        ExpectNe('0', b['stdout'].strip())
-        b.Destroy()
+        if not USE_CGROUP2:
+            b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='bash -c "ls /sys/fs/cgroup/cpu | wc -l"')
+            ExpectEq('0', b['exit_code'])
+            ExpectNe('0', b['stdout'].strip())
+            b.Destroy()
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False,
                      command='bash -c "mkdir /sys/fs/cgroup/freezer/test && echo $$ | tee /sys/fs/cgroup/freezer/test"')
@@ -64,7 +68,7 @@ try:
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='ls /sys/fs/cgroup')
         ExpectEq('0', b['exit_code'])
-        ExpectEq(16, len(b['stdout'].split()))
+        ExpectEq(7 if USE_CGROUP2 else 16, len(b['stdout'].split()))
         b.Destroy()
 
         b = conn.Run('a/b', wait=0, virt_mode='job', isolate=False, user='1044',
@@ -78,14 +82,15 @@ try:
         ExpectEq('0', b['exit_code'])
         b.Destroy()
 
-        b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, user='1044',
-                     command='bash -c "mkdir /sys/fs/cgroup/net_cls/test && rmdir /sys/fs/cgroup/net_cls/test"')
+        if not USE_CGROUP2:
+            b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, user='1044',
+                         command='bash -c "mkdir /sys/fs/cgroup/net_cls/test && rmdir /sys/fs/cgroup/net_cls/test"')
 
-        if enable_net_cgroups:
-            ExpectEq('0', b['exit_code'])
-        else:
-            ExpectNe('0', b['exit_code'])
-        b.Destroy()
+            if enable_net_cgroups:
+                ExpectEq('0', b['exit_code'])
+            else:
+                ExpectNe('0', b['exit_code'])
+            b.Destroy()
 
         a.Destroy()
 
@@ -134,20 +139,21 @@ try:
     CheckCgroupfsRw(is_os=False, enable_net_cgroups=True)
     CheckCgroupfsRw(is_os=False, userns=True, enable_net_cgroups=True)
 
-    # check link_memory_writeback_blkio
-    a = conn.Run('a', wait=5, cgroupfs='ro', command='cat /sys/fs/cgroup/memory/memory.writeback_blkio')
-    ExpectEq(a['stdout'].strip(), '/')
-    a.Destroy()
+    if not USE_CGROUP2:
+        # check link_memory_writeback_blkio
+        a = conn.Run('a', wait=5, cgroupfs='ro', command='cat /sys/fs/cgroup/memory/memory.writeback_blkio')
+        ExpectEq(a['stdout'].strip(), '/')
+        a.Destroy()
 
-    a = conn.Run('a', wait=5, cgroupfs='ro', command='cat /sys/fs/cgroup/memory/memory.writeback_blkio',
-                 link_memory_writeback_blkio=False)
-    ExpectEq(a['stdout'].strip(), '/')
-    a.Destroy()
+        a = conn.Run('a', wait=5, cgroupfs='ro', command='cat /sys/fs/cgroup/memory/memory.writeback_blkio',
+                     link_memory_writeback_blkio=False)
+        ExpectEq(a['stdout'].strip(), '/')
+        a.Destroy()
 
-    a = conn.Run('a', wait=5, cgroupfs='ro', command='cat /sys/fs/cgroup/memory/memory.writeback_blkio',
-                 link_memory_writeback_blkio=True)
-    ExpectEq(a['stdout'].strip(), '/porto%a')
-    a.Destroy()
+        a = conn.Run('a', wait=5, cgroupfs='ro', command='cat /sys/fs/cgroup/memory/memory.writeback_blkio',
+                     link_memory_writeback_blkio=True)
+        ExpectEq(a['stdout'].strip(), '/porto%a')
+        a.Destroy()
 
     # check CgroupCleanup with cgroupfs
     ConfigurePortod('test-cgroupns', """

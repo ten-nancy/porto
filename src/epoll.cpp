@@ -5,7 +5,6 @@
 
 extern "C" {
 #include <unistd.h>
-#include <sys/epoll.h>
 }
 
 static TError EpollCreate(int &epfd) {
@@ -36,8 +35,8 @@ TEpollLoop::~TEpollLoop() {
     delete[] Events;
 }
 
-TError TEpollLoop::GetEvents(std::vector<struct epoll_event> &evts, int timeout) {
-    evts.clear();
+TError TEpollLoop::GetEvents(std::vector<struct epoll_event> &events, int timeout) {
+    events.clear();
 
     if (MaxEvents != config().daemon().max_clients() + NR_SUPERUSER_CLIENTS) {
         delete[] Events;
@@ -53,7 +52,7 @@ TError TEpollLoop::GetEvents(std::vector<struct epoll_event> &evts, int timeout)
     }
 
     for (int i = 0; i < nr; i++)
-        evts.push_back(Events[i]);
+        events.push_back(Events[i]);
 
     return OK;
 }
@@ -74,7 +73,7 @@ TError TEpollLoop::AddSource(std::shared_ptr<TEpollSource> source) {
     Statistics->EpollSources++;
 
     struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLHUP;
+    ev.events = source->Events;
     ev.data.fd = fd;
     if (epoll_ctl(EpollFd, EPOLL_CTL_ADD, fd, &ev) < 0)
         return TError::System("epoll_add {}", fd);

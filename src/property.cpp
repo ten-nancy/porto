@@ -3448,7 +3448,7 @@ public:
 
     void Init(void) override {
         IsDynamic = true;
-        IsSupported = CgroupDriver.MemorySubsystem->HasMemoryLockPolicy;
+        IsSupported = CgroupDriver.MemorySubsystem->HasMemoryLockPolicy || CgroupDriver.MemorySubsystem->IsCgroup2();
         RequireControllers = CGROUP_MEMORY;
     }
 
@@ -3513,7 +3513,7 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
-        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit();
+        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
         value = std::to_string(CT->AnonMemLimit);
@@ -3558,7 +3558,7 @@ public:
         IsReadOnly = true;
     }
     void Init(void) override {
-        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit();
+        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
         value = std::to_string(CT->GetAnonMemLimit());
@@ -3579,7 +3579,7 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
-        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonOnly();
+        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonOnly() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
         value = BoolToString(CT->AnonOnly);
@@ -3624,7 +3624,7 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
-        IsHidden = !CgroupDriver.MemorySubsystem->SupportDirtyLimit();
+        IsHidden = !CgroupDriver.MemorySubsystem->SupportDirtyLimit() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
         value = std::to_string(CT->DirtyMemLimit);
@@ -3670,7 +3670,7 @@ public:
         IsReadOnly = true;
     }
     void Init(void) override {
-        IsHidden = !CgroupDriver.MemorySubsystem->SupportDirtyLimit();
+        IsHidden = !CgroupDriver.MemorySubsystem->SupportDirtyLimit() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
         if (CT->DirtyMemLimitBound > 0)
@@ -3743,7 +3743,7 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
-        IsSupported = CgroupDriver.MemorySubsystem->SupportRechargeOnPgfault();
+        IsSupported = CgroupDriver.MemorySubsystem->SupportRechargeOnPgfault() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
         value = BoolToString(CT->RechargeOnPgfault);
@@ -4284,7 +4284,8 @@ public:
         TProperty(name, prop, desc) {}
     void Init(void) override {
         IsSupported = CgroupDriver.MemorySubsystem->SupportIoLimit() ||
-         CgroupDriver.BlkioSubsystem->HasThrottler;
+            CgroupDriver.BlkioSubsystem->HasThrottler ||
+            CgroupDriver.BlkioSubsystem->IsCgroup2();
     }
     TError GetMap(const TUintMap &limit, std::string &value) const {
         if (limit.size() == 1 && limit.count("fs")) {
@@ -5488,7 +5489,7 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
-        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit();
+        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
 
     TError Get(uint64_t &value) const {
@@ -5858,12 +5859,12 @@ public:
         RequireControllers = CGROUP_CPUACCT;
     }
     void Init(void) override {
-        IsSupported = CgroupDriver.CpuacctSubsystem->RootCgroup()->Has("cpuacct.wait");
+        IsSupported = CgroupDriver.CpuacctSubsystem->RootCgroup()->Has(CgroupDriver.CpuacctSubsystem->WAIT);
     }
 
     TError Get(uint64_t &value) const {
         auto cg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.CpuacctSubsystem.get());
-        return cg->GetUint64("cpuacct.wait", value);
+        return CgroupDriver.CpuacctSubsystem->GetWait(*cg, value);
     }
 
     TError Get(std::string &value) const override {
@@ -5892,14 +5893,13 @@ public:
         RequireControllers = CGROUP_CPU;
     }
     void Init(void) override {
-        TUintMap stat;
-        IsSupported = !CgroupDriver.CpuSubsystem->RootCgroup()->GetUintMap("cpu.stat", stat) && stat.count("throttled_time");
+        IsSupported = CgroupDriver.CpuSubsystem->SupportThrottled();
     }
 
     TError Get(uint64_t &value) const {
         auto cg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.CpuSubsystem.get());
         TUintMap stat;
-        TError error = cg->GetUintMap("cpu.stat", stat);
+        TError error = cg->GetUintMap(CgroupDriver.CpuSubsystem->STAT, stat);
         if (!error)
             value = stat["throttled_time"];
         return error;
@@ -5931,13 +5931,12 @@ public:
         RequireControllers = CGROUP_CPU;
     }
     void Init(void) override {
-        uint64_t value;
-        IsSupported = !CgroupDriver.CpuSubsystem->RootCgroup()->GetUint64("cpu.cfs_burst_usage", value);
+        IsSupported = CgroupDriver.CpuSubsystem->SupportBurstUsage();
     }
 
     TError Get(uint64_t &value) const {
         auto cg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.CpuSubsystem.get());
-        return cg->GetUint64("cpu.cfs_burst_usage", value);
+        return CgroupDriver.CpuSubsystem->GetBurstUsage(*cg, value);
     }
 
     TError Get(std::string &value) const override {
@@ -5966,34 +5965,16 @@ public:
         RequireControllers = CGROUP_CPU;
     }
     void Init(void) override {
-        uint64_t value;
-        IsSupported = !CgroupDriver.CpuSubsystem->RootCgroup()->GetUint64("cpuacct.wait", value) &&
-                !CgroupDriver.CpuSubsystem->RootCgroup()->GetUint64("cpu.cfs_burst_load", value) &&
-                !CgroupDriver.CpuSubsystem->RootCgroup()->GetUint64("cpu.cfs_burst_usage", value) &&
-                !CgroupDriver.CpuSubsystem->RootCgroup()->GetUint64("cpu.cfs_throttled", value);
+        IsSupported = CgroupDriver.CpuSubsystem->SupportUnconstrainedWait();
     }
 
     TError Get(uint64_t& value) const {
         TError error;
+
         auto cg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.CpuSubsystem.get());
-        TUintMap stat;
-        int64_t wait, burstLoad, burstUsage, throttled;
-
-        error = cg->GetInt64("cpuacct.wait", wait);
+        error = CgroupDriver.CpuSubsystem->GetUnconstrainedWait(*cg, value);
         if (error)
             return error;
-
-        error = cg->GetUintMap("cpu.stat", stat);
-        if (error)
-            return error;
-
-        burstLoad = static_cast<int64_t>(stat["burst_load"]);
-        burstUsage = static_cast<int64_t>(stat["burst_usage"]);
-        throttled = static_cast<int64_t>(stat["h_throttled_time"]);
-
-        value = static_cast<uint64_t>(std::max(
-                wait - std::max(burstLoad - burstUsage, static_cast<int64_t>(0)) - throttled,
-                static_cast<int64_t>(0)));
 
         return OK;
     }
@@ -6074,7 +6055,7 @@ private:
 
 class TCpuPressure : public TPressure {
 public:
-    TCpuPressure() : TPressure(P_CPU_PRESSURE, "CPU pressure metrics", "cpu.pressure")
+    TCpuPressure() : TPressure(P_CPU_PRESSURE, "CPU pressure metrics", TCpuSubsystem::PRESSURE)
     {
             RequireControllers = CGROUP_CPU|CGROUP2;
     }
@@ -6089,7 +6070,7 @@ public:
 
 class TMemPressure : public TPressure {
 public:
-    TMemPressure() : TPressure(P_MEM_PRESSURE, "memory pressure metrics", "memory.pressure")
+    TMemPressure() : TPressure(P_MEM_PRESSURE, "memory pressure metrics", TMemorySubsystem::PRESSURE)
     {
             RequireControllers = CGROUP_MEMORY|CGROUP2;
     }
@@ -6104,7 +6085,7 @@ public:
 
 class TIoPressure : public TPressure {
 public:
-    TIoPressure() : TPressure(P_IO_PRESSURE, "io pressure metrics", "io.pressure")
+    TIoPressure() : TPressure(P_IO_PRESSURE, "io pressure metrics", TBlkioSubsystem::PRESSURE)
     {
             RequireControllers = CGROUP_BLKIO|CGROUP2;
     }
@@ -6790,7 +6771,7 @@ public:
             "Bytes read from disk: fs|hw|<disk>|<path>: <bytes>;...") {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
-        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::Read, map);
+        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::BytesRead, map);
 
         if (CgroupDriver.MemorySubsystem->SupportIoLimit()) {
             auto memCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.MemorySubsystem.get());
@@ -6813,7 +6794,7 @@ public:
             "Bytes written to disk: fs|hw|<disk>|<path>: <bytes>;...") {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
-        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::Write, map);
+        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::BytesWrite, map);
 
         auto memCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.MemorySubsystem.get());
         TUintMap memStat;
@@ -6839,7 +6820,7 @@ public:
             "IO operations: fs|hw|<disk>|<path>: <ops>;...") {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
-        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::Iops, map);
+        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::IopsReadWrite, map);
 
         if (CgroupDriver.MemorySubsystem->SupportIoLimit()) {
             auto memCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.MemorySubsystem.get());
@@ -6862,7 +6843,7 @@ public:
             "IO read operations: hw|<disk>|<path>: <ops>;...") {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
-        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::ReadIops, map);
+        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::IopsRead, map);
 
         return OK;
     }
@@ -6878,7 +6859,7 @@ public:
             "IO write operations: hw|<disk>|<path>: <ops>;...") {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
-        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::WriteIops, map);
+        CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::IopsWrite, map);
 
         return OK;
     }

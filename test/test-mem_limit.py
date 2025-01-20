@@ -14,6 +14,12 @@ OLD_KERNEL = kmaj < 4 or (kmaj == 4 and kmin < 3)
 DURATION = 60000 #ms
 
 NAME = os.path.basename(__file__)
+USE_CGROUP2 = GetUseCgroup2()
+MEMORY_MAX_KNOB = "memory.max" if USE_CGROUP2 else "memory.max_usage_in_bytes"
+MEMORY_ANON_MAX_KNOB = "memory.anon.max_usage"
+
+if USE_CGROUP2:
+    print "\nuse {} hierarchy\n".format("cgroup2" if USE_CGROUP2 else "cgroup1")
 
 def test_memory_limit_high(conn):
     ct = conn.Run("memory_high", cpu_limit='1c')
@@ -43,8 +49,7 @@ def CT_NAME(suffix):
     global NAME
     return NAME + "-" + suffix
 
-def Prepare(ct, anon=0, total=0, use_anon=0, use_file=0, meta=False, to_wait=False):
-
+def Prepare(ct, anon=0, total=0, use_anon=0, use_file=0, meta=False, to_wait=False, weak=True):
     if OLD_KERNEL:
         ct.SetProperty("user", "root")
         ct.SetProperty("group", "root")
@@ -65,12 +70,13 @@ def Prepare(ct, anon=0, total=0, use_anon=0, use_file=0, meta=False, to_wait=Fal
     else:
         ct.SetProperty("memory_limit", 0)
 
-    if anon > 0:
-        ct.SetProperty("anon_limit", anon + EPS)
-        ct.Anon = anon + EPS
-        ct.Total = max(ct.Total, ct.Anon)
-    else:
-        ct.SetProperty("anon_limit", 0)
+    if not USE_CGROUP2:
+        if anon > 0:
+            ct.SetProperty("anon_limit", anon + EPS)
+            ct.Anon = anon + EPS
+            ct.Total = max(ct.Total, ct.Anon)
+        else:
+            ct.SetProperty("anon_limit", 0)
 
     if not meta:
         ct.Vol = ct.conn.CreateVolume(None, [], space_limit=str(SIZE))
@@ -79,6 +85,9 @@ def Prepare(ct, anon=0, total=0, use_anon=0, use_file=0, meta=False, to_wait=Fal
         ct.SetProperty("command", "{}/mem_touch {} {} {}/test.mapped{}"\
                        .format(os.getcwd(), use_anon, use_file, ct.Vol.path,\
                                " wait" if to_wait else ""))
+    if not weak:
+        ct.SetProperty("weak", "false")
+
     return ct
 
 def CheckOOM(ct, expect_oom):
@@ -86,8 +95,8 @@ def CheckOOM(ct, expect_oom):
                                              " expected duration {}".format(DURATION)
 
     print "{} max total usage: {}, anon usage: {}".format(ct,
-           ct.GetProperty("memory.max_usage_in_bytes").rstrip(),\
-           ct.GetProperty("memory.anon.max_usage").rstrip())
+           ct.GetProperty(MEMORY_MAX_KNOB).rstrip(),\
+           ct.GetProperty(MEMORY_ANON_MAX_KNOB).rstrip() if not USE_CGROUP2 else "not supported")
 
     if expect_oom:
         print "exit_code: {}".format(ct.GetProperty("exit_code"))
@@ -97,10 +106,10 @@ def CheckOOM(ct, expect_oom):
         ExpectProp(ct, "oom_killed", True)
     else:
         ExpectProp(ct, "exit_status", "0")
-        if ct.Anon > 0:
-            ExpectPropLe(ct, "memory.anon.max_usage", ct.Anon)
+        if not USE_CGROUP2 and ct.Anon > 0:
+            ExpectPropLe(ct, MEMORY_ANON_MAX_KNOB, ct.Anon)
         if ct.Total > 0:
-            ExpectPropLe(ct, "memory.max_usage_in_bytes", ct.Total)
+            ExpectPropLe(ct, MEMORY_MAX_KNOB, ct.Total)
 
     ct.Stop()
     if ct.Vol is not None:
@@ -113,12 +122,12 @@ def WaitUsage(ct):
         return
 
     while True:
-        if ct.UseAnon > 0 and\
-           int(ct.GetProperty("memory.anon.max_usage")) >= ct.UseAnon:
+        if not USE_CGROUP2 and ct.UseAnon > 0 and\
+           int(ct.GetProperty(MEMORY_ANON_MAX_KNOB)) >= ct.UseAnon:
             break
 
-        if ct.UseFile > 0 and\
-           int(ct.GetProperty("memory.max_usage_in_bytes")) >= ct.UseFile:
+        value = ct.GetProperty(MEMORY_MAX_KNOB)
+        if ct.UseFile > 0 and (value == "max\n" or int(value) >= ct.UseFile):
             break
 
         assert ct.Wait(500) == "", "container {} died prior to achieving desired usage file: {} anon: {}"\
@@ -182,14 +191,19 @@ conn.Alloc("oom_file").Prepare(anon=0, total=SIZE, use_anon=0, use_file=SIZE * 2
                       .Start()\
                       .CheckOOM(True)
 
-conn.Alloc("oom_anon").Prepare(anon=SIZE, total=0, use_anon=SIZE * 2, use_file=0)\
-                      .Start()\
-                      .CheckOOM(True)
+if not USE_CGROUP2:
+    conn.Alloc("oom_anon").Prepare(anon=SIZE, total=0, use_anon=SIZE * 2, use_file=0)\
+                          .Start()\
+                          .CheckOOM(True)
 
 conn.Alloc("oom_anon_with_file").Prepare(anon=SIZE / 2, total=SIZE,\
                                          use_anon=SIZE, use_file=SIZE / 2)\
                                 .Start()\
                                 .CheckOOM(True)
+
+if USE_CGROUP2:
+    print "\nSkip hierarchical check\n"
+    exit(0)
 
 print "\nCheck hierarchical\n"
 

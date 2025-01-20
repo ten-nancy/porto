@@ -76,8 +76,8 @@ public:
     virtual TError AttachAll(const TCgroup &cg, bool thread = false) const = 0;
     virtual TError KillAll(int signal, bool abortFuse = false) const = 0;
 
-    virtual TError SetPids(const std::string &knobPath, const std::vector<pid_t> &pids) const;
-    virtual TError GetPids(const std::string &knobPath, std::vector<pid_t> &pids) const;
+    virtual TError SetPids(const std::string &knob, const std::vector<pid_t> &pids) const;
+    virtual TError GetPids(const std::string &knob, std::vector<pid_t> &pids) const;
     virtual TError GetProcesses(std::vector<pid_t> &pids) const;
     virtual TError GetTasks(std::vector<pid_t> &tids) const = 0;
     virtual TError GetCount(uint64_t &count, bool thread = false) const = 0;
@@ -152,28 +152,43 @@ public:
 
 class TMemorySubsystem : public TSubsystem {
 public:
-    const std::string STAT = "memory.stat";
-    const std::string OOM_CONTROL = "memory.oom_control";
-    const std::string EVENT_CONTROL = "cgroup.event_control";
-    const std::string USE_HIERARCHY = "memory.use_hierarchy";
-    const std::string RECHARGE_ON_PAGE_FAULT = "memory.recharge_on_pgfault";
-    const std::string USAGE = "memory.usage_in_bytes";
-    const std::string LIMIT = "memory.limit_in_bytes";
-    const std::string SOFT_LIMIT = "memory.soft_limit_in_bytes";
-    const std::string LOW_LIMIT = "memory.low_limit_in_bytes";
-    const std::string HIGH_LIMIT = "memory.high_limit_in_bytes";
-    const std::string MEM_SWAP_LIMIT = "memory.memsw.limit_in_bytes";
-    const std::string DIRTY_LIMIT = "memory.dirty_limit_in_bytes";
-    const std::string DIRTY_RATIO = "memory.dirty_ratio";
-    const std::string FS_BPS_LIMIT = "memory.fs_bps_limit";
-    const std::string FS_IOPS_LIMIT = "memory.fs_iops_limit";
-    const std::string ANON_USAGE = "memory.anon.usage";
-    const std::string ANON_MAX_USAGE = "memory.anon.max_usage";
-    const std::string ANON_LIMIT = "memory.anon.limit";
-    const std::string ANON_ONLY = "memory.anon.only";
-    const std::string NUMA_BALANCE_VMPROT = "memory.numa_balance_vmprot";
-    const std::string WRITEBACK_BLKIO = "memory.writeback_blkio";
-    const std::string MEMORY_LOCK_POLICY = "memory.mlock_policy";
+    // common knobs
+    static constexpr const char *STAT = "memory.stat";
+
+    // cgroup v1 mainstream knobs
+    static constexpr const char *OOM_CONTROL = "memory.oom_control";
+    static constexpr const char *EVENT_CONTROL = "cgroup.event_control";
+    static constexpr const char *USE_HIERARCHY = "memory.use_hierarchy";
+    static constexpr const char *USAGE = "memory.usage_in_bytes";
+    static constexpr const char *LIMIT = "memory.limit_in_bytes";
+    static constexpr const char *SOFT_LIMIT = "memory.soft_limit_in_bytes";
+    static constexpr const char *MEM_SWAP_LIMIT = "memory.memsw.limit_in_bytes";
+
+    // cgroup v1 private knobs
+    static constexpr const char *RECHARGE_ON_PAGE_FAULT = "memory.recharge_on_pgfault";
+    static constexpr const char *LOW_LIMIT = "memory.low_limit_in_bytes";
+    static constexpr const char *HIGH_LIMIT = "memory.high_limit_in_bytes";
+    static constexpr const char *DIRTY_LIMIT = "memory.dirty_limit_in_bytes";
+    static constexpr const char *DIRTY_RATIO = "memory.dirty_ratio";
+    static constexpr const char *FS_BPS_LIMIT = "memory.fs_bps_limit"; // deprecated (before kernel 5.4 only)
+    static constexpr const char *FS_IOPS_LIMIT = "memory.fs_iops_limit"; // deprecated (before kernel 5.4 only)
+    static constexpr const char *ANON_USAGE = "memory.anon.usage";
+    static constexpr const char *ANON_MAX_USAGE = "memory.anon.max_usage";
+    static constexpr const char *ANON_LIMIT = "memory.anon.limit";
+    static constexpr const char *ANON_ONLY = "memory.anon.only";
+    static constexpr const char *NUMA_BALANCE_VMPROT = "memory.numa_balance_vmprot";
+    static constexpr const char *WRITEBACK_BLKIO = "memory.writeback_blkio";
+    static constexpr const char *MLOCK_POLICY = "memory.mlock_policy";
+
+    // cgroup v2 only
+    static constexpr const char *CURRENT = "memory.current";
+    static constexpr const char *EVENTS = "memory.events";
+    static constexpr const char *EVENTS_LOCAL = "memory.events.local";
+    static constexpr const char *MAX = "memory.max";
+    static constexpr const char *LOW = "memory.low";
+    static constexpr const char *HIGH = "memory.high";
+    static constexpr const char *SWAP_MAX = "memory.swap.max";
+    static constexpr const char *PRESSURE = "memory.pressure";
 
     bool HasWritebackBlkio = false;
     bool HasMemoryLockPolicy = false;
@@ -182,106 +197,84 @@ public:
 
     TError InitializeSubsystem() override;
 
-    TError Statistics(const TCgroup &cg, TUintMap &stat) const {
-        return cg.GetUintMap(STAT, stat);
-    }
-
-    TError Usage(const TCgroup &cg, uint64_t &value) const {
-        return cg.GetUint64(USAGE, value);
-    }
-
-    TError GetSoftLimit(const TCgroup &cg, int64_t &limit) const {
-        return cg.GetInt64(SOFT_LIMIT, limit);
-    }
-
-    TError SetSoftLimit(const TCgroup &cg, int64_t limit) const {
-        return cg.SetInt64(SOFT_LIMIT, limit);
-    }
-
-    bool SupportGuarantee() const {
-        return RootCgroup()->Has(LOW_LIMIT);
-    }
-
-    TError SetGuarantee(const TCgroup &cg, uint64_t guarantee) const {
-        if (!SupportGuarantee())
-            return OK;
-        return cg.SetUint64(LOW_LIMIT, guarantee);
-    }
-
-    bool SupportHighLimit() const {
-        return RootCgroup()->Has(HIGH_LIMIT);
-    }
-
-    TError SetHighLimit(const TCgroup &cg, uint64_t limit) const {
-        if (!SupportHighLimit())
-            return OK;
-        if (!limit)
-            return cg.Set(HIGH_LIMIT, "-1");
-        return cg.SetUint64(HIGH_LIMIT, limit);
-    }
-
-    bool SupportIoLimit() const {
-        return RootCgroup()->Has(FS_BPS_LIMIT);
-    }
-
-    bool SupportDirtyLimit() const {
-        return RootCgroup()->Has(DIRTY_LIMIT);
-    }
-
-    bool SupportSwap() const {
-        return RootCgroup()->Has(MEM_SWAP_LIMIT);
-    }
-
-    bool SupportRechargeOnPgfault() const {
-        return RootCgroup()->Has(RECHARGE_ON_PAGE_FAULT);
-    }
-
-    TError RechargeOnPgfault(const TCgroup &cg, bool enable) const {
-        if (!SupportRechargeOnPgfault())
-            return OK;
-        return cg.SetBool(RECHARGE_ON_PAGE_FAULT, enable);
-    }
-
-    bool SupportNumaBalance() const {
-        return RootCgroup()->Has(NUMA_BALANCE_VMPROT);
-    }
-    TError SetNumaBalance(const TCgroup &cg, uint64_t flag, uint64_t mask) {
-        return cg.Set(NUMA_BALANCE_VMPROT, fmt::format("{} {}", flag, mask));
-    }
-
+    // stat
+    TError Statistics(const TCgroup &cg, TUintMap &stat) const;
     TError GetCacheUsage(const TCgroup &cg, uint64_t &usage) const;
     TError GetShmemUsage(const TCgroup &cg, uint64_t &usage) const;
     TError GetMLockUsage(const TCgroup &cg, uint64_t &usage) const;
-    TError GetAnonUsage(const TCgroup &cg, uint64_t &usage) const;
+    TError GetReclaimed(const TCgroup &cg, uint64_t &value) const;
+    TError Usage(const TCgroup &cg, uint64_t &value) const;
 
-    TError GetAnonMaxUsage(const TCgroup &cg, uint64_t &usage) const {
-        return cg.GetUint64(ANON_MAX_USAGE, usage);
-    }
-    TError ResetAnonMaxUsage(const TCgroup &cg) const {
-        return cg.SetUint64(ANON_MAX_USAGE, 0);
-    }
+    // soft limit
+    bool SupportSoftLimit() const;
+    TError SetSoftLimit(const TCgroup &cg, int64_t limit) const;
+    TError GetSoftLimit(const TCgroup &cg, int64_t &limit) const;
 
+    // guarantee via low limit
+    bool SupportGuarantee() const;
+    TError SetGuarantee(const TCgroup &cg, uint64_t guarantee) const;
+
+    // high limit
+    bool SupportHighLimit() const;
+    TError SetHighLimit(const TCgroup &cg, uint64_t limit) const;
+
+    // recharge on page fault
+    bool SupportRechargeOnPgfault() const;
+    TError RechargeOnPgfault(const TCgroup &cg, bool enable) const;
+
+    // numa balancing
+    bool SupportNumaBalance() const;
+    TError SetNumaBalance(const TCgroup &cg, uint64_t flag, uint64_t mask);
+
+    // dirty limit
+    bool SupportDirtyLimit() const;
+    TError SetDirtyLimit(const TCgroup &cg, uint64_t limit);
+
+    // anon limit
     bool SupportAnonLimit() const;
     TError SetAnonLimit(const TCgroup &cg, uint64_t limit) const;
 
+    // anon usage
+    TError ResetAnonMaxUsage(const TCgroup &cg) const;
+    TError GetAnonMaxUsage(const TCgroup &cg, uint64_t &usage) const;
+    TError GetAnonUsage(const TCgroup &cg, uint64_t &usage) const;
+
+    // anon only
     bool SupportAnonOnly() const;
     TError SetAnonOnly(const TCgroup &cg, bool val) const;
 
-    TError LinkWritebackBlkio(const TCgroup &memcg, const TCgroup &blkcg) const;
-
+    // memory limit
+    bool SupportSwap() const;
     TError SetLimit(const TCgroup &cg, uint64_t limit);
+
+    // io limits
+    bool SupportIoLimit() const;
     TError SetIoLimit(const TCgroup &cg, uint64_t limit);
     TError SetIopsLimit(const TCgroup &cg, uint64_t limit);
-    TError SetDirtyLimit(const TCgroup &cg, uint64_t limit);
-    TError SetupOOMEvent(const TCgroup &cg, TFile &event);
-    uint64_t GetOomEvents(const TCgroup &cg);
-    TError GetOomKills(const TCgroup &cg, uint64_t &count);
-    TError GetReclaimed(const TCgroup &cg, uint64_t &count) const;
+    TError LinkWritebackBlkio(const TCgroup &memcg, const TCgroup &blkcg) const;
+
+    // oom events notification
+    TError SetupOomEvent(const TCgroup &cg, TFile &event) const;
+    TError SetupOomEventLegacy(const TCgroup &cg, TFile &event) const;
+    uint64_t NotifyOomEvents(TFile &event) const;
+
+    // oom counters
+    std::string ChooseMemoryEventsKnob(bool local = false) const;
+    TError GetMemoryEventsField(const TCgroup &cg, uint64_t &value, const std::string &field, bool local = false) const;
+    TError GetOomKills(const TCgroup &cg, uint64_t &value, bool local = false) const;
+    TError GetOomEvents(const TCgroup &cg, uint64_t &value, bool local = false) const;
+
+    // hierarchy
     TError SetUseHierarchy(const TCgroup &cg, bool value) const;
 };
 
 class TFreezerSubsystem : public TSubsystem {
 public:
+    // cgroup v1 mainstream knobs
+    static constexpr const char *STATE = "freezer.state";
+    static constexpr const char *SELF_FREEZING = "freezer.self_freezing";
+    static constexpr const char *PARENT_FREEZING = "freezer.parent_freezing";
+
     TFreezerSubsystem() : TSubsystem(CGROUP_FREEZER, "freezer") {}
 
     TError WaitState(const TCgroup &cg, const std::string &state) const;
@@ -293,15 +286,42 @@ public:
 };
 
 class TCpuSubsystem : public TSubsystem {
+    std::vector<uint64_t> SharesMultipliers;
+
+    inline std::string ChooseThrottledKnob() const;
+    static inline uint64_t PreparePeriod(uint64_t period);
+    static inline uint64_t PrepareQuota(uint64_t quota, uint64_t period);
+    TError SetQuotaAndPeriod(const TCgroup &cg, uint64_t quota, uint64_t period = 0) const;
 public:
-    static constexpr const char *CPU_IDLE = "cpu.idle";
-    static constexpr const char *CPU_SHARES = "cpu.shares";
-    static constexpr const char *CPU_CFS_QUOTA_US = "cpu.cfs_quota_us";
-    static constexpr const char *CPU_CFS_PERIOD_US = "cpu.cfs_period_us";
-    static constexpr const char *CPU_CFS_RESERVE_US = "cpu.cfs_reserve_us";
-    static constexpr const char *CPU_CFS_RESERVE_SHARES = "cpu.cfs_reserve_shares";
-    static constexpr const char *CPU_RT_RUNTIME_US = "cpu.rt_runtime_us";
-    static constexpr const char *CPU_RT_PERIOD_US = "cpu.rt_period_us";
+    // common knobs
+    static constexpr const char *IDLE = "cpu.idle";
+    static constexpr const char *STAT = "cpu.stat";
+
+    // cgroup v1 mainstream knobs
+    static constexpr const char *SHARES = "cpu.shares";
+    static constexpr const char *CFS_QUOTA_US = "cpu.cfs_quota_us";
+    static constexpr const char *CFS_PERIOD_US = "cpu.cfs_period_us";
+    static constexpr const char *RT_RUNTIME_US = "cpu.rt_runtime_us";
+    static constexpr const char *RT_PERIOD_US = "cpu.rt_period_us";
+
+    // cgroup v1 private knobs
+    static constexpr const char *CFS_RESERVE_US = "cpu.cfs_reserve_us";
+    static constexpr const char *CFS_RESERVE_SHARES = "cpu.cfs_reserve_shares";
+    static constexpr const char *CFS_BURST_USAGE = "cpu.cfs_burst_usage";
+    static constexpr const char *CFS_BURST_LOAD = "cpu.cfs_burst_load";
+    static constexpr const char *CFS_THROTTLED = "cpu.cfs_throttled";
+
+    // cgroup v2 only
+    static constexpr const char *MAX = "cpu.max";
+    static constexpr const char *WEIGHT = "cpu.weight";
+    static constexpr const char *PRESSURE = "cpu.pressure";
+
+    // stat knobs
+    static constexpr const char *THROTTLED_TIME = "throttled_time";     // cg1 mainstream
+    static constexpr const char *THROTTLED_USEC = "throttled_usec";     // cg2 mainstream
+    static constexpr const char *BURST_LOAD = "burst_load";             // cg1 private
+    static constexpr const char *BURST_USAGE = "burst_usage";           // cg1 private
+    static constexpr const char *H_THROTTLED_TIME = "h_throttled_time"; // cg1 private
 
     bool HasShares = false;
     bool HasQuota = false;
@@ -317,9 +337,20 @@ public:
     TCpuSubsystem() : TSubsystem(CGROUP_CPU, "cpu") { }
     TError InitializeSubsystem() override;
     TError InitializeCgroup(const TCgroup &cg) const override;
+    TError Statistics(const TCgroup &cg, TUintMap &stat) const;
+
+    // stats
+    bool SupportThrottled() const;
+    TError GetThrottled(const TCgroup &cg, uint64_t &value) const;
+    bool SupportUnconstrainedWait() const;
+    TError GetUnconstrainedWait(const TCgroup &cg, uint64_t &value) const;
+    bool SupportBurstUsage() const;
+    TError GetBurstUsage(const TCgroup &cg, uint64_t &value) const;
+
+    // knob setters
     TError SetPeriod(const TCgroup &cg, uint64_t period);
-    TError SetLimit(const TCgroup &cg, uint64_t period, uint64_t limit);
-    TError SetRtLimit(const TCgroup &cg, uint64_t period, uint64_t limit);
+    TError SetLimit(const TCgroup &cg, uint64_t quota, uint64_t period);
+    TError SetRtLimit(const TCgroup &cg, uint64_t quota, uint64_t period);
     TError SetGuarantee(const TCgroup &cg, uint64_t period, uint64_t guarantee);
     TError SetShares(const TCgroup &cg, const std::string &policy, double weight, uint64_t guarantee);
     TError SetCpuIdle(const TCgroup &cg, bool value);
@@ -327,19 +358,29 @@ public:
 
 class TCpuacctSubsystem : public TSubsystem {
 public:
+    // cgroup v1 mainstream knobs
+    static constexpr const char *STAT = "cpuacct.stat";
+    static constexpr const char *USAGE = "cpuacct.usage";
+    static constexpr const char *WAIT = "cpuacct.wait";
+
     TCpuacctSubsystem() : TSubsystem(CGROUP_CPUACCT, "cpuacct") {}
     TError Usage(const TCgroup &cg, uint64_t &value) const;
     TError SystemUsage(const TCgroup &cg, uint64_t &value) const;
+    TError GetWait(const TCgroup &cg, uint64_t &value) const;
 };
 
 class TCpusetSubsystem : public TSubsystem {
-private:
-    TError GetCpus(const TCgroup &cg, std::string &cpus) const {
-        return cg.Get("cpuset.cpus", cpus);
-    }
+    TError GetCpus(const TCgroup &cg, std::string &cpus) const;
     TError SetCpus(const TCgroup &cg, const std::string &cpus) const;
     TError SetMems(const TCgroup &cg, const std::string &mems) const;
 public:
+    // common knobs
+    static constexpr const char *CPUS = "cpuset.cpus";
+    static constexpr const char *MEMS = "cpuset.mems";
+
+    // cgroup v2 only
+    static constexpr const char *CPUS_EFFECTIVE = "cpuset.cpus.effective";
+
     TCpusetSubsystem() : TSubsystem(CGROUP_CPUSET, "cpuset") {}
     bool IsOptional() const override { return true; }
     TError InitializeCgroup(const TCgroup &cg) const override;
@@ -350,6 +391,10 @@ public:
 
 class TNetclsSubsystem : public TSubsystem {
 public:
+    // cgroup v1 mainstream knobs
+    static constexpr const char *PRIORITY = "net_cls.priority";
+    static constexpr const char *CLASSID = "net_cls.classid";
+
     bool HasPriority;
     TNetclsSubsystem() : TSubsystem(CGROUP_NETCLS, "net_cls") {}
     bool IsOptional() const override { return !config().network().enable_netcls_classid(); }
@@ -358,39 +403,67 @@ public:
 };
 
 class TBlkioSubsystem : public TSubsystem {
-public:
-    const std::string CFQ_WEIGHT = "blkio.weight";
-    const std::string BFQ_WEIGHT = "blkio.bfq.weight";
-
-    bool HasThrottler = false;
+    std::string BytesKnob;
     std::string TimeKnob;
     std::string OpsKnob;
-    std::string BytesKnob;
+public:
+    // common knobs
+    static constexpr const char *WEIGHT = "io.weight";
+    static constexpr const char *LEGACY_WEIGHT = "blkio.weight";
+    static constexpr const char *BFQ_WEIGHT = "io.bfq.weight";
+    static constexpr const char *LEGACY_BFQ_WEIGHT = "blkio.bfq.weight";
+
+    // cgroup v1 mainstream knobs
+    static constexpr const char *READ_IOPS_DEVICE = "blkio.throttle.read_iops_device";
+    static constexpr const char *READ_BPS_DEVICE = "blkio.throttle.read_bps_device";
+    static constexpr const char *WRITE_IOPS_DEVICE = "blkio.throttle.write_iops_device";
+    static constexpr const char *WRITE_BPS_DEVICE =  "blkio.throttle.write_bps_device";
+
+    // cgroup v2 only
+    static constexpr const char *STAT = "io.stat";
+    static constexpr const char *MAX = "io.max";
+    static constexpr const char *PRESSURE = "io.pressure";
+
+    bool HasThrottler = false;
+
+    enum IoStat {
+        // 2 bits for r and w
+        Read = 1,
+        Write = 2,
+        // 3 bits for class
+        Bytes = 4,
+        Iops = 8,
+        Time = 16,
+        // derivative ones
+        BytesRead = Bytes | Read,
+        BytesWrite = Bytes | Write,
+        BytesReadWrite = Bytes | Read | Write,
+        IopsRead = Iops | Read,
+        IopsWrite = Iops | Write,
+        IopsReadWrite = Iops | Read | Write,
+    };
 
     TBlkioSubsystem() : TSubsystem(CGROUP_BLKIO, "blkio") {}
     bool IsDisabled() const override { return !config().container().enable_blkio(); }
     bool IsOptional() const override { return true; }
     TError InitializeSubsystem() override;
 
-    enum IoStat {
-        Read = 1,
-        Write = 2,
-        Iops = 4,
-        ReadIops = Read | Iops,
-        WriteIops = Write | Iops,
-        Time = 8,
-    };
+    void ParseIoStatV1(const std::vector<std::string> &lines, enum IoStat stat, TUintMap &map) const;
+    void ParseIoStatV2(const std::vector<std::string> &lines, enum IoStat stat, TUintMap &map) const;
     TError GetIoStat(const TCgroup &cg, enum IoStat stat, TUintMap &map) const;
-    TError SetIoWeight(const TCgroup &cg, const std::string &policy, double weight) const;
+
+    TError SetIoLimitV1(const TCgroup &cg, const TPath &root, const TUintMap &map, bool iops = false);
+    TError SetIoLimitV2(const TCgroup &cg, const TPath &root, const TUintMap &map, bool iops = false);
     TError SetIoLimit(const TCgroup &cg, const TPath &root, const TUintMap &map, bool iops = false);
+    TError SetIoWeight(const TCgroup &cg, const std::string &policy, double weight) const;
 
     TError DiskName(const std::string &disk, std::string &name) const;
     TError ResolveDisk(const TPath &root, const std::string &key, std::string &disk) const;
 };
 
 class TDevicesSubsystem : public TSubsystem {
-    const char *DEVICES_DENY = "devices.deny";
-    const char *DEVICES_ALLOW = "devices.allow";
+    static constexpr const char *DENY = "devices.deny";
+    static constexpr const char *ALLOW = "devices.allow";
 public:
     TDevicesSubsystem() : TSubsystem(CGROUP_DEVICES, "devices") {}
 
@@ -400,10 +473,12 @@ public:
 
 class THugetlbSubsystem : public TSubsystem {
 public:
-    const std::string HUGE_USAGE = "hugetlb.2MB.usage_in_bytes";
-    const std::string HUGE_LIMIT = "hugetlb.2MB.limit_in_bytes";
-    const std::string GIGA_USAGE = "hugetlb.1GB.usage_in_bytes";
-    const std::string GIGA_LIMIT = "hugetlb.1GB.limit_in_bytes";
+    // cgroup v1 mainstream knobs
+    static constexpr const char *HUGE_USAGE = "hugetlb.2MB.usage_in_bytes";
+    static constexpr const char *HUGE_LIMIT = "hugetlb.2MB.limit_in_bytes";
+    static constexpr const char *GIGA_USAGE = "hugetlb.1GB.usage_in_bytes";
+    static constexpr const char *GIGA_LIMIT = "hugetlb.1GB.limit_in_bytes";
+
     THugetlbSubsystem() : TSubsystem(CGROUP_HUGETLB, "hugetlb") {}
     bool IsDisabled() const override { return !config().container().enable_hugetlb(); }
     bool IsOptional() const override { return true; }
@@ -411,7 +486,7 @@ public:
     /* for now supports only 2MB pages */
     TError InitializeSubsystem() override {
         if (!RootCgroup()->Has(HUGE_LIMIT))
-            return TError(EError::NotSupported, "No {}", HUGE_LIMIT);
+            return TError(EError::NotSupported, "No {}", std::string(HUGE_LIMIT));
         return OK;
     }
 
@@ -434,6 +509,10 @@ public:
 
 class TPidsSubsystem : public TSubsystem {
 public:
+    // common knobs
+    static constexpr const char *MAX = "pids.max";
+    static constexpr const char *CURRENT = "pids.current";
+
     TPidsSubsystem() : TSubsystem(CGROUP_PIDS, "pids") {}
     bool IsOptional() const override { return true; }
     TError GetUsage(const TCgroup &cg, uint64_t &usage) const;
@@ -466,6 +545,7 @@ public:
 };
 
 class TCgroupDriver: public TNonCopyable {
+    bool Cgroup2Hierarchy = false;
 public:
     // constructors and destructor
     TCgroupDriver();
@@ -488,14 +568,16 @@ public:
     std::vector<TSubsystem *> AllSubsystems;
     std::vector<TSubsystem *> Subsystems;
     std::vector<TSubsystem *> Hierarchies;
+    std::vector<TSubsystem *> Cgroup2Subsystems;
 
     uint64_t DefaultControllers;
 
     TError InitializeCgroups();
     TError InitializeDaemonCgroups();
+    bool UseCgroup2() const;
     void CleanupCgroups();
 
-    TError CgroupChildren(const TCgroup &cg, std::list<std::unique_ptr<const TCgroup>> &cgroups, bool all = false) const;
+    TError CgroupSubtree(const TCgroup &cg, std::list<std::unique_ptr<const TCgroup>> &cgroups, bool all = false) const;
 
     std::unique_ptr<const TCgroup> GetContainerCgroup(const TContainer &container, TSubsystem *subsystem) const;
     std::list<std::unique_ptr<const TCgroup>> GetContainerCgroups(const TContainer &container) const;

@@ -198,11 +198,7 @@ TError TContainer::FindTaskContainer(pid_t pid, std::shared_ptr<TContainer> &ct,
     TError error;
     std::unique_ptr<const TCgroup> cg;
 
-    if (CgroupDriver.Cgroup2Subsystem->IsDisabled())
-        error = CgroupDriver.FreezerSubsystem->TaskCgroup(pid, cg);
-    else
-        error = CgroupDriver.Cgroup2Subsystem->TaskCgroup(pid, cg);
-
+    error = CgroupDriver.FreezerSubsystem->TaskCgroup(pid, cg);
     if (error)
         return error;
 
@@ -1053,21 +1049,21 @@ TError TContainer::UpdateSoftLimit() {
         if (!(ct->Controllers & CGROUP_MEMORY))
             continue;
 
-        int64_t lim = -1;
+        int64_t limit = -1;
 
         /* Set memory soft limit for dead or hollow meta containers */
         if (ct->PressurizeOnDeath &&
                 (ct->State == EContainerState::Dead ||
                  (ct->State == EContainerState::Meta &&
                   !ct->RunningChildren && !ct->StartingChildren)))
-            lim = config().container().dead_memory_soft_limit();
+            limit = config().container().dead_memory_soft_limit();
 
-        if (ct->MemSoftLimit != lim) {
+        if (ct->MemSoftLimit != limit) {
             auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get());
-            error = CgroupDriver.MemorySubsystem->SetSoftLimit(*cg, lim);
+            error = CgroupDriver.MemorySubsystem->SetSoftLimit(*cg, limit);
             if (error && error.Errno != ENOENT)
                 return error;
-            ct->MemSoftLimit = lim;
+            ct->MemSoftLimit = limit;
         }
     }
 
@@ -1272,42 +1268,6 @@ TError TContainer::GetVmStat(TVmStat &stat) const {
         stat.Parse(pid);
 
     return OK;
-}
-
-void TContainer::CollectOomKills() {
-    if (!HasResources() || !(Controllers & CGROUP_MEMORY))
-        return;
-
-    uint64_t kills = 0;
-    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
-    if (CgroupDriver.MemorySubsystem->GetOomKills(*cg, kills))
-        return;
-
-    if (kills <= OomKills)
-        return;
-
-    auto lock = LockContainers();
-
-    // OomKills could be changed during waiting
-    if (kills <= OomKills) {
-        lock.unlock();
-        return;
-    }
-
-    uint64_t delta = kills - OomKills;
-
-    OomKills = kills;
-    SetProp(EProperty::OOM_KILLS);
-
-    for (auto p = shared_from_this(); p ; p = p->Parent) {
-        p->OomKillsTotal += delta;
-        p->SetProp(EProperty::OOM_KILLS_TOTAL);
-    }
-
-    lock.unlock();
-
-    for (auto p = shared_from_this(); p; p = p->Parent)
-        p->Save();
 }
 
 TError TContainer::CheckMemGuarantee() const {
@@ -1901,7 +1861,7 @@ static TError ApplySubtreeCpus(const TCgroup &root, const std::list<std::shared_
     std::list<std::unique_ptr<const TCgroup>> cgroups;
     std::map<std::string, TBitMap> cpusets;
 
-    auto error = CgroupDriver.CgroupChildren(root, cgroups, true);
+    auto error = CgroupDriver.CgroupSubtree(root, cgroups, true);
     if (error)
         return error;
 
@@ -2306,14 +2266,14 @@ TError TContainer::SetCpuLimit(uint64_t limit) {
     L_ACT("Set cpu limit CT{}:{} {} -> {}", Id, Name,
             CpuPowerToString(CpuLimitCur), CpuPowerToString(limit));
 
-    error = CgroupDriver.CpuSubsystem->SetRtLimit(*cpucg, CpuPeriod, limit);
+    error = CgroupDriver.CpuSubsystem->SetRtLimit(*cpucg, limit, CpuPeriod);
     if (error) {
         if (CpuPolicy == "rt")
             return error;
         L_WRN("Cannot set rt cpu limit: {}", error);
     }
 
-    error = CgroupDriver.CpuSubsystem->SetLimit(*cpucg, CpuPeriod, limit);
+    error = CgroupDriver.CpuSubsystem->SetLimit(*cpucg, limit, CpuPeriod);
     if (error)
         return error;
 
@@ -2488,7 +2448,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     }
 
     if (TestClearPropDirty(EProperty::MEM_LOCK_POLICY)) {
-        error = memcg->SetUint64("memory.mlock_policy", static_cast<uint64_t>(MemLockPolicy));
+        error = memcg->SetUint64(CgroupDriver.MemorySubsystem->MLOCK_POLICY, static_cast<uint64_t>(MemLockPolicy));
         if (error) {
             L_ERR("Cannot set {}: {}", P_MEM_LOCK_POLICY, error);
             return error;
@@ -2673,23 +2633,25 @@ void TContainer::ShutdownOom() {
     if (Source)
         EpollLoop->RemoveSource(Source->Fd);
     Source = nullptr;
+
     PORTO_ASSERT(OomEvent.Fd < 0 || OomEvent.Fd > 2);
     OomEvent.Close();
 }
 
 TError TContainer::PrepareOomMonitor() {
-
     if (IsRoot() || !(Controllers & CGROUP_MEMORY))
         return OK;
 
-    auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
     TError error;
 
-    error = CgroupDriver.MemorySubsystem->SetupOOMEvent(*memcg, OomEvent);
+    auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
+    error = CgroupDriver.MemorySubsystem->SetupOomEvent(*memcg, OomEvent);
     if (error)
         return error;
 
-    Source = std::make_shared<TEpollSource>(OomEvent.Fd, EPOLL_EVENT_OOM, shared_from_this());
+    uint32_t type = CgroupDriver.MemorySubsystem->IsCgroup2() ? EPOLLPRI : EPOLLIN | EPOLLHUP;
+    Source = std::make_shared<TEpollSource>(OomEvent.Fd, EPOLL_EVENT_OOM, type, shared_from_this());
+
     error = EpollLoop->AddSource(Source);
     if (error)
         ShutdownOom();
@@ -3202,8 +3164,8 @@ TError TContainer::StartTask() {
 
     error = TaskEnv.Start();
 
-    /* Always report OOM stuation if any */
-    if (error && RecvOomEvents())
+    /* Always report OOM situation if any */
+    if (error && ReceiveOomEvents())
         error = TError(EError::ResourceNotAvailable, "OOM at container {} start: {}", Name, error);
 
     return error;
@@ -3903,7 +3865,7 @@ void TContainer::Exit(int status, bool oomKilled) {
      * SIGKILL could be delivered earlier than OOM event.
      * Any non-zero exit code or signal might be casuesd by OOM.
      */
-    if (RecvOomEvents() && status)
+    if (ReceiveOomEvents() && status)
         oomKilled = true;
 
     /* Detect fatal signals: portoinit cannot kill itself */
@@ -4712,20 +4674,133 @@ TError TContainer::EnableControllers(uint64_t controllers) {
     return OK;
 }
 
-bool TContainer::RecvOomEvents() {
-    uint64_t val;
+bool TContainer::ReceiveOomEvents() {
+    bool use_cgroup2 = CgroupDriver.MemorySubsystem->IsCgroup2();
+    bool received = false;
 
-    if (OomEvent && read(OomEvent.Fd, &val, sizeof(val)) == sizeof(val) && val) {
-        OomEvents += val;
-        Statistics->ContainersOOM += val;
+    if (use_cgroup2)
+        received = ReceiveOomEventsV2();
+    else
+        received = ReceiveOomEventsV1();
+
+    if (received)
         L_EVT("OOM Event in CT{}:{}", Id, Name);
+
+    // in case of cgroup v2, event may be increased oom_kill,
+    // so should collect it anyway
+    if (received || use_cgroup2)
         CollectOomKills();
-        // counter increments after event, so recheck it after 3s
-        EventQueue->Add(3000, {EEventType::CollectOOM, shared_from_this()});
-        return true;
+
+    return received;
+}
+
+bool TContainer::ReceiveOomEventsV2() {
+    TError error;
+    uint64_t events;
+
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
+    error = CgroupDriver.MemorySubsystem->GetOomEvents(*cg, events, true);
+    if (error) {
+        if (error.Errno != ENOENT)
+            L_WRN("Cannot get OOM events: {}", error);
+        return false;
     }
 
-    return false;
+    // there are no new OOM events
+    if (events <= OomEvents)
+        return false;
+
+    Statistics->ContainersOOM += events - OomEvents;
+    OomEvents = events;
+
+    return true;
+}
+
+bool TContainer::ReceiveOomEventsV1() {
+    uint64_t value = CgroupDriver.MemorySubsystem->NotifyOomEvents(OomEvent);
+    if (!value)
+        return false;
+
+    OomEvents += value;
+    Statistics->ContainersOOM += value;
+    // counter increments after event, so recheck it after 3s
+    EventQueue->Add(3000, {EEventType::CollectOOM, shared_from_this()});
+
+    return true;
+}
+
+void TContainer::CollectOomKills() {
+    if (!HasResources() || !(Controllers & CGROUP_MEMORY))
+        return;
+
+    if (CgroupDriver.MemorySubsystem->IsCgroup2())
+        CollectOomKillsV2();
+    else
+        CollectOomKillsV1();
+}
+
+void TContainer::CollectOomKillsV2() {
+    TError error;
+    uint64_t kills = 0;
+
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
+    error = CgroupDriver.MemorySubsystem->GetOomKills(*cg, kills);
+    if (error) {
+        if (error.Errno != ENOENT)
+            L_WRN("Cannot get OOM kills: {}", error);
+        return;
+    }
+
+    // there are no new OOM kills
+    if (kills <= OomKills)
+        return;
+
+    OomKills = kills;
+    SetProp(EProperty::OOM_KILLS);
+
+    OomKillsTotal = kills;
+    SetProp(EProperty::OOM_KILLS_TOTAL);
+
+    Save();
+}
+
+void TContainer::CollectOomKillsV1() {
+    TError error;
+    uint64_t kills = 0;
+
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
+    error = CgroupDriver.MemorySubsystem->GetOomKills(*cg, kills);
+    if (error) {
+        if (error.Errno != ENOENT)
+            L_WRN("Cannot get OOM kills: {}", error);
+        return;
+    }
+
+    // there are no new OOM kills
+    if (kills <= OomKills)
+        return;
+
+    auto lock = LockContainers();
+
+    if (kills <= OomKills) {
+        lock.unlock();
+        return;
+    }
+
+    uint64_t delta = kills - OomKills;
+    OomKills = kills;
+    SetProp(EProperty::OOM_KILLS);
+
+    for (auto p = shared_from_this(); p ; p = p->Parent) {
+        p->OomKillsTotal += delta;
+        p->SetProp(EProperty::OOM_KILLS_TOTAL);
+    }
+
+    lock.unlock();
+
+    for (auto p = shared_from_this(); p; p = p->Parent)
+        p->Save();
+
 }
 
 void TContainer::Event(const TEvent &event) {

@@ -14,6 +14,7 @@ extern "C" {
 #define STRINGIFY(x) STRINGIFY_IMPL(x)
 
 typedef std::map<std::string, uint64_t> TUintMap;
+typedef std::map<std::string, std::pair<uint64_t, uint64_t>> TUintPairMap;
 typedef std::map<std::string, std::string> TStringMap;
 typedef std::vector<std::string> TTuple;
 typedef std::vector<TTuple> TMultiTuple;

@@ -339,7 +339,7 @@ static void ServerLoop() {
                 if (!container) {
                     L_WRN("Container not found for OOM fd {}", source->Fd);
                     EpollLoop->StopInput(source->Fd);
-                } else if (container->RecvOomEvents() && container->OomIsFatal) {
+                } else if (container->ReceiveOomEvents() && container->OomIsFatal) {
                     EpollLoop->StopInput(source->Fd);
                     TEvent e(EEventType::OOM, container);
                     EventQueue->Add(0, e);
