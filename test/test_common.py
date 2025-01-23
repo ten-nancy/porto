@@ -9,6 +9,8 @@ import time
 import platform
 import re
 import subprocess
+import contextlib
+import porto
 
 portosrc = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 portobin = os.getcwd()
@@ -273,8 +275,22 @@ def GetKernelVersion():
     kver = re.match("([0-9])\.([0-9]{1,2})", platform.uname()[2]).groups()
     return (int(kver[0]), int(kver[1]))
 
+
+@contextlib.contextmanager
+def CreateVolume(conn, *args, **kwargs):
+    v = conn.CreateVolume(*args, **kwargs)
+    try:
+        yield v
+    finally:
+        try:
+            v.Unlink()
+        except porto.exceptions.VolumeNotFound:
+            pass
+
+
 def GetUseCgroup2():
     return ParseMountinfo()['/sys/fs/cgroup']['type'] == "cgroup2"
+
 
 if not os.environ.get('PORTO_TEST_NO_RESTART', None):
     CleanupConfigs()

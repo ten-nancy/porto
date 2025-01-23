@@ -384,13 +384,14 @@ public:
 class TPathWalk {
 private:
     FTS *Fts = nullptr;
-    FTSENT *Ent = nullptr;
 
     TPathWalk(const TPathWalk&) = delete;
     TPathWalk& operator=(const TPathWalk&) = delete;
     static int CompareNames(const FTSENT **a, const FTSENT **b);
     static int CompareInodes(const FTSENT **a, const FTSENT **b);
 public:
+    FTSENT *Ent = nullptr;
+
     bool Postorder = false;
     bool Directory = false;
     TPath Path;

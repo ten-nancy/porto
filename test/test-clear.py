@@ -3,6 +3,7 @@
 import os
 import porto
 import tarfile
+import tempfile
 import shutil
 import time
 
@@ -10,68 +11,64 @@ from test_common import *
 
 AsRoot()
 
-TMPDIR="/tmp/test_clear"
-LAYERS="/place/porto_layers"
-NAME="test-layer"
+NAME = "test-clear-storage"
 
-WIDTHS = [1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 36, 1, 1, 1, 1, 1, 4, 1, 1, 4, 4, 0]
+WIDTHS = [255, 1, 255, 1, 255, 1, 12, 255, 1, 255, 1, 36, 1, 255, 1, 1, 1, 4, 1, 1, 4, 4] + [255] * 16
 
-def CreateRecursive(path, k):
-    if k >= len(WIDTHS):
-        return
+def CreateRecursive(path):
+    dirfd1 = None
+    dirfd = os.open(path, os.O_PATH)
+    try:
+        for i in WIDTHS:
+            name = 'x' * i
+            os.mkdir(name, dir_fd=dirfd)
 
-    width = WIDTHS[k]
+            dirfd1 = os.open(name, os.O_PATH, dir_fd=dirfd)
+            os.close(dirfd)
+            dirfd, dirfd1 = dirfd1, None
 
-    if width == 0:
-        open(path + "/file.txt", "w").write(str(k))
-    else:
-        for i in range(0, WIDTHS[k]):
-            new_path = path + "/" + str(i)
-            os.mkdir(new_path)
-            CreateRecursive(new_path, k + 1)
+        os.close(os.open("file.txt", os.O_CREAT|os.O_WRONLY, dir_fd=dirfd))
+    finally:
+        os.close(dirfd)
+        if dirfd1 is not None:
+            os.close(dirfd1)
 
 c = porto.Connection(timeout=10)
 
 try:
-    os.mkdir(TMPDIR)
-except OSError:
-    shutil.rmtree(TMPDIR)
-    os.mkdir(TMPDIR)
+    c.RemoveStorage(NAME)
+except porto.exceptions.VolumeNotFound:
+    pass
 
-open("{}/{}".format(TMPDIR, "file.txt"), "w").write("1234567890")
 
-t = tarfile.open(name="{}/{}".format(TMPDIR, "layer.tar"), mode="w")
-t.add("{}/{}".format(TMPDIR, "file.txt"), arcname = "file.txt")
-t.close()
+with tempfile.TemporaryDirectory() as tmpdir, contextlib.ExitStack() as cleanup:
+    storage_path = os.path.join(tmpdir, "storage.tar")
+    with tarfile.open(storage_path, "w") as t, tempfile.NamedTemporaryFile() as tmpfile:
+        tmpfile.write(b"foobar")
+        tmpfile.flush()
+        t.add(tmpdir, arcname="file.txt")
 
-os.unlink("{}/{}".format(TMPDIR, "file.txt"))
+    c.ImportStorage(NAME, storage_path)
+    v = cleanup.enter_context(CreateVolume(c, backend='bind', storage=NAME))
 
-BASE = "{}/{}".format(LAYERS, NAME)
+    assert os.stat(v.path) != None
+    assert os.stat(os.path.join(v.path, "file.txt")) != None
 
-if NAME in [layer.name for layer in c.ListLayers()]:
-    print "Removing existing layer at: {}".format(BASE)
-    shutil.rmtree(BASE)
+    print("Preparing special directory tree of depth: {}, path len: {}  ... ".format(len(WIDTHS), sum(WIDTHS)))
+    start_ts = time.time()
+    CreateRecursive(v.path)
+    stop_ts = time.time()
+    print("Prepare took {} s".format(stop_ts - start_ts))
 
-c.ImportLayer(NAME, "{}/{}".format(TMPDIR, "layer.tar"))
+    v.Unlink()
 
-assert os.stat(BASE) != None
-assert os.stat("{}/file.txt".format(BASE)) != None
+    creation = stop_ts - start_ts
 
-print "Preparing special directory tree of depth: {} ... ".format(len(WIDTHS))
-start_ts = time.time()
-CreateRecursive(BASE, 0)
-stop_ts = time.time()
-print "Prepare took {} s".format(stop_ts - start_ts)
+    print("Removing layer... ")
+    start_ts = time.time()
+    c.RemoveStorage(NAME)
+    stop_ts = time.time()
+    print("Removal took {} s".format(stop_ts - start_ts))
 
-creation = stop_ts - start_ts
-
-print "Removing layer... "
-start_ts = time.time()
-c.RemoveLayer(NAME)
-stop_ts = time.time()
-print "Removal took {} s".format(stop_ts - start_ts)
-
-removal = stop_ts - start_ts
-
-os.unlink("{}/{}".format(TMPDIR, "layer.tar"))
-os.rmdir(TMPDIR)
+    storages = {x.name for x in c.ListStorages()}
+    assert NAME not in storages, "{} must not be in {}".format(NAME, storages)

@@ -144,6 +144,7 @@ ADD_PYTHON_TEST(volume-restore)
 ADD_PYTHON_TEST(htb-restore)
 ADD_PYTHON3_TEST(retriability)
 ADD_PYTHON3_TEST(async-cleanup)
+ADD_PYTHON3_TEST(clear)
 
 ADD_PYTHON3_TEST(volume_list)
 # TODO(ovov): enable this

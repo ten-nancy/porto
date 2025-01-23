@@ -30,56 +30,45 @@ extern "C" {
 
 constexpr off_t ROTATE_OFFSET_LIMIT = 16384; // 16Kb
 
-static __thread std::atomic_bool *StopNftw;
+// TODO(ovov): maybe use version from gnulib with fts_cwd_fd:
+// https://git.savannah.gnu.org/cgit/gnulib.git/tree/lib/fts_.h?id=d4ec02b3cc70cddaaa5183cc5a45814e0afb2292#n133
+// With such approach we dont need chdir to handle long path names
+static TError RemoveRecursive(const TPath &path, bool remove_root, std::atomic_bool *interrupt = nullptr) {
+    TPathWalk walk;
 
-static int nftw_clear_cb(const char *path, const struct stat *, int tflag, struct FTW* ftwbuf) {
-    if (ftwbuf->level == 0)
-        return 0;
-    if (StopNftw && *StopNftw) {
-        errno = EINTR;
-        return -1;
-    }
-    switch (tflag) {
-    case FTW_D:
-    case FTW_DNR:
-    case FTW_DP:
-        return rmdir(path);
-    default:
-        return unlink(path);
-    }
-}
+    auto error = walk.Open(path, FTS_PHYSICAL | FTS_XDEV | FTS_NOSTAT);
+    if (error)
+        return error;
 
-static TError ClearRecursive(const TPath &path, std::atomic_bool *interrupt = nullptr) {
-    StopNftw = interrupt;
-    int ret = nftw(path.c_str(), nftw_clear_cb, 1024, FTW_DEPTH|FTW_MOUNT|FTW_PHYS);
-    StopNftw = nullptr;
-    if (ret)
-        return TError::System("nftw failed");
-    return OK;
-}
+    if (unshare(CLONE_FS) < 0)
+        return TError::System("unshare(CLONE_FS)");
 
-static int nftw_remove_cb(const char *path, const struct stat *, int tflag, struct FTW *) {
-    if (StopNftw && *StopNftw) {
-        errno = EINTR;
-        return -1;
-    }
-    switch (tflag) {
-    case FTW_D:
-    case FTW_DNR:
-    case FTW_DP:
-        return rmdir(path);
-    default:
-        return unlink(path);
-    }
-}
+    while (1) {
+        error = walk.Next();
+        if (error || !walk.Path)
+            return error;
 
-static TError RemoveRecursive(const TPath &path, std::atomic_bool *interrupt = nullptr) {
-    StopNftw = interrupt;
-    int ret = nftw(path.c_str(), nftw_remove_cb, 1024, FTW_DEPTH|FTW_MOUNT|FTW_PHYS);
-    StopNftw = nullptr;
-    if (ret)
-        return TError::System("nftw failed");
-    return OK;
+        if (interrupt && *interrupt)
+            return TError("RemoveRecursive was interrupted");
+
+        if (walk.Directory && !walk.Postorder)
+            continue;
+
+        auto level = walk.Level();
+        int unlink_flags = walk.Directory ? AT_REMOVEDIR : 0;
+        const char *pathname;
+        if (level < 0)
+            continue;
+        else if (level == 0) {
+            if (!remove_root)
+                continue;
+            pathname = walk.Ent->fts_path;
+        } else
+            pathname = walk.Ent->fts_name;
+
+        if (unlinkat(AT_FDCWD, pathname, unlink_flags) < 0)
+            return TError::System("unlinkat");
+    }
 }
 
 void TStatFS::Init(const struct statfs &st) {
@@ -635,7 +624,7 @@ TError TPath::Rmdir() const {
  * Works only on one filesystem and aborts if sees mountpint.
  */
 TError TPath::ClearDirectory() const {
-    return ClearRecursive(*this);
+    return RemoveRecursive(*this, false);
 }
 
 TError TFile::ClearDirectory() const {
@@ -650,17 +639,17 @@ TError TFile::RemoveAt(const TPath &path) const {
     if (error) {
         error = UnlinkAt(path);
     } else {
-        error = RemoveRecursive(dir.RealPath());
+        error = RemoveRecursive(dir.RealPath(), true);
     }
     return error;
 }
 
 TError TPath::RemoveAll() const {
-    return RemoveRecursive(*this);
+    return RemoveRecursive(*this, true);
 }
 
 TError TPath::RemoveAllInterruptible(std::atomic_bool &interrupt) const {
-    return RemoveRecursive(*this, &interrupt);
+    return RemoveRecursive(*this, true, &interrupt);
 }
 
 TError TPath::ClearEmptyDirectories(const TPath &root) const {
