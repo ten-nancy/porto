@@ -6,6 +6,7 @@ import sys
 import subprocess
 import re
 import collections
+
 from test_common import *
 
 remote_host = "fe00::2"
@@ -519,39 +520,44 @@ network {
 
 conn = porto.Connection(timeout=60)
 
-try:
-    print("Set net.ipv6.conf.all.forwarding=1")
-    setup_all_forwarding()
+def main():
+    try:
+        print("Set net.ipv6.conf.all.forwarding=1")
+        setup_all_forwarding()
 
-    print("Setup local veth ifaces veth1/veth2 for iperf3 tests")
-    setup_local_veth(conn)
+        print("Setup local veth ifaces veth1/veth2 for iperf3 tests")
+        setup_local_veth(conn)
 
-    # common tests
-    # run_htb_test(True)
-    # run_hfsc_test(True)
-    run_pfifo_fast_test()
-    run_fq_codel_test()
-    run_sock_diag_test()
+        # common tests
+        # run_htb_test(True)
+        # run_hfsc_test(True)
+        run_pfifo_fast_test()
+        run_fq_codel_test()
+        run_sock_diag_test()
 
-    # veth is created with 32 tx queues by default on kernel 5.15 because the ip utility doesn't pass the IFLA_NUM_TX_QUEUES attribute.
-    # It's the reason why Porto gets two errors, but both cases are retrievable and don't influence the result.
-    errors = int(conn.GetProperty('/', 'porto_stat[errors]'))
-    excepted = 0
-    if GetKernelVersion() >= (5, 15):
-        excepted = 2
-    Expect(excepted == errors, message="Error count: %d, expected: %d" % (errors, excepted))
+        # veth is created with 32 tx queues by default on kernel 5.15 because the ip utility doesn't pass the IFLA_NUM_TX_QUEUES attribute.
+        # It's the reason why Porto gets two errors, but both cases are retrievable and don't influence the result.
+        errors = int(conn.GetProperty('/', 'porto_stat[errors]'))
+        excepted = 0
+        if GetKernelVersion() >= (5, 15):
+            excepted = 2
+        Expect(excepted == errors, message="Error count: %d, expected: %d" % (errors, excepted))
 
-finally:
-    cts = conn.List()
-    if 'test-net-a' in cts:
-        conn.Destroy('test-net-a')
+    finally:
+        cts = conn.List()
+        if 'test-net-a' in cts:
+            conn.Destroy('test-net-a')
 
-    if 'test-net-b' in cts:
-        conn.Destroy('test-net-b')
+        if 'test-net-b' in cts:
+            conn.Destroy('test-net-b')
 
-    if 'test-net-s' in cts:
-        conn.Destroy('test-net-s')
+        if 'test-net-s' in cts:
+            conn.Destroy('test-net-s')
 
-    print("Cleanup uplink limit")
+        print("Cleanup uplink limit")
 
-    teardown_local_veth(conn)
+        teardown_local_veth(conn)
+
+
+if __name__ == '__main__':
+    run_flappy(main)

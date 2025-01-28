@@ -4631,7 +4631,7 @@ public:
 
     TError Set(uint64_t value) {
         CT->RespawnDelay = value;
-        CT->ClearProp(EProperty::RESPAWN_DELAY);
+        CT->SetProp(EProperty::RESPAWN_DELAY);
         return OK;
     }
 

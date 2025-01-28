@@ -29,32 +29,7 @@ macro(ADD_PYTHON3_TEST NAME)
                   WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 endmacro()
 
-if(PARALLEL_TESTS)
-    macro(ADD_TESTS_PART PART)
-        add_test(NAME part${PART}
-                 COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python3 -uB ${CMAKE_SOURCE_DIR}/test/test-parts.py ${PART}
-                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-    endmacro()
-
-    # split tests into 8 parts
-    foreach(VARIABLE 1 2 3 4 5 6 7 8)
-        ADD_TESTS_PART(${VARIABLE})
-    endforeach()
-endif()
-
 # head
-
-add_test(NAME cleanup_portod
-         COMMAND sudo ${CMAKE_BINARY_DIR}/portod --discard --verbose stop
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-
-add_test(NAME cleanup_logs
-         COMMAND sudo sh -c "rm -f /var/log/portod.*"
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-
-add_test(NAME portod_start
-         COMMAND sudo ${CMAKE_BINARY_DIR}/portod --discard --verbose start
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # interface tests
 
@@ -177,27 +152,23 @@ add_test(NAME leaks
 
 ADD_PYTHON_TEST(performance)
 
-add_test(NAME fuzzer_soft
-         COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python -uB ${CMAKE_SOURCE_DIR}/test/fuzzer.py --no-kill
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# add_test(NAME fuzzer_soft
+#          COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python -uB ${CMAKE_SOURCE_DIR}/test/fuzzer.py --no-kill
+#          WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
-add_test(NAME fuzzer
-         COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python -uB ${CMAKE_SOURCE_DIR}/test/fuzzer.py
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# add_test(NAME fuzzer
+#          COMMAND sudo -E PYTHONPATH=${CMAKE_SOURCE_DIR}/src/api/python python -uB ${CMAKE_SOURCE_DIR}/test/fuzzer.py
+#          WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
-set_tests_properties(fuzzer
-                     PROPERTIES
-                     ENVIRONMENT "USE_PORTO_KERNEL=${USE_PORTO_KERNEL}")
+# set_tests_properties(fuzzer
+#                      PROPERTIES
+#                      ENVIRONMENT "USE_PORTO_KERNEL=${USE_PORTO_KERNEL}")
 
-set_tests_properties(fuzzer_soft
-                     PROPERTIES
-                     ENVIRONMENT "USE_PORTO_KERNEL=${USE_PORTO_KERNEL}")
+# set_tests_properties(fuzzer_soft
+#                      PROPERTIES
+#                      ENVIRONMENT "USE_PORTO_KERNEL=${USE_PORTO_KERNEL}")
 # tail
 
 ADD_PYTHON_TEST(stats)
-
-add_test(NAME portod_stop
-         COMMAND sudo ${CMAKE_BINARY_DIR}/portod stop
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # end

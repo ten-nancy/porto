@@ -44,6 +44,8 @@ static void PrintVersion() {
 }
 
 static int Status() {
+    Signal(SIGPIPE, SIG_IGN);
+
     if (!MasterPidFile.Path.Exists()) {
         std::cout << "stopped" << std::endl;
         return EXIT_FAILURE;
@@ -405,6 +407,8 @@ int main(int argc, char **argv) {
 
     if (cmd == "start")
         return StartPortod();
+
+    Signal(SIGPIPE, SIG_IGN);
 
     if (cmd == "stop")
         return StopPortod();

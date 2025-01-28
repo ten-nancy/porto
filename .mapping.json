@@ -291,7 +291,6 @@
   "test/test-net.py":"infra/porto/porto/test/test-net.py",
   "test/test-oom.py":"infra/porto/porto/test/test-oom.py",
   "test/test-os.py":"infra/porto/porto/test/test-os.py",
-  "test/test-parts.py":"infra/porto/porto/test/test-parts.py",
   "test/test-performance.py":"infra/porto/porto/test/test-performance.py",
   "test/test-place.py":"infra/porto/porto/test/test-place.py",
   "test/test-portoctl-attach.py":"infra/porto/porto/test/test-portoctl-attach.py",

@@ -8,6 +8,7 @@ import time
 import subprocess
 import shutil
 import traceback
+import tempfile
 from test_common import *
 
 def AsRoot():
@@ -121,18 +122,18 @@ def ValidateRunningData(r):
     except porto.exceptions.NotSupported:
         pass
 
-def RespawnTicks(r):
+def RespawnTicks(r, timeout, min_ticks):
+    t = time.time()
     old = r.GetData("respawn_count")
     tick = 0
-    for i in range(0,5):
-        time.sleep(1)
+    for i in range(5):
+        time.sleep(timeout)
         new = r.GetData("respawn_count")
         if old != new:
             tick += 1
             old = new
-    #Suppose that respawn will likely tick at least 2 times in 5s
-    #otherwise there is some issues there
-    ExpectLe(3, tick)
+
+    ExpectLe(min_ticks, tick)
 
 
 def TestRecovery():
@@ -144,13 +145,11 @@ def TestRecovery():
 
     c = porto.Connection(timeout=30)
 
-    parent = c.Create("parent")
-    parent.SetProperty("command", "sleep 1")
-    child = c.Create("parent/child")
-    child.SetProperty("command", "sleep 2")
-    parent.Start()
-    child.Start()
+    parent = c.Run("parent", command="tail -f /dev/null", weak=False)
+    child = c.Run("parent/child", command="tail -f /dev/null", weak=False)
     child.Stop()
+
+    KillPid(int(parent["root_pid"]), signal.SIGTERM)
     parent.Wait(timeout=2000)
 
     AsRoot()
@@ -166,28 +165,32 @@ def TestRecovery():
 
     c.Destroy("parent")
 
-    print("Make sure we can figure out that containers are dead even if master dies")
-
     r = c.Create("a:b")
-    r.SetProperty("command", "sleep 3")
+    r.SetProperty("command", "tail -f /dev/null")
     r.Start()
+    root_pid = int(r['root_pid'])
 
     AsRoot()
     KillPid(GetMasterPid(), signal.SIGKILL)
     subprocess.check_call([portod, "start"])
+
     AsAlice()
     c.connect()
 
-    ExpectEq(c.Wait(["a:b"]), "a:b")
-    c.Destroy("a:b")
+    KillPid(root_pid, signal.SIGUSR1)
 
-    print("Make sure we don't kill containers when doing recovery")
+    ExpectEq(c.Wait(["a:b"]), "a:b")
+    exit_status = int(r['exit_status'])
+    Expect(os.WIFSIGNALED(exit_status))
+    ExpectEq(os.WTERMSIG(exit_status), signal.SIGUSR1)
+
+    c.Destroy("a:b")
 
     c.disconnect()
     AsRoot()
     c.connect()
 
-    props = {"command" : "sleep 1000",\
+    props = {"command" : "tail -f /dev/null",\
              "user" : "porto-alice",\
              "group" : "porto-bob",\
              "env" : "a=a;b=b"}
@@ -225,7 +228,7 @@ def TestRecovery():
     parent = c.Create("a")
     child = c.Create("a/b")
     parent.SetProperty("isolate", "true")
-    child.SetProperty("command", "sleep 1000")
+    child.SetProperty("command", "tail -f /dev/null")
     child.Start()
 
     AsRoot()
@@ -240,7 +243,7 @@ def TestRecovery():
     print("restore virt_mode=host meta + virt_mode=job child container")
 
     parent = c.Run("test-host", virt_mode='host', weak=False)
-    child = c.Run("test-host/job", virt_mode='job', command="sleep 1000", weak=False)
+    child = c.Run("test-host/job", virt_mode='job', command="tail -f /dev/null", weak=False)
 
     AsRoot()
     ReloadPortod()
@@ -259,7 +262,7 @@ def TestRecovery():
     parent = c.Create("a")
     child = c.Create("a/b")
     parent.SetProperty("isolate", "false")
-    child.SetProperty("command", "sleep 1000")
+    child.SetProperty("command", "tail -f /dev/null")
     child.Start()
 
     AsRoot()
@@ -288,7 +291,8 @@ def TestRecovery():
     print("Make sure some data is persistent")
 
     r = c.Create("a:b")
-    r.SetProperty("command", "sort -S 1G /dev/urandom")
+    r.SetProperty("cpu_limit", "1c") # for memory.high
+    r.SetProperty("command", "sh -c 'head -c 1G /dev/zero | tail'")
     r.SetProperty("memory_limit", "32M")
     r.Start()
     r.Wait(timeout=60000)
@@ -343,7 +347,7 @@ def TestRecovery():
 
     print("Make sure paused state is persistent")
 
-    r.SetProperty("command", "sleep 1000")
+    r.SetProperty("command", "tail -f /dev/null")
     r.Start()
 
     ValidateRunningData(r)
@@ -373,19 +377,22 @@ def TestRecovery():
 
     print("Make sure respawn_count ticks after recovery")
 
-    r = c.Create("a:b")
+    r = c.Create("test_respawn_ticks")
     r.SetProperty("command", "true")
     r.SetProperty("respawn", "true")
+    r.SetProperty("respawn_delay", "50ms")
     r.Start()
 
-    RespawnTicks(r)
+    RespawnTicks(r, 0.5, 3)
 
     AsRoot()
     KillPid(GetPortodPid(), signal.SIGKILL)
     AsAlice()
     c.connect()
 
-    RespawnTicks(r)
+    r = c.Find("test_respawn_ticks")
+
+    RespawnTicks(r, 0.5, 3)
     r.Destroy()
 
     n = 100
@@ -394,7 +401,7 @@ def TestRecovery():
 
     for i in range(0, n):
         r = c.Create("recover" + str(i))
-        r.SetProperty("command", "sleep 1000")
+        r.SetProperty("command", "tail -f /dev/null")
         r.Start()
 
     ExpectEq(len(c.List()), n)
@@ -427,13 +434,15 @@ def TestWaitRecovery():
     c = porto.Connection(timeout=30)
 
     aaa = c.Create("aaa")
-    aaa.SetProperty("command", "sleep 3")
+    aaa.SetProperty("command", "tail -f /dev/null")
     aaa.Start()
+    root_pid = int(aaa["root_pid"])
 
     AsRoot()
     KillPid(GetPortodPid(), signal.SIGKILL)
     c.connect()
 
+    KillPid(root_pid, signal.SIGTERM)
     aaa = c.Find("aaa")
     ExpectEq(aaa.Wait(timeout=3000), "aaa")
     ExpectProp(aaa, "state", "dead")
@@ -464,16 +473,9 @@ def TestVolumeRecovery():
 
     c = porto.Connection(timeout=30)
 
-    try:
-        shutil.rmtree("/tmp/volume_c")
-    except OSError:
-        pass
-
-    os.mkdir("/tmp/volume_c", 0o0755)
-
     ExpectEq(len(c.ListVolumes()), 0)
 
-    limited = c.CreateVolume("/tmp/volume_c", space_limit="100m", inode_limit="1000")
+    limited = c.CreateVolume(space_limit="100m", inode_limit="1000")
     unlimited = c.CreateVolume()
 
     try:
@@ -505,20 +507,18 @@ def TestVolumeRecovery():
     Expect(not limited.path in mounts)
     Expect(not unlimited.path in mounts)
 
-    os.rmdir("/tmp/volume_c")
 
 def TestTCCleanup():
     print("Make sure stale tc classes to be cleaned up")
 
     AsRoot()
 
-    c = porto.Connection(timeout=30)
-
-    c.connect()
-
     RestartPortod()
 
     kvs = set(os.listdir("/run/porto/kvs"))
+
+    c = porto.Connection(timeout=30)
+    c.connect()
 
     c.Create("a")
     r = c.Create("a/b")
@@ -580,6 +580,7 @@ def TestTCCleanup():
 
     c.Destroy("a")
 
+
 def TestPersistentStorage():
     print("Verifying volume persistent storage behavior")
 
@@ -590,7 +591,7 @@ def TestPersistentStorage():
 
     r = c.Create("test")
     base = c.CreateVolume(None, layers=["ubuntu-precise"], storage="test-persistent-base")
-    ExpectEq(len(c.ListStorages()), 1)
+    Expect('test-persistent-base' in {x.name for x in c.ListStorages()})
 
     r.SetProperty("root", base.path)
     r.SetProperty("command", "bash -c \'echo 123 > 123.txt\'")
@@ -602,7 +603,7 @@ def TestPersistentStorage():
     RestartPortod()
     AsAlice()
 
-    ExpectEq(len(c.ListStorages()), 1)
+    Expect('test-persistent-base' in {x.name for x in c.ListStorages()})
     r = c.Create("test")
     base = c.CreateVolume(None, layers=["ubuntu-precise"], storage="test-persistent-base")
 
@@ -616,7 +617,7 @@ def TestPersistentStorage():
 
     os.mkdir(base.path + "/loop")
     loop = c.CreateVolume(base.path + "/loop", backend="loop", storage="test-persistent-loop", space_limit="1G")
-    ExpectEq(len(c.ListStorages()), 2)
+    ExpectEq(len({'test-persistent-base', 'test-persistent-loop'} & {x.name for x in c.ListStorages()}), 2)
 
     r.SetProperty("command", "bash -c \'echo 789 > /loop/loop.txt\'")
     r.Start()
@@ -627,7 +628,7 @@ def TestPersistentStorage():
     RestartPortod()
     AsAlice()
 
-    ExpectEq(len(c.ListStorages()), 2)
+    ExpectEq(len({'test-persistent-base', 'test-persistent-loop'} & {x.name for x in c.ListStorages()}), 2)
     r = c.Create("test")
     base = c.CreateVolume(None, layers=["ubuntu-precise"], storage="test-persistent-base")
     loop = c.CreateVolume(base.path + "/loop", backend="loop", storage="test-persistent-loop", space_limit="1G")
@@ -642,11 +643,11 @@ def TestPersistentStorage():
     ExpectException(c.RemoveStorage, porto.exceptions.Busy, "test-persistent-loop")
     loop.Unlink()
     c.RemoveStorage("test-persistent-loop")
-    ExpectEq(len(c.ListStorages()), 1)
+    ExpectEq(len({'test-persistent-base'} & {x.name for x in c.ListStorages()}), 1)
 
     os.mkdir(base.path + "/native")
     native = c.CreateVolume(base.path + "/native", backend="native", storage="test-persistent-native")
-    ExpectEq(len(c.ListStorages()), 2)
+    ExpectEq(len({'test-persistent-base', 'test-persistent-native'} & {x.name for x in c.ListStorages()}), 2)
 
     r.SetProperty("command", "bash -c \'echo abcde > /native/abcde.txt\'")
     r.Start()
@@ -656,12 +657,12 @@ def TestPersistentStorage():
     AsRoot()
     RestartPortod()
     AsAlice()
-    ExpectEq(len(c.ListStorages()), 2)
+    ExpectEq(len({'test-persistent-base', 'test-persistent-native'} & {x.name for x in c.ListStorages()}), 2)
 
     r = c.Create("test")
     base = c.CreateVolume(None, layers=["ubuntu-precise"], storage="test-persistent-base")
     native = c.CreateVolume(base.path + "/native", backend="native", storage="test-persistent-native")
-    ExpectEq(len(c.ListStorages()), 2)
+    ExpectEq(len({'test-persistent-base', 'test-persistent-native'} & {x.name for x in c.ListStorages()}), 2)
 
     r.SetProperty("root", base.path)
     r.SetProperty("command", "cat /native/abcde.txt")
@@ -675,33 +676,30 @@ def TestPersistentStorage():
     c.RemoveStorage("test-persistent-base")
     c.RemoveStorage("test-persistent-native")
 
-    os.mkdir("/tmp/test-recover-place")
-    os.mkdir("/tmp/test-recover-place/porto_layers")
-    os.mkdir("/tmp/test-recover-place/porto_volumes")
-    os.mkdir("/tmp/test-recover-place/porto_storage")
+    with tempfile.TemporaryDirectory(dir='/tmp') as tmpdir:
+        v = c.CreateVolume(None, place=tmpdir, storage="test", backend="native", private="some_private_value")
+        ExpectEq(len(c.ListStorages(place=tmpdir)), 1)
+        f = open(v.path + "/test.txt", "w")
+        f.write("testtesttest")
+        f.close()
 
-    v = c.CreateVolume(None, place="/tmp/test-recover-place", storage="test", backend="native", private="some_private_value")
-    ExpectEq(len(c.ListStorages(place="/tmp/test-recover-place")), 1)
-    f = open(v.path + "/test.txt", "w")
-    f.write("testtesttest")
-    f.close()
+        AsRoot()
+        RestartPortod()
+        AsAlice()
 
-    AsRoot()
-    RestartPortod()
-    AsAlice()
+        v = c.CreateVolume(None, place=tmpdir, storage="test", backend="native")
+        ExpectEq(len(c.ListStorages(place=tmpdir)), 1)
+        ExpectEq(v.GetProperty('private'), "some_private_value")
+        s = c.ListStorages(place=tmpdir)[0]
+        ExpectEq(s.private_value, "some_private_value")
+        f = open(v.path + "/test.txt", "r").read() == "testtesttest\n"
 
-    v = c.CreateVolume(None, place="/tmp/test-recover-place", storage="test", backend="native")
-    ExpectEq(len(c.ListStorages(place="/tmp/test-recover-place")), 1)
-    ExpectEq(v.GetProperty('private'), "some_private_value")
-    s = c.ListStorages(place="/tmp/test-recover-place")[0]
-    ExpectEq(s.private_value, "some_private_value")
-    f = open(v.path + "/test.txt", "r").read() == "testtesttest\n"
+        v.Unlink()
+        c.RemoveStorage("test", place=tmpdir)
 
-    v.Unlink()
-    c.RemoveStorage("test", place="/tmp/test-recover-place")
+        ExpectEq(len(c.ListStorages(place=tmpdir)), 0)
+        ExpectEq(len({'test-persistent-base', 'test-persistent-native', 'test-persistent-loop'} & {x.name for x in c.ListStorages()}), 0)
 
-    ExpectEq(len(c.ListStorages(place="/tmp/test-recover-place")), 0)
-    ExpectEq(len(c.ListStorages()), 0)
 
 def TestAttach():
     print("Verify that tids attached correctly after reload")
@@ -769,57 +767,10 @@ def TestAttach():
     assert pids_b_2 == pids_b_3
     assert tids_b_2 == tids_b_3
 
-subprocess.check_call([portod, "--verbose", "reload"])
-ret = 0
-
-try:
+if __name__ == "__main__":
     TestRecovery()
     TestWaitRecovery()
     TestVolumeRecovery()
     TestTCCleanup()
     TestPersistentStorage()
     TestAttach()
-except BaseException as e:
-    print(traceback.format_exc())
-    ret = 1
-
-AsRoot()
-c = porto.Connection(timeout=30)
-
-for r in c.ListContainers():
-    try:
-        r.Destroy()
-    except:
-        pass
-
-for v in c.ListVolumes():
-    try:
-        v.Unlink()
-    except:
-        pass
-
-for s in c.ListStorages():
-    try:
-        s.RemoveStorage()
-    except:
-        pass
-
-if os.path.exists("/tmp/test-recover-place"):
-    for s in c.ListStorages(place="/tmp/test-recover-place"):
-        try:
-            s.RemoveStorage()
-        except:
-            pass
-
-if os.path.exists("/tmp/volume_c"):
-    shutil.rmtree("/tmp/volume_c")
-
-if os.path.exists("/place/porto_volumes/leftover_volume"):
-    shutil.rmtree("/place/porto_volumes/leftover_volume")
-
-if os.path.exists("/tmp/test-recover-place"):
-    shutil.rmtree("/tmp/test-recover-place")
-
-subprocess.check_call([portod, "--verbose", "--discard", "reload"])
-
-sys.exit(ret)

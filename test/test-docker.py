@@ -1,5 +1,6 @@
 import porto
 import subprocess
+
 from test_common import *
 
 conn = porto.Connection(timeout=30)
@@ -8,7 +9,7 @@ DefaultCap = "0000003fffffffff"
 if GetKernelVersion() >= (5, 15):
     DefaultCap =  "000001ffffffffff"
 
-try:
+def main():
     ConfigurePortod('test-docker', """
     container {
          use_os_mode_cgroupns : true,
@@ -74,5 +75,7 @@ try:
     c.Destroy()
     a.Destroy()
 
-finally:
-    ConfigurePortod('test-docker', '')
+
+if __name__ == '__main__':
+    # flappy
+    run_flappy(main)

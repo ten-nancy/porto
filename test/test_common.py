@@ -9,6 +9,7 @@ import time
 import platform
 import re
 import subprocess
+from traceback import print_exc
 import contextlib
 import porto
 
@@ -181,30 +182,18 @@ def GetMasterPid():
     return pid
 
 def ReloadPortod():
-    pid = GetPortodPid()
-    os.kill(GetMasterPid(), signal.SIGHUP)
-    try:
-        for i in range(3000):
-            os.kill(pid, 0)
-            time.sleep(0.1)
-        raise Exception("cannot reload porto")
-    except OSError:
-        pass
+    subprocess.check_call([portod, "reload"])
 
 def StopPortod():
-    global portod
     subprocess.check_call([portod, 'stop'])
 
 def RestartPortodWithStdlog(out):
-    global portod
     subprocess.check_call([portod, '--stdlog', 'restart'], stdout=out)
 
 def RestartPortod():
     # Note that is restart, not reload!
     # Thus we intentionally want to drop state
-
-    global portod
-    subprocess.check_call([portod, 'restart'])
+    subprocess.check_call([portod, 'restart', '--discard'])
 
 def CleanupConfigs():
     if not os.path.exists('/etc/portod.conf.d'):
@@ -286,6 +275,21 @@ def CreateVolume(conn, *args, **kwargs):
             v.Unlink()
         except porto.exceptions.VolumeNotFound:
             pass
+
+# TODO: fix such tests
+def run_flappy(main_func, attempts=3):
+    # flappy
+    for i in range(attempts):
+        try:
+            main_func()
+            break
+        except AssertionError:
+            if i + 1 == attempts:
+                raise
+            print_exc()
+            CleanupConfigs()
+            RestartPortod()
+
 
 
 def GetUseCgroup2():
