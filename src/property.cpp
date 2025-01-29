@@ -6467,6 +6467,8 @@ public:
         stat["PacketsForcedToFB"] = CT->Net->NetLimitSoftStat.fbed;
         stat["PacketsAboveGuarantee"] = CT->Net->NetLimitSoftStat.dropping;
         stat["PacketsUntouched"] = CT->Net->NetLimitSoftStat.pass;
+        stat["BytesForcedToFB"] = CT->Net->NetLimitSoftStat.fbed_bytes;
+        stat["BytesUntouched"] = CT->Net->NetLimitSoftStat.pass_bytes;
         return OK;
     }
 

@@ -14,6 +14,9 @@ struct TNetLimitSoftStat {
     uint64_t fbed = 0;
     uint64_t dropping = 0;
     uint64_t pass = 0;
+
+    uint64_t fbed_bytes = 0;
+    uint64_t pass_bytes = 0;
 };
 
 class TNetLimitSoft : public TNonCopyable {
