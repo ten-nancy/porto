@@ -1,3 +1,5 @@
+import test_common
+
 import porto
 import pwd
 import grp
@@ -11,7 +13,7 @@ ram_size = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') # in bytes
 ram_size = ram_size / (1024.**3) # in GB
 
 if ram_size <= MIN_RAM_SIZE or MAX_RAM_SIZE <= ram_size:
-    print "\nERROR: Test is valid only for machines with RAM from {} GB to {} GB (not including)!\n".format(MIN_RAM_SIZE, MAX_RAM_SIZE)
+    print("\nERROR: Test is valid only for machines with RAM from {} GB to {} GB (not including)!\n".format(MIN_RAM_SIZE, MAX_RAM_SIZE))
     sys.exit(1)
 
 def Catch(func, *args, **kwargs):
@@ -24,11 +26,10 @@ def Catch(func, *args, **kwargs):
 #Note that test was developed on 8G machine
 #TODO fix that
 
-c = porto.Connection()
-c.connect()
+c = porto.Connection(timeout=30)
 
 if "memory_guarantee" not in c.Plist():
-    print "SKIP memory_guarantee"
+    print("SKIP memory_guarantee")
     sys.exit()
 
 ct0 = c.Create("test")
@@ -133,4 +134,4 @@ c.Destroy("test2/test2")
 c.Destroy("test1")
 c.Destroy("test2")
 
-print "porto memory guarantee overcommit prevention test OK!"
+print("porto memory guarantee overcommit prevention test OK!")

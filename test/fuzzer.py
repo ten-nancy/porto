@@ -953,7 +953,7 @@ def cleanup_fuzzer():
 
     time.sleep(1)
 
-    conn = porto.Connection()
+    conn = porto.Connection(timeout=30)
 
     for c in our_containers(conn):
         try:

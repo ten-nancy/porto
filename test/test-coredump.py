@@ -20,7 +20,7 @@ if os.path.exists('/tmp/core'):
 if os.path.exists('/tmp/core-b'):
     os.unlink('/tmp/core-b')
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 a = conn.Run('a', command='sleep 100', ulimit='core: 0')
 
@@ -117,7 +117,7 @@ open('/proc/sys/fs/suid_dumpable', 'w').write('0')
 
 
 AsAlice()
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 
 a = conn.Run('a', command='/tmp/suid_sleep 100', ulimit='core: unlimited')

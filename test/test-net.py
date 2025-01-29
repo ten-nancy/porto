@@ -1,7 +1,7 @@
 from test_common import *
 import porto
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 ExpectEq(conn.GetProperty("/", "porto_stat[networks]"), "1")
 

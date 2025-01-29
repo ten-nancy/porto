@@ -5,7 +5,7 @@ import subprocess
 def SetSize(count):
     open("/proc/sys/vm/nr_hugepages", 'w').write(count)
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 root = conn.Find('/')
 
 if not os.path.exists('/dev/hugepages'):
@@ -97,7 +97,7 @@ ExpectEq(root['memory_guarantee_total'], '0')
 ExpectEq(Catch(conn.Run, 'a', memory_guarantee=total), porto.exceptions.ResourceNotAvailable)
 
 AsAlice()
-alice_conn = porto.Connection()
+alice_conn = porto.Connection(timeout=30)
 
 a = alice_conn.Run('a', memory_guarantee=int(total) - 2**31)
 

@@ -6,7 +6,7 @@ import time
 from test_common import *
 from threading import Thread
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 ConfigurePortod('test-retriability', """
 daemon {

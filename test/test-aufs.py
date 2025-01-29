@@ -11,7 +11,7 @@ aufs_tar = '/tmp/test-aufs.tar'
 layer_name = 'test-aufs'
 layer_path = '/place/porto_layers/' + layer_name
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 aufs = conn.CreateVolume(backend='plain')
 

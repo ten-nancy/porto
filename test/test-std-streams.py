@@ -1,7 +1,7 @@
 import porto
 from test_common import *
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 blksize = os.stat(__file__).st_blksize
 

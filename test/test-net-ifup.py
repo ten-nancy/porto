@@ -26,7 +26,7 @@ network {
 }
 """ % script_path)
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 ct = c.CreateWeakContainer('test-ifup-script')
 ct.SetProperty('net', "L3 veth")
 ct.SetProperty('labels', 'AA.aaa: test')

@@ -82,7 +82,7 @@ assert subprocess.check_output([portod, 'status']) == "running\n"
 os.rmdir(TMPDIR)
 
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 conn.CreateWeakContainer('a')
 conn.CreateWeakContainer('b')
 

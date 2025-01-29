@@ -139,6 +139,7 @@ def main():
     m = run("foo", memory_limit="16M", cpu_limit="1c", oom_is_fatal=True)
     a = run("foo/bar", command=stress_memory_loop, memory_limit="512M", cpu_limit="1c", oom_is_fatal=True)
     a.Wait(timeout_s=30)
+    m.Wait(timeout_s=30)
 
     ExpectEq(a['state'], 'dead')
     ExpectEq(a['oom_killed'], True)

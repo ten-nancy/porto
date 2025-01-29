@@ -38,7 +38,7 @@ def porto_reconnect(c):
     if c is not None:
         c.disconnect()
 
-    return porto.Connection(timeout=600)
+    return porto.Connection(timeout=30)
 
 def get_quota_fs_projid(path):
     fmt = "IIII12x"

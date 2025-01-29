@@ -9,7 +9,7 @@ def ExpectUlimit(a, key, val):
     line = subprocess.check_output(['grep', key, "/proc/{}/limits".format(a['root_pid'])])
     ExpectEq(' '.join(line.split()), key + ' ' + val)
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 a = c.Run("a")
 ExpectUlimit(a, 'Max cpu time', 'unlimited unlimited seconds')

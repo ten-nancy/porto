@@ -14,7 +14,7 @@ core {
 
 AsAlice()
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 c.connect()
 

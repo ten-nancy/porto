@@ -8,7 +8,7 @@ import os
 # disabled because tc do not used
 sys.exit(0)
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 expected_errors = int(conn.GetData('/', 'porto_stat[errors]'))
 expected_warnings = int(conn.GetData('/', 'porto_stat[warnings]'))

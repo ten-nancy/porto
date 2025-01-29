@@ -28,14 +28,14 @@ def Check(ct, value):
 
 CMD = "bash -c \'read; python -c \"\n"\
       "import porto; import sys;\n"\
-      "c = porto.Connection();\n"\
+      "c = porto.Connection(timeout=30);\n"\
       "try:\n"\
       "\tname = c.LocateProcess({}).name;\n"\
       "except:\n"\
       "\tname=\\\"failed\\\";\n"\
       "sys.stdout.write(name);\"\'"
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 Catch(conn.Destroy, CT_NAME("a"))
 Catch(conn.Destroy, CT_NAME("c"))

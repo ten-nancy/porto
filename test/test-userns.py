@@ -1,7 +1,7 @@
 import porto
 from test_common import *
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 v = conn.CreateVolume(layers=['ubuntu-xenial'])
 

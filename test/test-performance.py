@@ -73,7 +73,7 @@ class Executor(object):
         pipe.send("ready")
         ExpectEq(pipe.recv(), "go")
 
-        self.Conn = porto.Connection()
+        self.Conn = porto.Connection(timeout=30)
 
         spawn_times = []
         self.Cts = []

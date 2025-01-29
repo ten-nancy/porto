@@ -3,7 +3,7 @@ import subprocess
 from test_common import *
 
 AsAlice()
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 ExpectEq(conn.GetData('self', 'absolute_name'), "/")
 
 # First level

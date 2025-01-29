@@ -276,6 +276,18 @@ def CreateVolume(conn, *args, **kwargs):
         except porto.exceptions.VolumeNotFound:
             pass
 
+@contextlib.contextmanager
+def RunContainer(conn, *args, **kwargs):
+    v = conn.Run(*args, **kwargs)
+    try:
+        yield v
+    finally:
+        try:
+            v.Destroy()
+        except porto.exceptions.ContainerDoesNotExist:
+            pass
+
+
 # TODO: fix such tests
 def run_flappy(main_func, attempts=3):
     # flappy

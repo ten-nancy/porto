@@ -9,7 +9,7 @@ def parse_task_affinity(ct):
     return [x for x in open('/proc/%s/status' % pid).readlines()
             if 'Cpus_allowed_list' in x][0].split()[1].strip()
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 ct = c.CreateWeakContainer('test-cpu_policy')
 
 smt_enabled = open("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list").read().strip() != "0"

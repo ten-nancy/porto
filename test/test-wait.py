@@ -1,7 +1,7 @@
 from test_common import *
 import porto
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 # stopped
 a = c.Create("a")

@@ -4,7 +4,7 @@ import os
 import time
 import shutil
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 def ExpectRunlevel(ct, level):
     r = conn.Run(ct.name + '/runlevel', wait=10, command='bash -c \'for i in `seq 50` ; do [ "`runlevel`" = "{}" ] && break ; sleep 0.1 ; done; runlevel\''.format(level))
@@ -66,10 +66,17 @@ def CheckCgroupHierarchy(ct, haveCgroups):
             r.Destroy()
 
 def CheckSystemd(ct):
-    r = conn.Run(ct.name + '/child', wait=10, command='systemctl -a', private='portoctl shell', isolate=False)
-    assert len(r['stdout'].strip().split('\n')) != 0
-    assert len(r['stderr']) == 0
-    r.Destroy()
+    for i in range(5):
+        with RunContainer(conn, os.path.join(ct.name, 'child'), command='systemctl -a',
+                          wait=10, private='portoctl shell', virt_mode='job') as r:
+            if int(r['exit_code']) == 0:
+                return
+            ExpectNe(r['stdout'].strip().splitlines(), [])
+            ExpectEq(r['stderr'], '')
+        if i < 4:
+            time.sleep(0.1)
+
+    raise AssertionError("systemd is not ready")
 
 
 try:

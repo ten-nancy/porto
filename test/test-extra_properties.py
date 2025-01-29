@@ -2,7 +2,7 @@ import porto
 import subprocess
 from test_common import *
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 try:
     ConfigurePortod('test-extra_properties', """

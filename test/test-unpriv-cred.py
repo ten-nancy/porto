@@ -9,7 +9,7 @@ from test_common import *
 Case="Case 1: bob sets charlie from porto-containers"
 
 AsBob()
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Create("test")
 assert r.GetProperty("user") == "porto-bob"
@@ -26,7 +26,7 @@ AsRoot()
 Case="Case 2: alice sets david from alice-containers"
 
 AsAlice()
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Create("test")
 assert r.GetProperty("user") == "porto-alice"
@@ -44,7 +44,7 @@ AsRoot()
 Case="Case 3: bob creates and starts under himself, bob (not in *-containers)"
 
 AsBob()
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Create("test")
 r.SetProperty("command", "ls")
@@ -59,7 +59,7 @@ AsRoot()
 Case="Case 4: alice sets bob (not in *-containers), catching exception"
 
 AsAlice()
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Create("test")
 r.SetProperty("command", "ls")
@@ -72,7 +72,7 @@ AsRoot()
 Case="Case 5: bob sets charlie and alice-group (charlie not in alice-group), catching exception"
 
 AsBob()
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Create("test")
 r.SetProperty("user", "porto-charlie")
@@ -83,7 +83,7 @@ r.Destroy()
 AsRoot()
 
 Case="Case 6: root sets bob and alice-group (bob not in alice-group), root can do everything"
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Create("test")
 r.SetProperty("user", "porto-bob")
@@ -99,19 +99,19 @@ r.Destroy()
 Case="Case 7: alice starts container created by bob (bob not in porto-containers and porto-alice-containers), catching exception"
 
 AsBob()
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Create("test")
 r.SetProperty("command", "ls")
 AsRoot()
 AsAlice()
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Find("test")
 assert Catch(r.Start) == porto.exceptions.PermissionError
 AsRoot()
 AsBob()
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 c.connect()
 r = c.Find("test")
 r.Start()

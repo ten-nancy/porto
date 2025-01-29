@@ -2,7 +2,7 @@ import porto
 from test_common import *
 import os
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 last = {}
 

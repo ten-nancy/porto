@@ -4,7 +4,7 @@ import datetime
 from test_common import *
 
 def Hijack(iterations=1):
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     a = c.Run('test', command='sleep 86400', isolate='true', enable_porto='isolate')
     for i in range(1, iterations + 1):
         print('{} hijack iteration {}/{}'.format(datetime.datetime.now(), i, iterations))

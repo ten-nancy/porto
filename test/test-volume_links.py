@@ -1,3 +1,5 @@
+import test_common
+
 import multiprocessing
 import time
 import porto
@@ -46,7 +48,7 @@ class Ctx(object):
         self.Counter = multiprocessing.Value('i', 0)
 
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 share = c.CreateVolume(None, **{"storage":STORAGE_NAME, "space_limit":"5G"})
 

@@ -1,9 +1,9 @@
-#!/usr/bin/python
+import test_common
 
 import porto
 
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 # common case
 ct = c.CreateWeakContainer('test-net-props')
 ct.SetProperty('net', "L3 veth")

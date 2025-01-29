@@ -10,7 +10,7 @@ import string
 import stat
 import os
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 @contextlib.contextmanager
 def runc(conn, *args, **kwargs):

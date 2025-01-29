@@ -9,7 +9,7 @@ TEST_PATH_2 = "/tmp/test2"
 TEST_PATH_3 = "/tmp/test3"
 CT_ROOT = TEST_PATH_3 + "/1/root"
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 all_volumes = [
     TEST_PATH_1 + "/volume/1",

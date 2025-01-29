@@ -5,7 +5,7 @@ import time
 import porto
 from test_common import *
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 a = c.Run('a')
 

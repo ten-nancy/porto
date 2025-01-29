@@ -2,7 +2,7 @@ import porto
 import datetime
 from test_common import *
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 w = conn.CreateWeakContainer('w')
 

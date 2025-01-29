@@ -5,7 +5,7 @@ import porto
 import sys
 from test_common import *
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 v = c.CreateVolume()
 a = c.Run("a", weak=False)

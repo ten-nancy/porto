@@ -9,7 +9,7 @@ import subprocess
 
 AsAlice()
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 assert c.connected() == False
 assert c.nr_connects() == 0
@@ -482,7 +482,7 @@ try:
 except:
      pass
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 v = c.CreateVolume(layers=['ubuntu-xenial'], backend='native')
 subprocess.call(['timeout', '5', 'dd', 'if=/dev/urandom', 'of=' + str(v) + '/foo', 'bs=1M', 'count=2048'])
 

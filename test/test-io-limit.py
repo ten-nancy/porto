@@ -2,7 +2,7 @@ from test_common import *
 
 import porto
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 
 w = conn.Create("w", weak=True)
 

@@ -49,7 +49,7 @@ def std_streams_escalation():
     f.write("123456")
     f.close()
 
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Create("test")
 
     #run under user
@@ -57,7 +57,7 @@ def std_streams_escalation():
 
     AsRoot()
 
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Find("test")
 
     #run under root
@@ -108,7 +108,7 @@ def ns_escape(v):
 
     AsAlice()
 
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
 
     r = c.Create("parent")
     r.SetProperty("root", v.path)
@@ -180,10 +180,10 @@ def append_passwd():
 
 
 def binds_escalation(v):
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
 
     AsAlice()
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Create("bind_file")
     r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
     r.SetProperty("bind", "{} /porto ro".format(portosrc))
@@ -221,7 +221,7 @@ def binds_escalation(v):
     f.write("123456")
     f.close()
 
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Create("test")
     r.SetProperty("bind", "/tmp/porto-tests/dir1 /tmp/porto-tests/mount1/mount2 rw")
     r.SetProperty("command", "dd if=/dev/zero of=/tmp/porto-tests/mount1/mount2/file bs=32 count=1")
@@ -238,7 +238,7 @@ def binds_escalation(v):
 #privilege escalation for requests from inside the porto container w virt_mode=="os"
 
 def internal_escalation_container():
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Create("test_cont2")
 
 
@@ -246,7 +246,7 @@ def internal_escalation(v):
     c = porto.Connection(timeout=120)
 
     AsAlice()
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Create("test_cont1")
     r.SetProperty("porto_namespace", "")
     r.SetProperty("virt_mode", "os")
@@ -267,14 +267,14 @@ def internal_escalation(v):
 #porto_namespace escape
 
 def porto_namespace_escape_container():
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     c.SetProperty("self", "porto_namespace", "")
 
 
 def porto_namespace_escape(v):
     AsAlice()
 
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Create("test")
     r.SetProperty("porto_namespace", "test")
     r.SetProperty("root", v.path)
@@ -314,7 +314,7 @@ def layer_escalation_container():
     t.add("porto-tests/evil_file")
     t.close()
 
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
 
     #We have persist layers here in porto, let's create clean layer for test
     try:
@@ -339,7 +339,7 @@ def layer_escalation_volume_container():
     f.write("pwned")
 
     vol_path = sys.argv[2]
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     subprocess.check_call(["/portobin/portoctl", "vcreate", "/layer",
                            "path={}/../../../../tmp/porto-tests".format(vol_path),
                            "layers=/layer"])
@@ -347,7 +347,7 @@ def layer_escalation_volume_container():
 
 def layer_escalation(v):
     AsAlice()
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Create("test")
     r.SetProperty("root", v.path)
     r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
@@ -371,7 +371,7 @@ def layer_escalation(v):
     f.close()
 
     AsAlice()
-    c = porto.Connection()
+    c = porto.Connection(timeout=30)
     r = c.Create("test")
 
 

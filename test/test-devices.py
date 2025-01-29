@@ -9,7 +9,7 @@ from test_common import *
 
 AsAlice()
 
-c = porto.Connection()
+c = porto.Connection(timeout=30)
 
 # TO FIX
 '''

@@ -9,7 +9,7 @@ if not os.path.exists('/sys/fs/cgroup/memory/memory.recharge_on_pgfault'):
 
 may_not_recharge_orphan_locked = GetKernelVersion() < (4, 19)
 
-conn = porto.Connection()
+conn = porto.Connection(timeout=30)
 ct = conn.CreateWeakContainer("test-mem-recharge")
 vol = conn.CreateVolume(private="test-mem-recharge", containers=ct.name)
 
