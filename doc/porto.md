@@ -474,6 +474,14 @@ Porto provides API for label lookup, atomic compare-and-set, atomic increment an
     }
     ```
 
+* **devices\_explicit** - do not merge user-specified devices with effective devices of parent container.
+    - *true*          - effective devices are the result of merging default devices and user-specified devices
+    - *false*         - effective devices are the result of merging effective devices of parent container
+                        and user-specified devices (default)
+
+
+If devices_explicit is False, then
+
 * **enable\_porto** - access to porto
     - *false* | *none* - no access
     - *read-isolate*   - read-only access, show only sub-containers

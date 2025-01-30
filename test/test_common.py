@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import functools
 import sys
 import os
 import signal
@@ -97,6 +98,14 @@ def ParseMountinfo(pid="self"):
         # override lower mounts
         ret[m['target']] = m
     return ret
+
+
+def GetCgroup(ct, controller):
+    for k, v in map(functools.partial(str.split, sep=': '), ct['cgroups'].split('; ')):
+        if k == controller:
+            return v
+    raise LookupError
+
 
 def ParseCgroup(pid):
     ret = {}

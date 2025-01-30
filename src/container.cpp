@@ -82,6 +82,8 @@ static std::vector<unsigned> JailCpuPermutationUsage; /* how many containers are
 
 static TError CommitSubtreeCpus(const TCgroup &root, std::list<std::shared_ptr<TContainer>> &subtree);
 
+extern bool EnableDockerMode;
+
 /* return true if index specified for property */
 static bool ParsePropertyName(std::string &name, std::string &idx) {
     if (name.size() && name.back() == ']') {
@@ -2617,7 +2619,9 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if (TestClearPropDirty(EProperty::DEVICE_CONF) || TestClearPropDirty(EProperty::ENABLE_FUSE)) {
+    if (TestClearPropsDirty(EProperty::DEVICE_CONF,
+                            EProperty::DEVICE_CONF_EXPLICIT,
+                            EProperty::ENABLE_FUSE)) {
         error = ApplyDeviceConf();
         if (error) {
             if (error != EError::Permission && error != EError::DeviceNotFound)
@@ -2659,54 +2663,82 @@ TError TContainer::PrepareOomMonitor() {
     return error;
 }
 
-TDevices TContainer::EffectiveDevices() const {
-    TDevices devices = Devices;
-    if (devices.Empty()) {
-        for (auto p = Parent; p != RootContainer; p = p->Parent) {
-            if (p->HasProp(EProperty::DEVICE_CONF)) {
-                devices.Merge(p->Devices);
-                break;
-            }
-        }
-    }
-    // abomination
-    // We have implicit rule that root container devices
-    // allowed if not explicitly denied.
-    devices.Merge(RootContainer->Devices);
-    devices.Merge(FuseDevices);
-    return devices;
+TDevices TContainer::EffectiveDevices(const TDevices &devices) const {
+    if (IsRoot())
+        return devices;
+
+    auto base = DevicesExplicit && HasProp(EProperty::DEVICE_CONF) ?
+                TDevices(RootContainer->Devices) :
+                Parent->EffectiveDevices();
+
+    return base.Merge(FuseDevices).Merge(devices);
 }
 
-TError TContainer::ApplyDeviceConf() const {
-    TError error;
+TDevices TContainer::EffectiveDevices() const {
+    return EffectiveDevices(Devices);
+}
 
+TError TContainer::SetDeviceConf(const TDevices &devices, bool merge) {
+    if (!Parent->HostMode && !(devices <= Parent->EffectiveDevices()))
+        return TError(EError::Permission, "Device is not permitted for parent container");
+
+    auto d = merge ? (Devices | devices) : devices;
+    auto ed = EffectiveDevices(d);
+
+    for (auto &ct: Subtree()) {
+        if (ct.get() != this && ct->IsRunningOrMeta() && !(ct->Devices <= ed))
+            return TError(EError::InvalidState, "Device is required in running subcontainer {}", ct->Name);
+    }
+
+    Devices = d;
+    CT->SetProp(EProperty::DEVICE_CONF);
+    return OK;
+}
+
+TError TContainer::ApplyDeviceConf() {
     if (IsRoot())
         return OK;
 
     TDevices devices = EffectiveDevices();
 
-    if (Controllers & CGROUP_DEVICES) {
+    // Case for DockerMode is dirty-dirty hack
+    bool unrestricted = HostMode || (EnableDockerMode && TaskCred.IsRootUser());
+    if ((Controllers & CGROUP_DEVICES) && !unrestricted) {
         auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.DevicesSubsystem.get());
-        error = devices.Apply(*cg, TaskCred.IsRootUser());
+        auto error = devices.Apply(*cg);
         if (error)
             return error;
     }
 
     /* We also setup devices during container mnt ns setup in task.cpp */
-    if (State != EContainerState::Starting &&
-        Task.Pid && !RootPath.IsRoot() && !TPath(Root).IsRoot()) {
+    if (Task.Pid && !TPath(Root).IsRoot()) {
         if (InUserNs())
             devices.PrepareForUserNs(UserNsCred);
 
-        error = devices.Makedev(fmt::format("/proc/{}/root", Task.Pid));
-
+        auto root = fmt::format("/proc/{}/root", Task.Pid);
+        auto error = devices.Makedev(root);
         /* Ignore errors while recreating devices for recently died tasks */
         if (error && error.Errno != ENOENT)
             return error;
+
+        auto newPaths = devices.AllowedPaths();
+        for (auto &path: DevicesPath) {
+            if (newPaths.find(path) != newPaths.end())
+                continue;
+
+            L_ACT("Remove CT{}:{} device node {}", Id, Name, path);
+            auto error = (root / path).Unlink();
+            if (error && error.Errno != ENOENT)
+                return error;
+        }
+        DevicesPath = newPaths;
     }
 
     for (auto &child : Children) {
-        error = child->ApplyDeviceConf();
+        if (!child->Task.Pid)
+            continue;
+
+        auto error = child->ApplyDeviceConf();
         if (error)
             return error;
     }
@@ -2797,39 +2829,15 @@ TError TContainer::PrepareCgroups(bool onRestore) {
         }
     }
 
-    if (Controllers & CGROUP_DEVICES) {
-        auto devcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.DevicesSubsystem.get());
-        /* Nested cgroup makes a copy from parent at creation */
-        if (!HostMode) {
-            if (State == EContainerState::Starting) {
-                /* on StartContainer() */
-                if (Level == 1 || TPath(devcg->GetName()).IsSimple()) {
-                    error = RootContainer->Devices.Apply(*devcg, TaskCred.IsRootUser(), true);
-                    if (error)
-                        return error;
-                }
-            } else {
-                /* on Restore() */
-                /* on restore child cgroups blocks reset */
-                TDevices all_devices = Devices;
-                for (auto p = Parent; p; p = p->Parent)
-                    all_devices.Merge(p->Devices);
-
-                error = all_devices.Apply(*devcg, TaskCred.IsRootUser());
-                if (error)
-                    return error;
-
-                if (!RootPath.IsRoot() && !TPath(Root).IsRoot() && Task.Pid) {
-                    if (InUserNs())
-                        all_devices.PrepareForUserNs(UserNsCred);
-
-                    error = all_devices.Makedev(fmt::format("/proc/{}/root", Task.Pid));
-
-                    /* Ignore errors while recreating devices for recently died tasks */
-                    if (error && error.Errno != ENOENT)
-                        return error;
-                }
-            }
+    if ((Controllers & CGROUP_DEVICES) && !onRestore) {
+        // Case for DockerMode and OsMode+Root is dirty-dirty hack
+        bool unrestricted = HostMode || (EnableDockerMode && TaskCred.IsRootUser());
+        if (!unrestricted) {
+            auto devcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.DevicesSubsystem.get());
+            // We need to reset a *:* rwm before its too late:
+            // if such cgroup has children we cannot change its devices
+            if (CgroupDriver.DevicesSubsystem->Unbound(*devcg))
+                SetPropDirty(EProperty::DEVICE_CONF);
         }
     }
 
@@ -3163,6 +3171,7 @@ TError TContainer::StartTask() {
         return OK;
 
     error = TaskEnv.Start();
+    DevicesPath = EffectiveDevices().AllowedPaths();
 
     /* Always report OOM situation if any */
     if (error && ReceiveOomEvents())

@@ -2927,11 +2927,11 @@ public:
                 if (error)
                     return error;
             }
-
-            CT->Devices.Merge(devices, true, true);
+            error = CT->SetDeviceConf(devices, false);
+            if (error)
+                return error;
         }
 
-        CT->SetProp(EProperty::DEVICE_CONF);
         return OK;
     }
 
@@ -2945,9 +2945,7 @@ public:
             if (error)
                 return error;
         }
-        CT->Devices.Merge(devices, true);
-        CT->SetProp(EProperty::DEVICE_CONF);
-        return OK;
+        return CT->SetDeviceConf(devices, true);
     }
 
     void Dump(rpc::TContainerSpec &spec) const override {
@@ -2973,11 +2971,50 @@ public:
             if (error)
                 return error;
         }
-        CT->Devices.Merge(devices, true, !spec.devices().merge());
+
+        return CT->SetDeviceConf(devices, spec.devices().merge());
+    }
+} static Devices;
+
+class TDevicesExplicitProperty : public TProperty {
+public:
+    TDevicesExplicitProperty() : TProperty(P_DEVICES_EXPLICIT, EProperty::DEVICE_CONF_EXPLICIT,
+                                           "Do not merge user-specified devices with effective devices of parent container: true|false")
+    {
+        IsDynamic = true;
+    }
+
+    TError Get(std::string &value) const override {
+        value = BoolToString(CT->DevicesExplicit);
+        return OK;
+    }
+
+    TError Set(const std::string &value) override {
+        bool val;
+        auto error = StringToBool(value, val);
+        if (error)
+            return error;
+
+        CT->DevicesExplicit = val;
+        CT->SetProp(EProperty::DEVICE_CONF_EXPLICIT);
+
+        return OK;
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        spec.set_devices_explicit(CT->DevicesExplicit);
+    }
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_devices_explicit();
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        CT->DevicesExplicit = spec.devices_explicit();
         CT->SetProp(EProperty::DEVICE_CONF);
         return OK;
     }
-} static Devices;
+} static DevicesExplicit;
 
 class TRawRootPid : public TProperty {
 public:

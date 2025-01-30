@@ -374,7 +374,7 @@ TError TTaskEnv::ConfigureChild() {
         if (CT->InUserNs())
             devices.PrepareForUserNs(CT->UserNsCred);
 
-        error = devices.Makedev();
+        error = devices.Makedev("/");
         if (error)
             return error;
     }

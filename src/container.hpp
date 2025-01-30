@@ -93,7 +93,7 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
     TError ApplyUlimits();
     TError ApplySchedPolicy();
     TError ApplyIoPolicy() const;
-    TError ApplyDeviceConf() const;
+    TError ApplyDeviceConf();
     TError ApplyDynamicProperties(bool onRestore = false);
 
     TError PrepareOomMonitor();
@@ -214,7 +214,11 @@ public:
     std::string ResolvConf;
     std::string EtcHosts;
     TDevices Devices;
+    // We rely on restore to populate this,
+    // so we dont need to dump it to KV.
+    std::set<TPath> DevicesPath;
     TDevices FuseDevices;
+    bool DevicesExplicit = false;
     TStringMap Sysctl;
 
     time_t RealCreationTime;
@@ -397,6 +401,14 @@ public:
         return true;
     }
 
+    template<typename... T>
+    bool TestClearPropsDirty(T... props) {
+        bool dirty = false;
+        for (auto prop: {props...})
+            dirty |= TestClearPropDirty(prop);
+        return dirty;
+    }
+
     TError CanSetSeccomp() const;
     TError SetSeccomp(const seccomp::TProfile &profile);
     TError SetSeccomp(const std::string &name);
@@ -469,6 +481,7 @@ public:
     TError ApplyResolvConf() const;
     TError SetSymlink(const TPath &symlink, const TPath &target);
 
+    TError SetDeviceConf(const TDevices &devices, bool merge);
     TError EnableFuse(bool value);
     TError EnableControllers(uint64_t controllers);
     TError HasProperty(const std::string &property) const;
@@ -508,6 +521,7 @@ public:
 
     TError ResolvePlace(TPath &place, bool strict = false) const;
     TDevices EffectiveDevices() const;
+    TDevices EffectiveDevices(const TDevices &devices) const;
 
     static TError ValidName(const std::string &name, bool superuser);
     static std::string ParentName(const std::string &name);

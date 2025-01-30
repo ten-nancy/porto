@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+
+#include "cgroup.hpp"
 #include "util/string.hpp"
 #include "util/path.hpp"
 #include "util/cred.hpp"
@@ -29,13 +31,17 @@ struct TDevice {
     TDevice(const TPath &path, dev_t node) : Path(path), PathInside(path), Node(node) {}
 
     TError Parse(TTuple &opt, const TCred &cred);
+    std::string FormatNode() const;
     std::string FormatAccess() const;
     std::string Format() const;
-    std::string CgroupRule(bool allow) const;
     TError Makedev(const TPath &root = "/") const;
 
     TError Load(const rpc::TContainerDevice &dev, const TCred &cred);
     void Dump(rpc::TContainerDevice &dev) const;
+
+    bool Allowed() const {
+        return MayRead || MayWrite || MayMknod;
+    }
 };
 
 struct TDevices {
@@ -53,10 +59,25 @@ struct TDevices {
     std::string Format() const;
 
     void PrepareForUserNs(const TCred &userNsCred);
-    TError Makedev(const TPath &root = "/") const;
-    TError Apply(const TCgroup &cg, bool rootUser, bool reset = false) const;
+    TError Makedev(const TPath &root) const;
+    TError Apply(const TCgroup &cg) const;
 
     TError InitDefault();
-    void Merge(const TDevices &devices, bool overwrite = false, bool replace = false);
+    TDevices &Merge(const TDevices &devices);
     bool Empty() const { return Devices.empty(); }
+
+    std::set<TPath> AllowedPaths() const {
+        std::set<TPath> paths;
+        for (auto &dev: Devices) {
+            if (dev.Allowed())
+                paths.insert(dev.PathInside);
+        }
+        return paths;
+    }
+
+    TDevices operator|(const TDevices& other) {
+        return TDevices(*this).Merge(other);
+    }
+
+    bool operator<=(const TDevices &other) const;
 };

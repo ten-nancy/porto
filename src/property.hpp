@@ -122,6 +122,7 @@ constexpr const char *P_SYMLINK = "symlink";
 constexpr const char *P_NET = "net";
 constexpr const char *P_NET_TOS = "net_tos";
 constexpr const char *P_DEVICES = "devices";
+constexpr const char *P_DEVICES_EXPLICIT = "devices_explicit";
 constexpr const char *P_CAPABILITIES = "capabilities";
 constexpr const char *P_CAPABILITIES_AMBIENT = "capabilities_ambient";
 constexpr const char *P_CAPABILITIES_ALLOWED = "capabilities_allowed";
@@ -273,6 +274,7 @@ enum class EProperty {
     NET,
     NET_TOS,
     DEVICE_CONF,
+    DEVICE_CONF_EXPLICIT,
     CAPABILITIES,
     IP,
     IP_LIMIT,

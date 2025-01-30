@@ -2318,6 +2318,14 @@ TError TDevicesSubsystem::SetDeny(const TCgroup &cg, const std::string &value) c
     return cg.Set(DENY, value);
 }
 
+TError TDevicesSubsystem::GetList(const TCgroup &cg, std::vector<std::string> &lines) const {
+    return cg.Knob(LIST).ReadLines(lines);
+}
+bool TDevicesSubsystem::Unbound(const TCgroup &cg) const {
+    std::string s;
+    return !cg.Knob(LIST).ReadAll(s) && StringStartsWith(s, "a");
+}
+
 // Pids
 
 TError TPidsSubsystem::GetUsage(const TCgroup &cg, uint64_t &usage) const {

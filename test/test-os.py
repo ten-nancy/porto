@@ -65,6 +65,7 @@ def CheckCgroupHierarchy(ct, haveCgroups):
                 ExpectNe(len(r['stdout']), 0)
             r.Destroy()
 
+
 def CheckSystemd(ct):
     for i in range(5):
         with RunContainer(conn, os.path.join(ct.name, 'child'), command='systemctl -a',

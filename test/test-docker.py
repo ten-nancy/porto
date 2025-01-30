@@ -33,8 +33,8 @@ def main():
     ExpectEq(b['stderr'].count('Permission denied'), 1)
     b.Destroy()
 
-    uid = subprocess.check_output(['id', 'porto-alice', '--user']).strip()
-    gid = subprocess.check_output(['id', 'porto-alice', '--group']).strip()
+    uid = subprocess.check_output(['id', 'porto-alice', '--user']).strip().decode()
+    gid = subprocess.check_output(['id', 'porto-alice', '--group']).strip().decode()
 
     # change owner
     for dir in ['/run']:

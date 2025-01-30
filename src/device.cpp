@@ -8,8 +8,6 @@ extern "C" {
 #include <sys/sysmacros.h>
 }
 
-extern bool EnableDockerMode;
-
 TError TDevice::CheckPath(const TPath &path) {
     if (!path.IsNormal())
         return TError(EError::InvalidValue, "Non-normalized device path: {}", path);
@@ -135,6 +133,10 @@ TError TDevice::Parse(TTuple &opt, const TCred &cred) {
     return OK;
 }
 
+std::string TDevice::FormatNode() const {
+    return fmt::format("{}:{}", major(Node), Wildcard ? "*" : std::to_string(minor(Node)));
+}
+
 std::string TDevice::FormatAccess() const {
     std::string perm;
 
@@ -185,35 +187,6 @@ void TDevice::Dump(rpc::TContainerDevice &dev) const {
     dev.set_mode(fmt::format("{:#o}",Mode & 0777));
     dev.set_user(UserName(Uid));
     dev.set_group(GroupName(Gid));
-}
-
-std::string TDevice::CgroupRule(bool allow) const {
-    std::string rule;
-
-    /* cgroup cannot parse rules with empty permissions */
-    if (MayRead != allow && MayWrite != allow && MayMknod != allow)
-        return "";
-
-    if (S_ISBLK(Mode))
-        rule = "b ";
-    else
-        rule = "c ";
-
-    rule += std::to_string(major(Node)) + ":";
-
-    if (Wildcard)
-        rule += "* ";
-    else
-        rule += std::to_string(minor(Node)) + " ";
-
-    if (MayRead == allow)
-        rule += "r";
-    if (MayWrite == allow)
-        rule += "w";
-    if (MayMknod == allow)
-        rule += "m";
-
-    return rule;
 }
 
 TError TDevice::Makedev(const TPath &root) const {
@@ -331,53 +304,126 @@ void TDevices::PrepareForUserNs(const TCred &userNsCred) {
 }
 
 TError TDevices::Makedev(const TPath &root) const {
-    TError error;
+    for (auto &dev: Devices) {
+        if (!dev.Allowed())
+            continue;
 
-    for (auto &device: Devices) {
-        if (device.MayRead || device.MayWrite || device.MayMknod) {
-            error = device.Makedev(root);
-            if (error)
-                return error;
-        } else if (!root.IsRoot() && !device.Wildcard) {
-            L_ACT("Remove device node {}", device.PathInside);
-            error = (root / device.PathInside).Unlink();
-            if (error && error.Errno != ENOENT)
-                return error;
-        }
+        auto error = dev.Makedev(root);
+        if (error)
+            return error;
     }
 
     return OK;
 }
 
-TError TDevices::Apply(const TCgroup &cg, bool rootUser, bool reset) const {
-    TError error;
+struct TDeviceRule {
+    char Mode;
+    std::string Node;
+    char Action;
 
-    if (reset && (!rootUser || !EnableDockerMode)) {
-        error = CgroupDriver.DevicesSubsystem->SetDeny(cg, "a");
-        if (error)
-            return error;
+    bool operator==(const TDeviceRule &o) {
+        return Mode == o.Mode &&
+            Node == o.Node &&
+            Action == o.Action;
     }
 
-    for (auto &device: Devices) {
-        std::string rule;
+    static std::vector<TDeviceRule> Flatten(const TDevices &devices) {
+        std::vector<TDeviceRule> rules;
+        for (auto &dev: devices.Devices) {
+            auto mode = S_ISBLK(dev.Mode) ? 'b' : 'c';
+            auto node = dev.FormatNode();
+            if (dev.MayRead)
+                rules.push_back({mode, node, 'r'});
+            if (dev.MayWrite)
+                rules.push_back({mode, node, 'w'});
+            if (dev.MayMknod)
+                rules.push_back({mode, node, 'm'});
+        }
+        return rules;
+    }
 
-        rule = device.CgroupRule(true);
-        if (rule != "") {
-            error = CgroupDriver.DevicesSubsystem->SetAllow(cg, rule);
-            if (error) {
-                if (error.Errno == EPERM)
-                    return TError(EError::Permission, "Device {} is not permitted for parent container", device.Path);
-                return error;
+    static TError Parse(const TCgroup &cg, std::vector<TDeviceRule> &rules) {
+        std::vector<std::string> lines;
+        auto error = CgroupDriver.DevicesSubsystem->GetList(cg, lines);
+        return error ?: Parse(lines, rules);
+    }
+
+    static TError Parse(const TTuple &lines, std::vector<TDeviceRule> &rules) {
+        rules.clear();
+
+        for (auto &line: lines) {
+            auto invalidLine = TError(EError::Unknown, "Invalid device rule: '{}'", line);
+
+            /* a|b|c <device> [r][w][m] */
+            auto toks = SplitString(line, ' ');
+            if (toks.size() != 3)
+                return invalidLine;
+
+            if (toks[0].size() != 1)
+                return invalidLine;
+            if (toks[0][0] != 'b' && toks[0][0] != 'c' && toks[0][0] != 'a')
+                return invalidLine;
+
+            auto mode = toks[0][0];
+            auto node = toks[1];
+
+            for (auto x: toks[2]) {
+                if (x != 'r' && x != 'w' && x != 'm')
+                    return invalidLine;
+                rules.push_back({mode, node, x});
             }
         }
 
-        rule = device.CgroupRule(false);
-        if (rule != "" && (!rootUser || !EnableDockerMode)) {
-            error = CgroupDriver.DevicesSubsystem->SetDeny(cg, rule);
+        return OK;
+    }
+
+    static TError Apply(const TCgroup &cg, const std::vector<TDeviceRule> &rules, bool allow) {
+        std::map<std::pair<char, std::string>, std::string> grouped;
+
+        for (auto &r: rules)
+            grouped[std::make_pair(r.Mode, r.Node)].push_back(r.Action);
+
+        for (auto &p: grouped) {
+            auto s = fmt::format("{} {} {}", p.first.first, p.first.second, p.second);
+            auto error = allow ?
+                CgroupDriver.DevicesSubsystem->SetAllow(cg, s) :
+                CgroupDriver.DevicesSubsystem->SetDeny(cg, s);
             if (error)
                 return error;
         }
+        return OK;
     }
+
+    std::string Format() const {
+        return fmt::format("{} {} {}", Mode, Node, Action);
+    }
+};
+
+TError TDevices::Apply(const TCgroup &cg) const {
+    std::vector<TDeviceRule> curr;
+    auto error = TDeviceRule::Parse(cg, curr);
+    if (error)
+        return error;
+
+    auto next = TDeviceRule::Flatten(*this);
+
+    // symmetrical difference
+    std::vector<TDeviceRule> allow, deny;
+    for (const auto &r: curr) {
+        if (std::find(next.begin(), next.end(), r) == next.end())
+            deny.push_back(r);
+    }
+    for (const auto &r: next) {
+        if (std::find(curr.begin(), curr.end(), r) == curr.end())
+            allow.push_back(r);
+    }
+
+    error = TDeviceRule::Apply(cg, deny, false);
+    if (error)
+        return error;
+    error = TDeviceRule::Apply(cg, allow, true);
+    if (error)
+        return error;
 
     return OK;
 }
@@ -411,24 +457,35 @@ TError TDevices::InitDefault() {
     return OK;
 }
 
-void TDevices::Merge(const TDevices &devices, bool overwrite, bool replace) {
-    if (replace) {
-        for (auto &device: Devices) {
-            device.MayRead = device.MayWrite = device.MayMknod = false;
-            device.Optional = true;
+TDevices &TDevices::Merge(const TDevices &other) {
+    for (auto &dev: other.Devices) {
+        auto it = std::find_if(
+            Devices.begin(), Devices.end(),
+            [&dev](const TDevice &d) { return d.PathInside == dev.PathInside; }
+        );
+        if (it != Devices.end()) {
+            *it = dev;
+        } else {
+            Devices.push_back(dev);
         }
     }
-    for (auto &device: devices.Devices) {
-        bool found = false;
-        for (auto &d: Devices) {
-            if (d.PathInside == device.PathInside) {
-                found = true;
-                if (overwrite)
-                    d = device;
-                break;
-            }
-        }
-        if (!found)
-            Devices.push_back(device);
-    }
+    return *this;
 }
+
+bool TDevices::operator<=(const TDevices &other) const {
+        for (auto &dev : Devices) {
+            if (!dev.Allowed())
+                continue;
+
+            auto it = std::find_if(
+                other.Devices.begin(), other.Devices.end(),
+                [&dev](const TDevice &d) { return d.Node == dev.Node; }
+            );
+            if (it == other.Devices.end())
+                return false;
+
+            if  (dev.MayRead > it->MayRead || dev.MayWrite > it->MayWrite || dev.MayMknod > it->MayMknod)
+                return false;
+        }
+        return true;
+    }

@@ -464,11 +464,15 @@ public:
 class TDevicesSubsystem : public TSubsystem {
     static constexpr const char *DENY = "devices.deny";
     static constexpr const char *ALLOW = "devices.allow";
+    static constexpr const char *LIST = "devices.list";
 public:
     TDevicesSubsystem() : TSubsystem(CGROUP_DEVICES, "devices") {}
 
     TError SetAllow(const TCgroup &cg, const std::string &value) const;
     TError SetDeny(const TCgroup &cg, const std::string &value) const;
+    TError GetList(const TCgroup &cg, std::vector<std::string> &lines) const;
+    bool Unbound(const TCgroup &cg) const;
+
 };
 
 class THugetlbSubsystem : public TSubsystem {
