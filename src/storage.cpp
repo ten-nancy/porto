@@ -32,9 +32,7 @@ static uint64_t AsyncRemoveWatchDogPeriod;
 
 /* Protected with VolumesMutex */
 
-static unsigned RemoveCounter = 0;
-
-static std::list<std::pair<dev_t, ino_t>> ActiveInodes;
+static std::set<std::pair<dev_t, ino_t>> ActiveInodes;
 
 static bool InodeIsActive(const TFile &f) {
     PORTO_LOCKED(VolumesMutex);
@@ -44,8 +42,7 @@ static bool InodeIsActive(const TFile &f) {
     if (error)
         return false;
 
-    auto p = std::make_pair(st.st_dev, st.st_ino);
-    return std::find(ActiveInodes.begin(), ActiveInodes.end(), p) != ActiveInodes.end();
+    return ActiveInodes.find({st.st_dev, st.st_ino}) != ActiveInodes.end();
 }
 
 static TError AddActiveInode(const TFile &f) {
@@ -55,7 +52,7 @@ static TError AddActiveInode(const TFile &f) {
     auto error = f.Stat(st);
     if (error)
         return error;
-    ActiveInodes.push_back({st.st_dev, st.st_ino});
+    ActiveInodes.emplace(st.st_dev, st.st_ino);
     return OK;
 }
 
@@ -66,7 +63,7 @@ static TError RemoveActiveInode(const TFile &f) {
     auto error = f.Stat(st);
     if (error)
         return error;
-    ActiveInodes.remove({st.st_dev, st.st_ino});
+    ActiveInodes.erase({st.st_dev, st.st_ino});
     return OK;
 }
 
@@ -871,6 +868,9 @@ TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgrou
     if (error)
         return error;
 
+    if (TempPath(REMOVE_PREFIX).Exists())
+        return TError(EError::Busy, "{} is being removed", Name);
+
     auto lock = LockVolumes();
 
     TFile import_dir;
@@ -1095,7 +1095,6 @@ TError TStorage::ExportArchive(const TPath &archive, const std::string &compress
 }
 
 TError TStorage::Remove(bool weak, bool async) {
-    TPath temp;
     TError error;
 
     error = CheckName(Name);
@@ -1107,6 +1106,11 @@ TError TStorage::Remove(bool weak, bool async) {
         return error;
 
     error = Load();
+    if (error == EError::LayerNotFound || error == EError::VolumeNotFound) {
+        auto temp = TempPath(REMOVE_PREFIX);
+        if (temp.Exists())
+            return temp.RemoveAll();
+    }
     if (error)
         return error;
 
@@ -1120,15 +1124,15 @@ TError TStorage::Remove(bool weak, bool async) {
     if (error)
         return error;
 
-    temp = TempPath(PRIVATE_PREFIX);
-    if (temp.Exists()) {
-        error = temp.Unlink();
+    auto priv = TempPath(PRIVATE_PREFIX);
+    if (priv.Exists()) {
+        error = priv.Unlink();
         if (error)
             L_WRN("Cannot remove private: {}", error);
     }
 
     TFile temp_dir;
-    temp = TempPath(REMOVE_PREFIX + std::to_string(RemoveCounter++));
+    auto temp = TempPath(REMOVE_PREFIX);
 
     // We don't have to use active paths, because async temp files are skipped by Cleanup
     error = Path.Rename(temp);

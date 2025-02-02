@@ -54,20 +54,18 @@ static TError RemoveRecursive(const TPath &path, bool remove_root, std::atomic_b
         if (walk.Directory && !walk.Postorder)
             continue;
 
-        auto level = walk.Level();
         int unlink_flags = walk.Directory ? AT_REMOVEDIR : 0;
-        const char *pathname;
-        if (level < 0)
-            continue;
-        else if (level == 0) {
+        const char *pathname = walk.Ent->fts_name;
+        if (walk.Level() == 0) {
             if (!remove_root)
                 continue;
             pathname = walk.Ent->fts_path;
-        } else
-            pathname = walk.Ent->fts_name;
+        }
 
-        if (unlinkat(AT_FDCWD, pathname, unlink_flags) < 0)
-            return TError::System("unlinkat");
+        if (unlinkat(AT_FDCWD, pathname, unlink_flags) < 0) {
+            if (errno != ENOENT)
+                return TError::System("unlinkat");
+        }
     }
 }
 

@@ -308,6 +308,7 @@
   "test/test-spec.py":"infra/porto/porto/test/test-spec.py",
   "test/test-stats.py":"infra/porto/porto/test/test-stats.py",
   "test/test-std-streams.py":"infra/porto/porto/test/test-std-streams.py",
+  "test/test-storage.py":"infra/porto/porto/test/test-storage.py",
   "test/test-symlink.py":"infra/porto/porto/test/test-symlink.py",
   "test/test-systemd.py":"infra/porto/porto/test/test-systemd.py",
   "test/test-tc-classes.py":"infra/porto/porto/test/test-tc-classes.py",
