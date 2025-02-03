@@ -1508,8 +1508,14 @@ TError TContainer::ApplySchedPolicy() {
                 return TError::System("setpriority");
             if (sched_setscheduler(pid, schedPolicy, &param) && errno != ESRCH)
                 return TError::System("sched_setscheduler");
-            if (sched_setaffinity(pid, sizeof(taskMask), &taskMask) && errno != ESRCH)
-                return TError::System("sched_setaffinity");
+            if (sched_setaffinity(pid, sizeof(taskMask), &taskMask) && errno != ESRCH) {
+                // some io uring threads do not allow changing affinity
+                // TODO(ovov): remove this after fixes in kernel
+                std::string comm;
+                auto error = TPath("/proc/{}/comm").ReadAll(comm);
+                if (error.Errno != ESRCH && error.Errno != ENOENT && !StringStartsWith(comm, "iou-"))
+                    return TError::System("sched_setaffinity({}, {})", pid, comm, taskAffinity.Format());
+            }
 
             retry = true;
         }
