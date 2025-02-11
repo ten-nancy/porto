@@ -208,9 +208,14 @@ TError AsyncUmount(const TPath &path) {
     auto fut = AsyncUmounter.AsyncUmount(path);
     if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
         L_ERR("async umount timeout");
-        return path.Umount(UMOUNT_NOFOLLOW|MNT_DETACH);
+        return path.UmountAll(MNT_DETACH);
     }
-    return fut.get();
+    auto error = fut.get();
+    if (error && error.Errno == EMFILE) {
+        L_ERR("async umount: {}", error);
+        return path.UmountAll(MNT_DETACH);
+    }
+    return error;
 }
 
 TError StartAsyncUmounter() {
