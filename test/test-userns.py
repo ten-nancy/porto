@@ -44,3 +44,12 @@ CheckUserNs(virt_mode='job')
 CheckUserNs(virt_mode='os')
 
 conn.UnlinkVolume(v.path)
+
+a = conn.Run('a', userns=True)
+try:
+    b = conn.Run('a/b', command='bash -c "echo lala > /proc/sys/kernel/core_pattern"', wait=10)
+    ExpectNe(b['exit_code'], '0')
+    ExpectEq(b['stderr'].count('Read-only file system'), 1)
+finally:
+    a.Destroy()
+
