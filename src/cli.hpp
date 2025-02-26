@@ -1,9 +1,9 @@
 #pragma once
 
+#include <csignal>
 #include <functional>
 #include <memory>
 #include <string>
-#include <csignal>
 #include <vector>
 
 #include "libporto.hpp"
@@ -16,11 +16,12 @@ protected:
     Porto::Connection *Api;
     std::string Name, Usage, Desc, Help;
     sig_atomic_t Interrupted = 0;
+
 public:
     int NeedArgs;
 
-    ICmd(Porto::Connection *api, const std::string &name, int args,
-         const std::string &usage, const std::string &desc, const std::string &help = "");
+    ICmd(Porto::Connection *api, const std::string &name, int args, const std::string &usage, const std::string &desc,
+         const std::string &help = "");
     virtual ~ICmd() {}
     const std::string &GetName() const;
     const std::string &GetUsage() const;
@@ -41,8 +42,8 @@ struct Option {
 };
 
 class TCommandHandler {
-    void operator=(const TCommandHandler&) = delete;
-    TCommandHandler(const TCommandHandler&) = delete;
+    void operator=(const TCommandHandler &) = delete;
+    TCommandHandler(const TCommandHandler &) = delete;
 
 public:
     using RegisteredCommands = std::map<std::string, std::unique_ptr<ICmd>>;
@@ -54,8 +55,12 @@ public:
     int HandleCommand(int argc, char *argv[]);
     void Usage(const char *command);
 
-    Porto::Connection &GetPortoApi() { return PortoApi; }
-    const RegisteredCommands &GetCommands() const { return Commands; }
+    Porto::Connection &GetPortoApi() {
+        return PortoApi;
+    }
+    const RegisteredCommands &GetCommands() const {
+        return Commands;
+    }
 
     template <typename TCommand>
     void RegisterCommand() {
@@ -76,18 +81,20 @@ class TCommandEnviroment {
 
 public:
     int NeedArgs = 0;
-    TCommandEnviroment(TCommandHandler &handler,
-                       const std::vector<std::string> &arguments)
+    TCommandEnviroment(TCommandHandler &handler, const std::vector<std::string> &arguments)
         : Handler(handler),
-          Arguments(arguments) {}
+          Arguments(arguments)
+    {}
 
-    TCommandEnviroment(TCommandEnviroment *env,
-                       const std::vector<std::string> &arguments)
+    TCommandEnviroment(TCommandEnviroment *env, const std::vector<std::string> &arguments)
         : Handler(env->Handler),
-          Arguments(arguments) {}
+          Arguments(arguments)
+    {}
 
     std::vector<std::string> GetOpts(const std::vector<Option> &options);
-    const std::vector<std::string> &GetArgs() const { return Arguments; }
+    const std::vector<std::string> &GetArgs() const {
+        return Arguments;
+    }
 };
 
 constexpr size_t MIN_FIELD_LENGTH = 8;

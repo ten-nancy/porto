@@ -1,12 +1,13 @@
 #include "signal.hpp"
+
 #include "util/log.hpp"
 
 extern "C" {
-#include <stdlib.h>
 #include <pthread.h>
-#include <unistd.h>
-#include <sys/prctl.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
+#include <unistd.h>
 }
 
 void Crash() {

@@ -1,17 +1,18 @@
 #include "libporto.hpp"
-#include "rpc.pb.h"
 
-#include <google/protobuf/text_format.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/text_format.h>
+
+#include "rpc.pb.h"
 
 using ::rpc::EError;
 
 extern "C" {
-#include <unistd.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 }
 
 namespace Porto {
@@ -60,7 +61,7 @@ public:
         return LastError;
     }
 
-    ConnectionImpl() { }
+    ConnectionImpl() {}
 
     ~ConnectionImpl() {
         Close();
@@ -78,8 +79,7 @@ public:
 
     int Send(const rpc::TContainerRequest &req);
     int Recv(rpc::TContainerResponse &rsp);
-    int Call(const rpc::TContainerRequest &req, rpc::TContainerResponse &rsp,
-             int extra_timeout = -1);
+    int Call(const rpc::TContainerRequest &req, rpc::TContainerResponse &rsp, int extra_timeout = -1);
     int Call(int extra_timeout = -1);
 };
 
@@ -103,7 +103,7 @@ int Connection::ConnectionImpl::Connect()
     memcpy(peer_addr.sun_path, PortoSocket, sizeof(PortoSocket) - 1);
 
     peer_addr_size = sizeof(struct sockaddr_un);
-    if (connect(Fd, (struct sockaddr *) &peer_addr, peer_addr_size) < 0)
+    if (connect(Fd, (struct sockaddr *)&peer_addr, peer_addr_size) < 0)
         return Error(errno, "connect");
 
     /* restore async wait */
@@ -128,12 +128,10 @@ int Connection::ConnectionImpl::SetTimeout(int direction, int timeout)
     tv.tv_sec = timeout > 0 ? timeout : 0;
     tv.tv_usec = 0;
 
-    if ((direction & 1) && setsockopt(Fd, SOL_SOCKET,
-                SO_SNDTIMEO, &tv, sizeof tv))
+    if ((direction & 1) && setsockopt(Fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv))
         return Error(errno, "set send timeout");
 
-    if ((direction & 2) && setsockopt(Fd, SOL_SOCKET,
-                SO_RCVTIMEO, &tv, sizeof tv))
+    if ((direction & 2) && setsockopt(Fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv))
         return Error(errno, "set recv timeout");
 
     return EError::Success;
@@ -180,11 +178,8 @@ int Connection::ConnectionImpl::Recv(rpc::TContainerResponse &rsp) {
         if (rsp.has_asyncwait()) {
             if (AsyncWaitCallback) {
                 AsyncWaitEvent event = {
-                    (time_t)rsp.asyncwait().when(),
-                    rsp.asyncwait().name(),
-                    rsp.asyncwait().state(),
-                    rsp.asyncwait().label(),
-                    rsp.asyncwait().value(),
+                    (time_t)rsp.asyncwait().when(), rsp.asyncwait().name(),  rsp.asyncwait().state(),
+                    rsp.asyncwait().label(),        rsp.asyncwait().value(),
                 };
                 AsyncWaitCallback(event);
 
@@ -196,9 +191,7 @@ int Connection::ConnectionImpl::Recv(rpc::TContainerResponse &rsp) {
     }
 }
 
-
-int Connection::ConnectionImpl::Call(const rpc::TContainerRequest &req,
-                                     rpc::TContainerResponse &rsp,
+int Connection::ConnectionImpl::Call(const rpc::TContainerRequest &req, rpc::TContainerResponse &rsp,
                                      int extra_timeout) {
     int ret = 0;
 
@@ -237,7 +230,9 @@ int Connection::ConnectionImpl::Call(int extra_timeout) {
     return ret;
 }
 
-Connection::Connection() : Impl(new ConnectionImpl()) { }
+Connection::Connection()
+    : Impl(new ConnectionImpl())
+{}
 
 Connection::~Connection() {
     Impl = nullptr;
@@ -272,10 +267,7 @@ uint64_t Connection::ResponseTimestamp() const {
     return Impl->Rsp.timestamp();
 }
 
-int Connection::Call(const rpc::TContainerRequest &req,
-                     rpc::TContainerResponse &rsp,
-                     int extra_timeout) {
-
+int Connection::Call(const rpc::TContainerRequest &req, rpc::TContainerResponse &rsp, int extra_timeout) {
     if (!req.IsInitialized()) {
         Impl->LastError = EError::InvalidMethod;
         Impl->LastErrorMsg = "Request is not initialized";
@@ -285,10 +277,7 @@ int Connection::Call(const rpc::TContainerRequest &req,
     return Impl->Call(req, rsp, extra_timeout);
 }
 
-int Connection::Call(const std::string &req,
-                     std::string &rsp,
-                     int extra_timeout) {
-
+int Connection::Call(const std::string &req, std::string &rsp, int extra_timeout) {
     if (!google::protobuf::TextFormat::ParseFromString(req, &Impl->Req)) {
         Impl->LastError = EError::InvalidMethod;
         Impl->LastErrorMsg = "Cannot parse request";
@@ -323,13 +312,12 @@ int Connection::Destroy(const std::string &name) {
 int Connection::List(std::vector<std::string> &list, const std::string &mask) {
     Impl->Req.mutable_list();
 
-    if(!mask.empty())
+    if (!mask.empty())
         Impl->Req.mutable_list()->set_mask(mask);
 
     int ret = Impl->Call();
     if (!ret)
-        list = std::vector<std::string>(std::begin(Impl->Rsp.list().name()),
-                                        std::end(Impl->Rsp.list().name()));
+        list = std::vector<std::string>(std::begin(Impl->Rsp.list().name()), std::end(Impl->Rsp.list().name()));
 
     return ret;
 }
@@ -346,8 +334,8 @@ int Connection::ListProperties(std::vector<Property> &list) {
         for (const auto &prop: Impl->Rsp.propertylist().list()) {
             list[i].Name = prop.name();
             list[i].Description = prop.desc();
-            list[i].ReadOnly =  prop.read_only();
-            list[i].Dynamic =  prop.dynamic();
+            list[i].ReadOnly = prop.read_only();
+            list[i].Dynamic = prop.dynamic();
             has_data |= list[i].ReadOnly;
             i++;
         }
@@ -368,15 +356,13 @@ int Connection::ListProperties(std::vector<Property> &list) {
     return ret;
 }
 
-int Connection::Get(const std::vector<std::string> &name,
-                   const std::vector<std::string> &variable,
-                   std::map<std::string, std::map<std::string, GetResponse>> &result,
-                   int flags) {
+int Connection::Get(const std::vector<std::string> &name, const std::vector<std::string> &variable,
+                    std::map<std::string, std::map<std::string, GetResponse>> &result, int flags) {
     auto get = Impl->Req.mutable_get();
 
-    for (const auto &n : name)
+    for (const auto &n: name)
         get->add_name(n);
-    for (const auto &v : variable)
+    for (const auto &v: variable)
         get->add_variable(v);
 
     if (flags & GetFlags::NonBlock)
@@ -388,32 +374,31 @@ int Connection::Get(const std::vector<std::string> &name,
 
     int ret = Impl->Call();
     if (!ret) {
-         for (int i = 0; i < Impl->Rsp.get().list_size(); i++) {
-             const auto &entry = Impl->Rsp.get().list(i);
+        for (int i = 0; i < Impl->Rsp.get().list_size(); i++) {
+            const auto &entry = Impl->Rsp.get().list(i);
 
-             for (int j = 0; j < entry.keyval_size(); j++) {
-                 auto keyval = entry.keyval(j);
+            for (int j = 0; j < entry.keyval_size(); j++) {
+                auto keyval = entry.keyval(j);
 
-                 GetResponse resp;
-                 resp.Error = 0;
-                 if (keyval.has_error())
-                     resp.Error = keyval.error();
-                 if (keyval.has_errormsg())
-                     resp.ErrorMsg = keyval.errormsg();
-                 if (keyval.has_value())
-                     resp.Value = keyval.value();
+                GetResponse resp;
+                resp.Error = 0;
+                if (keyval.has_error())
+                    resp.Error = keyval.error();
+                if (keyval.has_errormsg())
+                    resp.ErrorMsg = keyval.errormsg();
+                if (keyval.has_value())
+                    resp.Value = keyval.value();
 
-                 result[entry.name()][keyval.variable()] = resp;
-             }
-         }
+                result[entry.name()][keyval.variable()] = resp;
+            }
+        }
     }
 
     return ret;
 }
 
-int Connection::GetProperty(const std::string &name, const std::string &property,
-                           std::string &value, int flags) {
-    auto* get_property = Impl->Req.mutable_getproperty();
+int Connection::GetProperty(const std::string &name, const std::string &property, std::string &value, int flags) {
+    auto *get_property = Impl->Req.mutable_getproperty();
     get_property->set_name(name);
     get_property->set_property(property);
     if (flags & GetFlags::Sync)
@@ -428,9 +413,8 @@ int Connection::GetProperty(const std::string &name, const std::string &property
     return ret;
 }
 
-int Connection::SetProperty(const std::string &name, const std::string &property,
-                           std::string value) {
-    auto* set_property = Impl->Req.mutable_setproperty();
+int Connection::SetProperty(const std::string &name, const std::string &property, std::string value) {
+    auto *set_property = Impl->Req.mutable_setproperty();
     set_property->set_name(name);
     set_property->set_property(property);
     set_property->set_value(value);
@@ -438,8 +422,7 @@ int Connection::SetProperty(const std::string &name, const std::string &property
     return Impl->Call();
 }
 
-int Connection::IncLabel(const std::string &name, const std::string &label,
-                         int64_t add, int64_t &result) {
+int Connection::IncLabel(const std::string &name, const std::string &label, int64_t add, int64_t &result) {
     auto cmd = Impl->Req.mutable_inclabel();
     cmd->set_name(name);
     cmd->set_label(label);
@@ -502,8 +485,7 @@ int Connection::Respawn(const std::string &name) {
     return Impl->Call();
 }
 
-int Connection::WaitContainers(const std::vector<std::string> &containers,
-                               const std::vector<std::string> &labels,
+int Connection::WaitContainers(const std::vector<std::string> &containers, const std::vector<std::string> &labels,
                                std::string &name, int timeout) {
     time_t deadline = timeout >= 0 ? time(nullptr) + timeout : 0;
     time_t last_retry = 0;
@@ -512,7 +494,7 @@ int Connection::WaitContainers(const std::vector<std::string> &containers,
     while (1) {
         auto wait = Impl->Req.mutable_wait();
 
-        for (const auto &c : containers)
+        for (const auto &c: containers)
             wait->add_name(c);
 
         for (auto &label: labels)
@@ -542,10 +524,8 @@ int Connection::WaitContainers(const std::vector<std::string> &containers,
     return ret;
 }
 
-int Connection::AsyncWait(const std::vector<std::string> &containers,
-                          const std::vector<std::string> &labels,
-                          std::function<void(AsyncWaitEvent &event)> callback,
-                          int timeout,
+int Connection::AsyncWait(const std::vector<std::string> &containers, const std::vector<std::string> &labels,
+                          std::function<void(AsyncWaitEvent &event)> callback, int timeout,
                           const std::string &targetState) {
     Impl->AsyncWaitContainers.clear();
     Impl->AsyncWaitTimeout = timeout;
@@ -570,8 +550,7 @@ int Connection::AsyncWait(const std::vector<std::string> &containers,
     return ret;
 }
 
-int Connection::StopAsyncWait(const std::vector<std::string> &containers,
-                              const std::vector<std::string> &labels,
+int Connection::StopAsyncWait(const std::vector<std::string> &containers, const std::vector<std::string> &labels,
                               const std::string &targetState) {
     for (auto &name: containers)
         Impl->Req.mutable_stopasyncwait()->add_name(name);
@@ -605,16 +584,15 @@ int Connection::ListVolumeProperties(std::vector<Property> &list) {
         list.resize(Impl->Rsp.volumepropertylist().properties_size());
         for (const auto &prop: Impl->Rsp.volumepropertylist().properties()) {
             list[i].Name = prop.name();
-            list[i++].Description =  prop.desc();
+            list[i++].Description = prop.desc();
         }
     }
 
     return ret;
 }
 
-int Connection::CreateVolume(const std::string &path,
-                            const std::map<std::string, std::string> &config,
-                            Volume &result) {
+int Connection::CreateVolume(const std::string &path, const std::map<std::string, std::string> &config,
+                             Volume &result) {
     auto req = Impl->Req.mutable_createvolume();
 
     req->set_path(path);
@@ -635,8 +613,7 @@ int Connection::CreateVolume(const std::string &path,
     return ret;
 }
 
-int Connection::CreateVolume(std::string &path,
-                            const std::map<std::string, std::string> &config) {
+int Connection::CreateVolume(std::string &path, const std::map<std::string, std::string> &config) {
     Volume result;
     int ret = CreateVolume(path, config, result);
     if (!ret && path.empty())
@@ -644,10 +621,9 @@ int Connection::CreateVolume(std::string &path,
     return ret;
 }
 
-int Connection::LinkVolume(const std::string &path, const std::string &container,
-        const std::string &target, bool read_only, bool required) {
-    auto req = (target == "" && !required) ? Impl->Req.mutable_linkvolume() :
-                                             Impl->Req.mutable_linkvolumetarget();
+int Connection::LinkVolume(const std::string &path, const std::string &container, const std::string &target,
+                           bool read_only, bool required) {
+    auto req = (target == "" && !required) ? Impl->Req.mutable_linkvolume() : Impl->Req.mutable_linkvolumetarget();
     req->set_path(path);
     if (!container.empty())
         req->set_container(container);
@@ -660,12 +636,9 @@ int Connection::LinkVolume(const std::string &path, const std::string &container
     return Impl->Call();
 }
 
-int Connection::UnlinkVolume(const std::string &path,
-                             const std::string &container,
-                             const std::string &target,
+int Connection::UnlinkVolume(const std::string &path, const std::string &container, const std::string &target,
                              bool strict) {
-    auto req = (target == "***") ? Impl->Req.mutable_unlinkvolume() :
-                                   Impl->Req.mutable_unlinkvolumetarget();
+    auto req = (target == "***") ? Impl->Req.mutable_unlinkvolume() : Impl->Req.mutable_unlinkvolumetarget();
 
     req->set_path(path);
     if (!container.empty())
@@ -678,9 +651,7 @@ int Connection::UnlinkVolume(const std::string &path,
     return Impl->Call(Impl->DiskTimeout);
 }
 
-int Connection::ListVolumes(const std::string &path,
-                           const std::string &container,
-                           std::vector<Volume> &volumes) {
+int Connection::ListVolumes(const std::string &path, const std::string &container, std::vector<Volume> &volumes) {
     auto req = Impl->Req.mutable_listvolumes();
 
     if (!path.empty())
@@ -722,8 +693,7 @@ int Connection::ListVolumes(const std::string &path,
     return ret;
 }
 
-int Connection::TuneVolume(const std::string &path,
-                          const std::map<std::string, std::string> &config) {
+int Connection::TuneVolume(const std::string &path, const std::map<std::string, std::string> &config) {
     auto req = Impl->Req.mutable_tunevolume();
 
     req->set_path(path);
@@ -748,12 +718,8 @@ int Connection::CheckVolume(const std::string &path, std::string &message) {
     return ret;
 }
 
-int Connection::ImportLayer(const std::string &layer,
-                            const std::string &tarball, bool merge,
-                            const std::string &place,
-                            const std::string &private_value,
-                            const std::string &container,
-                            bool verboseError) {
+int Connection::ImportLayer(const std::string &layer, const std::string &tarball, bool merge, const std::string &place,
+                            const std::string &private_value, const std::string &container, bool verboseError) {
     auto req = Impl->Req.mutable_importlayer();
 
     req->set_layer(layer);
@@ -770,9 +736,7 @@ int Connection::ImportLayer(const std::string &layer,
     return Impl->Call(Impl->DiskTimeout);
 }
 
-int Connection::ExportLayer(const std::string &volume,
-                           const std::string &tarball,
-                           const std::string &compress) {
+int Connection::ExportLayer(const std::string &volume, const std::string &tarball, const std::string &compress) {
     auto req = Impl->Req.mutable_exportlayer();
 
     req->set_volume(volume);
@@ -792,9 +756,7 @@ int Connection::RemoveLayer(const std::string &layer, const std::string &place, 
     return Impl->Call(Impl->DiskTimeout);
 }
 
-int Connection::ListLayers(std::vector<Layer> &layers,
-                           const std::string &place,
-                           const std::string &mask) {
+int Connection::ListLayers(std::vector<Layer> &layers, const std::string &place, const std::string &mask) {
     auto req = Impl->Req.mutable_listlayers();
     if (place.size())
         req->set_place(place);
@@ -823,9 +785,7 @@ int Connection::ListLayers(std::vector<Layer> &layers,
     return ret;
 }
 
-int Connection::GetLayerPrivate(std::string &private_value,
-                                const std::string &layer,
-                                const std::string &place) {
+int Connection::GetLayerPrivate(std::string &private_value, const std::string &layer, const std::string &place) {
     auto req = Impl->Req.mutable_getlayerprivate();
     req->set_layer(layer);
     if (place.size())
@@ -837,9 +797,7 @@ int Connection::GetLayerPrivate(std::string &private_value,
     return ret;
 }
 
-int Connection::SetLayerPrivate(const std::string &private_value,
-                                const std::string &layer,
-                                const std::string &place) {
+int Connection::SetLayerPrivate(const std::string &private_value, const std::string &layer, const std::string &place) {
     auto req = Impl->Req.mutable_setlayerprivate();
     req->set_layer(layer);
     req->set_private_value(private_value);
@@ -867,9 +825,7 @@ DockerImage::DockerImage(const ::rpc::TDockerImage &i) {
     }
 }
 
-int Connection::DockerImageStatus(DockerImage &image,
-                                  const std::string &name,
-                                  const std::string &place) {
+int Connection::DockerImageStatus(DockerImage &image, const std::string &name, const std::string &place) {
     auto req = Impl->Req.mutable_dockerimagestatus();
     req->set_name(name);
     if (!place.empty())
@@ -880,9 +836,7 @@ int Connection::DockerImageStatus(DockerImage &image,
     return ret;
 }
 
-int Connection::ListDockerImages(std::vector<DockerImage> &images,
-                                 const std::string &place,
-                                 const std::string &mask) {
+int Connection::ListDockerImages(std::vector<DockerImage> &images, const std::string &place, const std::string &mask) {
     auto req = Impl->Req.mutable_listdockerimages();
     if (place.size())
         req->set_place(place);
@@ -896,11 +850,8 @@ int Connection::ListDockerImages(std::vector<DockerImage> &images,
     return ret;
 }
 
-int Connection::PullDockerImage(DockerImage &image,
-                                const std::string &name,
-                                const std::string &place,
-                                const std::string &auth_token,
-                                const std::string &auth_path,
+int Connection::PullDockerImage(DockerImage &image, const std::string &name, const std::string &place,
+                                const std::string &auth_token, const std::string &auth_path,
                                 const std::string &auth_service) {
     auto req = Impl->Req.mutable_pulldockerimage();
     req->set_name(name);
@@ -918,8 +869,7 @@ int Connection::PullDockerImage(DockerImage &image,
     return ret;
 }
 
-int Connection::RemoveDockerImage(const std::string &name,
-                                  const std::string &place) {
+int Connection::RemoveDockerImage(const std::string &name, const std::string &place) {
     auto req = Impl->Req.mutable_removedockerimage();
     req->set_name(name);
     if (place.size())
@@ -938,8 +888,7 @@ const rpc::TStorageListResponse *Connection::ListStorage(const std::string &plac
     return &Impl->Rsp.storagelist();
 }
 
-int Connection::RemoveStorage(const std::string &name,
-                              const std::string &place) {
+int Connection::RemoveStorage(const std::string &name, const std::string &place) {
     auto req = Impl->Req.mutable_removestorage();
 
     req->set_name(name);
@@ -948,11 +897,8 @@ int Connection::RemoveStorage(const std::string &name,
     return Impl->Call(Impl->DiskTimeout);
 }
 
-int Connection::ImportStorage(const std::string &name,
-                              const std::string &archive,
-                              const std::string &place,
-                              const std::string &compression,
-                              const std::string &private_value) {
+int Connection::ImportStorage(const std::string &name, const std::string &archive, const std::string &place,
+                              const std::string &compression, const std::string &private_value) {
     auto req = Impl->Req.mutable_importstorage();
 
     req->set_name(name);
@@ -966,9 +912,7 @@ int Connection::ImportStorage(const std::string &name,
     return Impl->Call(Impl->DiskTimeout);
 }
 
-int Connection::ExportStorage(const std::string &name,
-                              const std::string &archive,
-                              const std::string &place,
+int Connection::ExportStorage(const std::string &name, const std::string &archive, const std::string &place,
                               const std::string &compression) {
     auto req = Impl->Req.mutable_exportstorage();
 
@@ -981,8 +925,8 @@ int Connection::ExportStorage(const std::string &name,
     return Impl->Call(Impl->DiskTimeout);
 }
 
-int Connection::ConvertPath(const std::string &path, const std::string &src,
-                           const std::string &dest, std::string &res) {
+int Connection::ConvertPath(const std::string &path, const std::string &src, const std::string &dest,
+                            std::string &res) {
     auto req = Impl->Req.mutable_convertpath();
     req->set_path(path);
     req->set_source(src);
@@ -994,8 +938,7 @@ int Connection::ConvertPath(const std::string &path, const std::string &src,
     return ret;
 }
 
-int Connection::AttachProcess(const std::string &name,
-                              int pid, const std::string &comm) {
+int Connection::AttachProcess(const std::string &name, int pid, const std::string &comm) {
     auto req = Impl->Req.mutable_attachprocess();
     req->set_name(name);
     req->set_pid(pid);
@@ -1003,8 +946,7 @@ int Connection::AttachProcess(const std::string &name,
     return Impl->Call();
 }
 
-int Connection::AttachThread(const std::string &name,
-                              int pid, const std::string &comm) {
+int Connection::AttachThread(const std::string &name, int pid, const std::string &comm) {
     auto req = Impl->Req.mutable_attachthread();
     req->set_name(name);
     req->set_pid(pid);
@@ -1012,8 +954,7 @@ int Connection::AttachThread(const std::string &name,
     return Impl->Call();
 }
 
-int Connection::LocateProcess(int pid, const std::string &comm,
-                              std::string &name) {
+int Connection::LocateProcess(int pid, const std::string &comm, std::string &name) {
     Impl->Req.mutable_locateprocess()->set_pid(pid);
     Impl->Req.mutable_locateprocess()->set_comm(comm);
 
@@ -1043,7 +984,8 @@ int Connection::GetContainerSpec(const std::string &name, rpc::TContainer &conta
     return ret;
 }
 
-int Connection::ListContainersBy(const rpc::TListContainersRequest &listContainersRequest, std::vector<rpc::TContainer> &containers) {
+int Connection::ListContainersBy(const rpc::TListContainersRequest &listContainersRequest,
+                                 std::vector<rpc::TContainer> &containers) {
     auto req = Impl->Req.mutable_listcontainersby();
     *req = listContainersRequest;
 
@@ -1051,19 +993,20 @@ int Connection::ListContainersBy(const rpc::TListContainersRequest &listContaine
     if (ret)
         return ret;
 
-    for (auto &ct : Impl->Rsp.listcontainersby().containers())
+    for (auto &ct: Impl->Rsp.listcontainersby().containers())
         containers.push_back(ct);
 
     return EError::Success;
 }
 
-int Connection::CreateFromSpec(const rpc::TContainerSpec &container, std::vector<rpc::TVolumeSpec> volumes, bool start) {
+int Connection::CreateFromSpec(const rpc::TContainerSpec &container, std::vector<rpc::TVolumeSpec> volumes,
+                               bool start) {
     auto req = Impl->Req.mutable_createfromspec();
 
     auto ct = req->mutable_container();
     *ct = container;
 
-    for  (auto &volume : volumes) {
+    for (auto &volume: volumes) {
         auto v = req->add_volumes();
         *v = volume;
     }
@@ -1092,7 +1035,7 @@ int Connection::ListVolumesBy(const rpc::TGetVolumeRequest &getVolumeRequest, st
     if (ret)
         return ret;
 
-    for (auto volume : Impl->Rsp.getvolume().volume())
+    for (auto volume: Impl->Rsp.getvolume().volume())
         volumes.push_back(volume);
     return EError::Success;
 }
@@ -1106,7 +1049,7 @@ int Connection::CreateVolumeFromSpec(const rpc::TVolumeSpec &volume, rpc::TVolum
     if (ret)
         return ret;
 
-    resultSpec =  Impl->Rsp.newvolume().volume();
+    resultSpec = Impl->Rsp.newvolume().volume();
 
     return ret;
 }
@@ -1122,7 +1065,7 @@ void AsyncWaiter::MainCallback(Porto::AsyncWaitEvent &event) {
 }
 
 int AsyncWaiter::Repair() {
-    for (const auto &it : AsyncCallbacks) {
+    for (const auto &it: AsyncCallbacks) {
         int ret = Api.AsyncWait({it.first}, {}, GetMainCallback(), -1, it.second.State);
         if (ret)
             return ret;
@@ -1172,7 +1115,7 @@ void AsyncWaiter::WatchDog() {
                         Fatal("Can not epoll_ctl", errno);
                         return;
                     }
-               }
+                }
             } else if (events[n].data.fd == Sock) {
                 ERequestType requestType = static_cast<ERequestType>(RecvInt(Sock));
 
@@ -1237,8 +1180,8 @@ void AsyncWaiter::HandleDelRequest() {
 }
 
 AsyncWaiter::AsyncWaiter(std::function<void(const std::string &error, int ret)> fatalCallback)
-: CallbacksCount(0ul)
-, FatalCallback(fatalCallback)
+    : CallbacksCount(0ul),
+      FatalCallback(fatalCallback)
 {
     int socketPair[2];
     int ret = socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, socketPair);
@@ -1300,7 +1243,8 @@ AsyncWaiter::~AsyncWaiter() {
     close(MasterSock);
 }
 
-int AsyncWaiter::Add(const std::string &ct, const std::string &state, std::function<void(AsyncWaitEvent &event)> callback) {
+int AsyncWaiter::Add(const std::string &ct, const std::string &state,
+                     std::function<void(AsyncWaitEvent &event)> callback) {
     if (FatalError)
         return -1;
 

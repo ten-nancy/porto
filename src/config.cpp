@@ -1,14 +1,15 @@
 #include "config.hpp"
-#include "util/unix.hpp"
+
 #include "util/log.hpp"
 #include "util/namespace.hpp"
+#include "util/unix.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-#include <google/protobuf/text_format.h>
 #include <google/protobuf/io/tokenizer.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/text_format.h>
 
 #pragma GCC diagnostic pop
 
@@ -19,17 +20,19 @@ extern "C" {
 #include <unistd.h>
 }
 
-class TProtobufLogger : public google::protobuf::io::ErrorCollector {
+class TProtobufLogger: public google::protobuf::io::ErrorCollector {
 public:
     std::string Path;
-    TProtobufLogger(const std::string &path) : Path(path) {}
+    TProtobufLogger(const std::string &path)
+        : Path(path)
+    {}
     ~TProtobufLogger() {}
 
-    void AddError(int line, int column, const std::string& message) {
+    void AddError(int line, int column, const std::string &message) {
         L_WRN("Config {} at line {} column {} {}", Path, line + 1, column + 1, message);
     }
 
-    void AddWarning(int line, int column, const std::string& message) {
+    void AddWarning(int line, int column, const std::string &message) {
         L_WRN("Config {} at line {} column {} {}", Path, line + 1, column + 1, message);
     }
 };
@@ -48,13 +51,13 @@ static void NetSysctl(const std::string &key, const std::string &val)
 }
 
 static void DefaultConfig() {
-    auto& cfg = config();
+    auto &cfg = config();
 
     std::string version;
     if (!GetSysctl("kernel.osrelease", version))
         cfg.set_linux_version(version);
 
-    auto* log = cfg.mutable_log();
+    auto *log = cfg.mutable_log();
 
     log->set_verbose(false);
     log->set_debug(false);
@@ -62,7 +65,7 @@ static void DefaultConfig() {
     cfg.set_keyvalue_limit(1 << 20);
     cfg.set_keyvalue_size(32 << 20);
 
-    auto* daemon = cfg.mutable_daemon();
+    auto *daemon = cfg.mutable_daemon();
 
     daemon->set_rw_threads(20);
     daemon->set_ro_threads(10);
@@ -97,13 +100,13 @@ static void DefaultConfig() {
     daemon->set_fuse_termination_timeout_s(60);
     daemon->set_fuse_termination_sleep_ms(1000);
 
-    auto* container = cfg.mutable_container();
+    auto *container = cfg.mutable_container();
 
     container->set_default_aging_time_s(60 * 60 * 24);
     container->set_respawn_delay_ms(1000);
 
-    container->set_stdout_limit(8 << 20); /* 8Mb */
-    container->set_stdout_limit_max(1 << 30); /* 1Gb */
+    container->set_stdout_limit(8 << 20);           /* 8Mb */
+    container->set_stdout_limit_max(1 << 30);       /* 1Gb */
     container->set_std_stream_read_limit(16 << 20); /* 16Mb */
 
     container->set_kill_timeout_ms(1000);
@@ -148,7 +151,7 @@ static void DefaultConfig() {
     container->set_default_ulimit("core: 0 unlimited; nofile: 8K 1M");
     container->set_default_thread_limit(10000);
 
-    container->set_cpu_period(100000000);    /* 100ms */
+    container->set_cpu_period(100000000); /* 100ms */
     container->set_cpu_limit_scale(1);
     container->set_proportional_cpu_shares(false);
     container->set_propagate_cpu_guarantee(true);
@@ -163,7 +166,7 @@ static void DefaultConfig() {
     container->set_enable_sched_idle(false);
     container->set_enable_start_parents(true);
 
-    auto* volumes = cfg.mutable_volumes();
+    auto *volumes = cfg.mutable_volumes();
     volumes->set_enable_quota(true);
     volumes->set_keep_project_quota_id(true);
     volumes->set_insecure_user_paths("");
@@ -180,18 +183,18 @@ static void DefaultConfig() {
     volumes->set_fs_stat_update_interval_ms(60000);
     volumes->set_async_remove_watchdog_ms(5000);
 
-    auto* network = cfg.mutable_network();
+    auto *network = cfg.mutable_network();
 
     network->set_enable_host_net_classes(false);
 
     network->set_device_qdisc("default: htb");
 
-    network->set_default_rate("default: 1250000");  /* 10Mbit */
+    network->set_default_rate("default: 1250000"); /* 10Mbit */
     network->set_default_qdisc("default: fq_codel");
     network->set_default_qdisc_limit("default: 10240");
     network->set_default_qdisc_burst_duration("default: 10"); /* msec */
 
-    network->set_container_rate("default: 125000");  /* 1Mbit */
+    network->set_container_rate("default: 125000"); /* 1Mbit */
     network->set_container_qdisc("default: pfifo_fast");
     network->set_container_qdisc_limit("default: 10240");
 
@@ -229,13 +232,13 @@ static void DefaultConfig() {
 
     network->set_network_inherit_xvlan(false);
 
-    auto* core = cfg.mutable_core();
+    auto *core = cfg.mutable_core();
 
     core->set_enable(false);
-    core->set_timeout_s(600); /* 10min */
-    core->set_space_limit_mb(102400); /* 100Gb */
+    core->set_timeout_s(600);             /* 10min */
+    core->set_space_limit_mb(102400);     /* 100Gb */
     core->set_slot_space_limit_mb(10240); /* 10Gb */
-    core->set_sync_size(4ull << 20); /* 4Mb */
+    core->set_sync_size(4ull << 20);      /* 4Mb */
 
     NetSysctl("net.ipv6.conf.all.accept_dad", "0");
     NetSysctl("net.ipv6.conf.default.accept_dad", "0");
@@ -300,14 +303,12 @@ TError ValidateConfig() {
 #endif
 
 #if TCA_FQ_CODEL_MAX <= 8
-    if (config().network().has_fq_codel_memory_limit() &&
-        config().network().fq_codel_memory_limit() > 0)
+    if (config().network().has_fq_codel_memory_limit() && config().network().fq_codel_memory_limit() > 0)
         return TError(EError::InvalidValue, "fq_codel memory limit not supported");
 #endif
 
 #if TCA_FQ_MAX <= 14
-    if (config().network().has_fq_horizon() ||
-        config().network().has_fq_horizon_drop())
+    if (config().network().has_fq_horizon() || config().network().has_fq_horizon_drop())
         return TError(EError::InvalidValue, "fq horizon options not supported");
 #endif
 
@@ -318,8 +319,7 @@ TError ValidateConfig() {
         config().container().memory_high_limit_proportion() > 1)
         return TError(EError::InvalidValue, "memory_high_limit_proportion is outside [0, 1]");
 
-    if (config().network().enable_host_net_classes() &&
-        !config().network().enable_netcls_classid())
+    if (config().network().enable_host_net_classes() && !config().network().enable_netcls_classid())
         return TError(EError::InvalidValue, "enable_host_net_classes unable to work without enable_netcls_classid");
 
     return OK;

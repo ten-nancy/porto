@@ -1,18 +1,17 @@
 #pragma once
 
-#include "common.hpp"
-
 #include <functional>
-#include <vector>
 #include <set>
+#include <vector>
 
-#include "util/signal.hpp"
+#include "common.hpp"
 #include "util/path.hpp"
+#include "util/signal.hpp"
 
 extern "C" {
+#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
-#include <sys/prctl.h>
 }
 
 class TPath;
@@ -81,20 +80,32 @@ void DumpMallocInfo();
 
 int SetIoPrio(pid_t pid, int ioprio);
 
-class TUnixSocket : public TNonCopyable {
+class TUnixSocket: public TNonCopyable {
     int SockFd;
+
 public:
     static TError SocketPair(TUnixSocket &sock1, TUnixSocket &sock2);
-    TUnixSocket(int sock = -1) : SockFd(sock) {};
-    ~TUnixSocket() { Close(); };
+    TUnixSocket(int sock = -1)
+        : SockFd(sock)
+    {};
+    ~TUnixSocket() {
+        Close();
+    };
     void operator=(int sock);
-    TUnixSocket& operator=(TUnixSocket&& Sock);
+    TUnixSocket &operator=(TUnixSocket &&Sock);
     void Close();
-    int GetFd() const { return SockFd; }
+    int GetFd() const {
+        return SockFd;
+    }
     TError SendInt(int val) const;
     TError RecvInt(int &val) const;
-    TError SendZero() const { return SendInt(0); }
-    TError RecvZero() const { int zero; return RecvInt(zero); }
+    TError SendZero() const {
+        return SendInt(0);
+    }
+    TError RecvZero() const {
+        int zero;
+        return RecvInt(zero);
+    }
     TError SendPid(pid_t pid) const;
     TError RecvPid(pid_t &pid, pid_t &vpid) const;
     TError SendError(const TError &error) const;
@@ -111,7 +122,11 @@ public:
     std::string AltName;
     pid_t Pid = 0;
 
-    TPidFile(const std::string &path, const std::string &name, const std::string &altname): Path(path), Name(name), AltName(altname) { }
+    TPidFile(const std::string &path, const std::string &name, const std::string &altname)
+        : Path(path),
+          Name(name),
+          AltName(altname)
+    {}
     TError Read();
     bool Running();
     TError Save(pid_t pid);
@@ -127,7 +142,7 @@ class TSessionInfo {
     struct session_info {
         __u32 kind;
         __u64 id;
-        char* user; // null-terminated
+        char *user;  // null-terminated
     } sessionInfo;
 
 public:

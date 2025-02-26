@@ -1,8 +1,8 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
 
 #include "util/error.hpp"
 
@@ -11,7 +11,7 @@ extern "C" {
 }
 
 #define STRINGIFY_IMPL(x) #x
-#define STRINGIFY(x) STRINGIFY_IMPL(x)
+#define STRINGIFY(x)      STRINGIFY_IMPL(x)
 
 typedef std::map<std::string, uint64_t> TUintMap;
 typedef std::map<std::string, std::pair<uint64_t, uint64_t>> TUintPairMap;
@@ -38,7 +38,7 @@ std::string MergeEscapeStrings(const TMultiTuple &tuples, char sep_inner, char s
 std::string MergeEscapeStrings(const TTuple &tuple, char sep);
 std::string MergeWithQuotes(const TTuple &tuple, char sep, char quot = '\"');
 
-std::string StringTrim(const std::string& s, const std::string &what = " \t\n");
+std::string StringTrim(const std::string &s, const std::string &what = " \t\n");
 bool StringOnlyDigits(const std::string &s);
 std::string StringReplaceAll(const std::string &str, const std::string &from, const std::string &to);
 bool StringStartsWith(const std::string &str, const std::string &prefix);
@@ -49,14 +49,10 @@ bool StringContains(const std::string &str, char target);
 bool StringContainsAny(const std::string &str, const std::string &target);
 
 typedef std::vector<std::pair<uint64_t, std::string>> TFlagsNames;
-std::string StringFormatFlags(uint64_t flags,
-                              const TFlagsNames &names,
-                              const std::string sep = ",");
-TError StringParseFlags(const std::string &str, const TFlagsNames &names,
-                        uint64_t &result, const char sep = ',');
+std::string StringFormatFlags(uint64_t flags, const TFlagsNames &names, const std::string sep = ",");
+TError StringParseFlags(const std::string &str, const TFlagsNames &names, uint64_t &result, const char sep = ',');
 
-std::string StringFormat(const char *format, ...)
-                         __attribute__ ((format (printf, 1, 2)));
+std::string StringFormat(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
 std::string StringFormatSize(uint64_t value);
 std::string StringFormatDuration(uint64_t msec);
@@ -81,13 +77,16 @@ class TPath;
 class TBitMap {
 private:
     std::vector<bool> bits;
+
 public:
     TBitMap() {}
     ~TBitMap() {}
 
-    TBitMap(const TBitMap &other) : bits(other.bits) { }
+    TBitMap(const TBitMap &other)
+        : bits(other.bits)
+    {}
 
-    TBitMap& operator=(const TBitMap &other) {
+    TBitMap &operator=(const TBitMap &other) {
         bits = other.bits;
         return *this;
     }

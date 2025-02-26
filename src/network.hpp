@@ -1,22 +1,21 @@
 #pragma once
 
-#include <memory>
 #include <atomic>
-#include <string>
+#include <condition_variable>
+#include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
-#include <condition_variable>
 
 #include "common.hpp"
-#include "util/netlink.hpp"
-#include "util/namespace.hpp"
-#include "util/cred.hpp"
-#include "util/idmap.hpp"
-#include "util/hgram.hpp"
-#include "util/mutex.hpp"
-
 #include "netlimitsoft.hpp"
+#include "util/cred.hpp"
+#include "util/hgram.hpp"
+#include "util/idmap.hpp"
+#include "util/mutex.hpp"
+#include "util/namespace.hpp"
+#include "util/netlink.hpp"
 
 class TContainer;
 class TNetwork;
@@ -118,7 +117,7 @@ struct TNetProxyNeighbour {
     std::string Master;
 };
 
-class TNetwork : public TNonCopyable {
+class TNetwork: public TNonCopyable {
     friend struct TNetEnv;
 
     static MeasuredMutex NetworksMutex;
@@ -193,17 +192,21 @@ public:
     TNetwork(bool host = false);
     ~TNetwork();
 
-    bool IsHost() const { return NetIsHost; }
+    bool IsHost() const {
+        return NetIsHost;
+    }
 
-    std::shared_ptr<TNl> GetNl() { return Nl; }
-    struct nl_sock *GetSock() const { return Nl->GetSock(); }
+    std::shared_ptr<TNl> GetNl() {
+        return Nl;
+    }
+    struct nl_sock *GetSock() const {
+        return Nl->GetSock();
+    }
 
     std::string NetName;
 
     static TError New(TNamespaceFd &netns, std::shared_ptr<TNetwork> &net, pid_t netnsPid = 0);
-    static TError Open(const TPath &path, TNamespaceFd &netns,
-                       std::shared_ptr<TNetwork> &net,
-                       bool host = false);
+    static TError Open(const TPath &path, TNamespaceFd &netns, std::shared_ptr<TNetwork> &net, bool host = false);
     void Destroy();
 
     std::unique_lock<std::mutex> LockNet() {
@@ -271,11 +274,9 @@ public:
 
     TError GetL3Gate(TNetDeviceConfig &dev);
 
-    TError SetupProxyNeighbour(const std::vector <TNlAddr> &ip,
-                               const std::string &master);
+    TError SetupProxyNeighbour(const std::vector<TNlAddr> &ip, const std::string &master);
 
-    TError AddProxyNeightbour(const std::vector<TNlAddr> &ip,
-                              const std::string &master);
+    TError AddProxyNeightbour(const std::vector<TNlAddr> &ip, const std::string &master);
     void DelProxyNeightbour(const std::vector<TNlAddr> &ip);
     void RepairProxyNeightbour();
 
@@ -283,8 +284,8 @@ public:
     TNlAddr NatBaseV6;
     TIdMap NatBitmap;
 
-    TError GetNatAddress(std::vector <TNlAddr> &addrs);
-    TError PutNatAddress(const std::vector <TNlAddr> &addrs);
+    TError GetNatAddress(std::vector<TNlAddr> &addrs);
+    TError PutNatAddress(const std::vector<TNlAddr> &addrs);
 
     TError SetupAddrLabel();
 

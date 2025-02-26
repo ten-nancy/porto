@@ -1,34 +1,35 @@
-#include <sstream>
-#include <algorithm>
-
 #include "path.hpp"
+
+#include <algorithm>
+#include <sstream>
+
+#include "util/log.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
-#include "util/log.hpp"
 
 extern "C" {
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/sysmacros.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <ftw.h>
+#include <linux/falloc.h>
+#include <linux/fs.h>
+#include <linux/limits.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/statvfs.h>
-#include <sys/time.h>
-#include <fcntl.h>
-#include <ftw.h>
-#include <sys/prctl.h>
-#include <linux/limits.h>
-#include <linux/falloc.h>
-#include <linux/fs.h>
 #include <sys/syscall.h>
-#include <dirent.h>
+#include <sys/sysmacros.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 }
 
 #ifndef FALLOC_FL_COLLAPSE_RANGE
-#define FALLOC_FL_COLLAPSE_RANGE        0x08
+#define FALLOC_FL_COLLAPSE_RANGE 0x08
 #endif
 
-constexpr off_t ROTATE_OFFSET_LIMIT = 16384; // 16Kb
+constexpr off_t ROTATE_OFFSET_LIMIT = 16384;  // 16Kb
 
 // TODO(ovov): maybe use version from gnulib with fts_cwd_fd:
 // https://git.savannah.gnu.org/cgit/gnulib.git/tree/lib/fts_.h?id=d4ec02b3cc70cddaaa5183cc5a45814e0afb2292#n133
@@ -321,15 +322,13 @@ TError TFile::PivotRoot() const {
 
 TError TPath::Chown(uid_t uid, gid_t gid) const {
     if (chown(Path.c_str(), uid, gid))
-        return TError::System("chown(" + Path + ", " +
-                        std::to_string(uid) + ", " + std::to_string(gid) + ")");
+        return TError::System("chown(" + Path + ", " + std::to_string(uid) + ", " + std::to_string(gid) + ")");
     return OK;
 }
 
 TError TPath::Lchown(uid_t uid, gid_t gid) const {
     if (lchown(Path.c_str(), uid, gid))
-        return TError::System("lchown(" + Path + ", " +
-                        std::to_string(uid) + ", " + std::to_string(gid) + ")");
+        return TError::System("lchown(" + Path + ", " + std::to_string(uid) + ", " + std::to_string(gid) + ")");
     return OK;
 }
 
@@ -407,8 +406,8 @@ TError TPath::Symlink(const TPath &target) const {
 TError TPath::Mknod(unsigned int mode, unsigned int dev) const {
     int ret = mknod(Path.c_str(), mode, dev);
     if (ret)
-        return TError::System("mknod(" + Path + ", " +
-                StringFormat("%#o", mode) + ", " + StringFormat("%#x", dev) + ")");
+        return TError::System("mknod(" + Path + ", " + StringFormat("%#o", mode) + ", " + StringFormat("%#x", dev) +
+                              ")");
     return OK;
 }
 
@@ -427,7 +426,6 @@ TPath TPath::NormalPath() const {
         path = "/";
 
     while (std::getline(ss, component, '/')) {
-
         if (component == "" || component == ".")
             continue;
 
@@ -442,9 +440,9 @@ TPath TPath::NormalPath() const {
                 }
             } else if (path.compare(last + 1, std::string::npos, "..") != 0) {
                 if (last == 0)
-                    path.erase(last + 1);   /* /.. or /a/.. */
+                    path.erase(last + 1); /* /.. or /a/.. */
                 else
-                    path.erase(last);       /* a/b/.. */
+                    path.erase(last); /* a/b/.. */
                 continue;
             }
         }
@@ -518,7 +516,6 @@ TPath TPath::RealPath() const {
  * "/root".InnerPath("/foo", true) -> ""
  */
 TPath TPath::InnerPath(const TPath &path, bool absolute) const {
-
     unsigned len = Path.length();
 
     /* check prefix */
@@ -574,9 +571,8 @@ TError TPath::Rename(const TPath &dest) const {
 
 TError TPath::Mkdir(unsigned int mode) const {
     if (mkdir(Path.c_str(), mode) < 0)
-        return TError(errno == ENOSPC ? EError::NoSpace :
-                                        EError::Unknown,
-                      errno, "mkdir(" + Path + ", " + StringFormat("%#o", mode) + ")");
+        return TError(errno == ENOSPC ? EError::NoSpace : EError::Unknown, errno,
+                      "mkdir(" + Path + ", " + StringFormat("%#o", mode) + ")");
     return OK;
 }
 
@@ -694,8 +690,7 @@ TError TPath::ListSubdirs(std::vector<std::string> &result) const {
     while ((de = readdir(dir))) {
         if (strcmp(de->d_name, ".") && strcmp(de->d_name, "..") &&
             (de->d_type == DT_DIR ||
-             (de->d_type == DT_UNKNOWN &&
-              (*this / std::string(de->d_name)).IsDirectoryStrict())))
+             (de->d_type == DT_UNKNOWN && (*this / std::string(de->d_name)).IsDirectoryStrict())))
             result.push_back(std::string(de->d_name));
     }
     closedir(dir);
@@ -711,8 +706,8 @@ int64_t TPath::SinceModificationMs() const {
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
 
-    return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000 -
-           (int64_t)st.st_mtim.tv_sec * 1000 - st.st_mtim.tv_nsec / 1000000;
+    return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000 - (int64_t)st.st_mtim.tv_sec * 1000 -
+           st.st_mtim.tv_nsec / 1000000;
 }
 
 TError TPath::GetXAttr(const std::string &name, std::string &value) const {
@@ -726,8 +721,7 @@ TError TPath::GetXAttr(const std::string &name, std::string &value) const {
 }
 
 TError TPath::SetXAttr(const std::string &name, const std::string &value) const {
-    if (syscall(SYS_setxattr, Path.c_str(), name.c_str(),
-                value.c_str(), value.length(), 0))
+    if (syscall(SYS_setxattr, Path.c_str(), name.c_str(), value.c_str(), value.length(), 0))
         return TError::System("setxattr {} {}", Path, name);
     return OK;
 }
@@ -804,8 +798,7 @@ TError TPath::Chattr(unsigned add_flags, unsigned del_flags) const {
     TError error;
     TFile file;
 
-    error = file.Open(*this, O_RDONLY | O_CLOEXEC | O_NOFOLLOW |
-                             O_NOCTTY | O_NONBLOCK);
+    error = file.Open(*this, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY | O_NONBLOCK);
     if (error)
         return error;
     error = TFile::Chattr(file.Fd, add_flags, del_flags);
@@ -821,40 +814,40 @@ TError TPath::Touch() const {
 }
 
 static const TFlagsNames MountFlags = {
-    { MS_ALLOW_WRITE,   "rw" },
-    { MS_RDONLY,        "ro" },
-    { MS_ALLOW_SUID,    "suid" },
-    { MS_NOSUID,        "nosuid" },
-    { MS_ALLOW_DEV,     "dev" },
-    { MS_NODEV,         "nodev" },
-    { MS_ALLOW_EXEC,    "exec" },
-    { MS_NOEXEC,        "noexec" },
-    { MS_SYNCHRONOUS,   "sync" },
-    { MS_REMOUNT,       "remount" },
-    { MS_MANDLOCK,      "mand" },
-    { MS_DIRSYNC,       "dirsync" },
-    { MS_NOATIME,       "noatime" },
-    { MS_NODIRATIME,    "nodiratime" },
-    { MS_BIND,          "bind" },
-    { MS_MOVE,          "move" },
-    { MS_REC,           "rec" },
-    { MS_SILENT,        "silent" },
-    { MS_POSIXACL,      "acl" },
-    { MS_UNBINDABLE,    "unbindable" },
-    { MS_PRIVATE,       "private" },
-    { MS_SLAVE,         "slave" },
-    { MS_SHARED,        "shared" },
-    { MS_RELATIME,      "relatime" },
-    { MS_I_VERSION,     "iversion" },
-    { MS_STRICTATIME,   "strictatime" },
-    { MS_LAZYTIME,      "lazyatime" },
+    {MS_ALLOW_WRITE, "rw"},
+    {MS_RDONLY, "ro"},
+    {MS_ALLOW_SUID, "suid"},
+    {MS_NOSUID, "nosuid"},
+    {MS_ALLOW_DEV, "dev"},
+    {MS_NODEV, "nodev"},
+    {MS_ALLOW_EXEC, "exec"},
+    {MS_NOEXEC, "noexec"},
+    {MS_SYNCHRONOUS, "sync"},
+    {MS_REMOUNT, "remount"},
+    {MS_MANDLOCK, "mand"},
+    {MS_DIRSYNC, "dirsync"},
+    {MS_NOATIME, "noatime"},
+    {MS_NODIRATIME, "nodiratime"},
+    {MS_BIND, "bind"},
+    {MS_MOVE, "move"},
+    {MS_REC, "rec"},
+    {MS_SILENT, "silent"},
+    {MS_POSIXACL, "acl"},
+    {MS_UNBINDABLE, "unbindable"},
+    {MS_PRIVATE, "private"},
+    {MS_SLAVE, "slave"},
+    {MS_SHARED, "shared"},
+    {MS_RELATIME, "relatime"},
+    {MS_I_VERSION, "iversion"},
+    {MS_STRICTATIME, "strictatime"},
+    {MS_LAZYTIME, "lazyatime"},
 };
 
 static const TFlagsNames UmountFlags = {
-    { MNT_FORCE,        "force" },
-    { MNT_DETACH,       "detach" },
-    { MNT_EXPIRE,       "expire" },
-    { UMOUNT_NOFOLLOW,  "nofollow" },
+    {MNT_FORCE, "force"},
+    {MNT_DETACH, "detach"},
+    {MNT_EXPIRE, "expire"},
+    {UMOUNT_NOFOLLOW, "nofollow"},
 };
 
 TError TMount::ParseFlags(const std::string &str, uint64_t &mnt_flags, uint64_t allowed)
@@ -880,8 +873,7 @@ TError TPath::Mount(const TPath &source, const std::string &type, uint64_t mnt_f
     std::string data = MergeEscapeStrings(options, ',');
 
     if (data.length() >= 4096)
-        return TError(EError::Unknown, E2BIG, "mount option too big: " +
-                      std::to_string(data.length()));
+        return TError(EError::Unknown, E2BIG, "mount option too big: " + std::to_string(data.length()));
 
     L_ACT("mount {} -t {} {} -o {} {}", Path, type, source, data, TMount::FormatFlags(mnt_flags));
 
@@ -904,12 +896,9 @@ TError TPath::SecureTmpfsMount(const TCred &cred, size_t size) const {
 
     error = FindMount(mount);
     if (error || mount.Target != *this) {
-        return Mount("tmpfs", "tmpfs",
-                     MS_NOEXEC | MS_NOSUID | MS_NODEV,
-                     { "size=" + std::to_string(size),
-                       "mode=0750",
-                       "uid=" + std::to_string(cred.GetUid()),
-                       "gid=" + std::to_string(cred.GetGid()) });
+        return Mount("tmpfs", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV,
+                     {"size=" + std::to_string(size), "mode=0750", "uid=" + std::to_string(cred.GetUid()),
+                      "gid=" + std::to_string(cred.GetGid())});
     } else if (mount.Type != "tmpfs")
         return TError("found non-tmpfs mount at {}", *this);
 
@@ -931,7 +920,6 @@ TError TPath::Bind(const TPath &source, uint64_t mnt_flags) const {
 }
 
 TError TPath::Remount(uint64_t mnt_flags) const {
-
     if (!(mnt_flags & MS_SILENT))
         L_ACT("remount {} {}", Path, TMount::FormatFlags(mnt_flags));
 
@@ -1214,7 +1202,7 @@ TError TPath::FindMount(TMount &mount, bool exact) const {
     TPath normal = NormalPath();
     bool found = false;
 
-    for (auto &line : lines) {
+    for (auto &line: lines) {
         TMount mnt;
 
         error = mnt.ParseMountinfo(line);
@@ -1224,8 +1212,7 @@ TError TPath::FindMount(TMount &mount, bool exact) const {
         if (exact && mnt.Target != normal)
             continue;
 
-        if (normal.IsInside(mnt.Target) && (mnt.Target.GetDev() == device ||
-                                            mnt.Source.GetBlockDev() == device)) {
+        if (normal.IsInside(mnt.Target) && (mnt.Target.GetDev() == device || mnt.Source.GetBlockDev() == device)) {
             mount = mnt;
             found = true;
             /* get last matching mountpoint */
@@ -1238,7 +1225,7 @@ TError TPath::FindMount(TMount &mount, bool exact) const {
     return OK;
 }
 
-TError TPath::ListMountsByFilter(std::vector<TMount> &list, pid_t pid, std::function<bool(const TMount&)> filter) {
+TError TPath::ListMountsByFilter(std::vector<TMount> &list, pid_t pid, std::function<bool(const TMount &)> filter) {
     TError error;
     std::vector<std::string> lines;
 
@@ -1246,7 +1233,7 @@ TError TPath::ListMountsByFilter(std::vector<TMount> &list, pid_t pid, std::func
     if (error)
         return error;
 
-    for (auto &line : lines) {
+    for (auto &line: lines) {
         TMount mount;
 
         error = mount.ParseMountinfo(line);
@@ -1272,11 +1259,8 @@ std::string TMount::Demangle(const std::string &s) {
     std::string demangled;
 
     for (unsigned int i = 0; i < s.size();) {
-        if (s[i] == '\\' && (i + 3 < s.size()) &&
-            ((s[i + 1] & ~7) == '0') &&
-            ((s[i + 2] & ~7) == '0') &&
+        if (s[i] == '\\' && (i + 3 < s.size()) && ((s[i + 1] & ~7) == '0') && ((s[i + 2] & ~7) == '0') &&
             ((s[i + 3] & ~7) == '0')) {
-
             demangled.push_back(64 * (s[i + 1] & 7) + 8 * (s[i + 2] & 7) + (s[i + 3] & 7));
             i += 4;
 
@@ -1450,7 +1434,7 @@ void TFile::Swap(TFile &other) {
 }
 
 void TFile::Close(const std::vector<int> &fds) {
-    for (int fd : fds)
+    for (int fd: fds)
         close(fd);
 }
 
@@ -1483,7 +1467,7 @@ TPath TFile::ProcPath(void) const {
 
 TError TFile::Read(std::string &text) const {
     if (!text.size())
-        text.resize(16<<10);
+        text.resize(16 << 10);
     ssize_t ret = read(Fd, &text[0], text.size());
     if (ret < 0)
         return TError::System("read");
@@ -1584,8 +1568,7 @@ TError TFile::Chattr(int fd, unsigned add_flags, unsigned del_flags) {
 int TFile::GetMountId(const TPath &relative) const {
     FileHandle fh;
     int mnt;
-    if (name_to_handle_at(Fd, relative.ToString().c_str(),
-                          &fh.head, &mnt, AT_EMPTY_PATH))
+    if (name_to_handle_at(Fd, relative.ToString().c_str(), &fh.head, &mnt, AT_EMPTY_PATH))
         return -1;
     return mnt;
 }
@@ -1616,7 +1599,7 @@ bool TFile::IsMountPoint() const {
 TError TFile::GetMountId(int &mountId) const {
     std::vector<std::string> lines;
     TError error = TPath(fmt::format("/proc/thread-self/fdinfo/{}", Fd)).ReadLines(lines);
-    for (const auto &line : lines) {
+    for (const auto &line: lines) {
         if (!StringStartsWith(line, "mnt_id:"))
             continue;
         auto tokens = SplitString(line, '\t', 2);
@@ -1761,7 +1744,8 @@ TError TFile::HardlinkAt(const TPath &path, const TFile &target, const TPath &ta
     if (target_path.IsAbsolute())
         return TError(EError::InvalidPath, "Absolute path {}", target_path.Path);
     if (linkat(target.Fd, target_path.c_str(), Fd, path.c_str(), AT_EMPTY_PATH))
-        return TError::System("Cannot create hardlink {} {} to {} {}", RealPath(), path, target.RealPath(), target_path);
+        return TError::System("Cannot create hardlink {} {} to {} {}", RealPath(), path, target.RealPath(),
+                              target_path);
     return OK;
 }
 
@@ -1883,8 +1867,7 @@ TError TFile::Stat(struct stat &st) const {
 }
 
 TError TFile::StatAt(const TPath &path, bool follow, struct stat &st) const {
-    if (fstatat(Fd, path.c_str(), &st, AT_EMPTY_PATH |
-                (follow ? 0 : AT_SYMLINK_NOFOLLOW)))
+    if (fstatat(Fd, path.c_str(), &st, AT_EMPTY_PATH | (follow ? 0 : AT_SYMLINK_NOFOLLOW)))
         return TError::System("Cannot fstatat {} {}", RealPath(), path);
     return OK;
 }
@@ -1914,8 +1897,8 @@ int TPathWalk::CompareNames(const FTSENT **a, const FTSENT **b) {
 }
 
 int TPathWalk::CompareInodes(const FTSENT **a, const FTSENT **b) {
-    ino_t a_ino = ((**a).fts_info == FTS_NS || (**a).fts_info == FTS_NSOK) ?  0 : (**a).fts_statp->st_ino;
-    ino_t b_ino = ((**b).fts_info == FTS_NS || (**b).fts_info == FTS_NSOK) ?  0 : (**b).fts_statp->st_ino;
+    ino_t a_ino = ((**a).fts_info == FTS_NS || (**a).fts_info == FTS_NSOK) ? 0 : (**a).fts_statp->st_ino;
+    ino_t b_ino = ((**b).fts_info == FTS_NS || (**b).fts_info == FTS_NSOK) ? 0 : (**b).fts_statp->st_ino;
     if (a_ino < b_ino)
         return -1;
     if (a_ino > b_ino)
@@ -1923,10 +1906,9 @@ int TPathWalk::CompareInodes(const FTSENT **a, const FTSENT **b) {
     return 0;
 }
 
-TError TPathWalk::Open(const TPath &path, int fts_flags,
-                       int (*compar)(const FTSENT **, const FTSENT **)) {
+TError TPathWalk::Open(const TPath &path, int fts_flags, int (*compar)(const FTSENT **, const FTSENT **)) {
     Close();
-    char* paths[] = { (char *)path.c_str(), nullptr };
+    char *paths[] = {(char *)path.c_str(), nullptr};
     Fts = fts_open(paths, fts_flags, compar);
     if (!Fts)
         return TError::System("fts_open");

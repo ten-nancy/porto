@@ -1,40 +1,41 @@
-#include <sstream>
+#include "volume.hpp"
+
 #include <algorithm>
 #include <condition_variable>
 #include <future>
+#include <memory>
+#include <sstream>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
-#include <memory>
-#include <thread>
 
-#include "docker.hpp"
-#include "volume.hpp"
-#include "storage.hpp"
+#include "client.hpp"
+#include "config.hpp"
 #include "container.hpp"
+#include "docker.hpp"
+#include "filesystem.hpp"
+#include "helpers.hpp"
+#include "kvalue.hpp"
 #include "nbd.hpp"
-#include "util/log.hpp"
+#include "storage.hpp"
 #include "util/http.hpp"
+#include "util/log.hpp"
+#include "util/quota.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
-#include "util/quota.hpp"
 #include "util/worker.hpp"
-#include "config.hpp"
-#include "kvalue.hpp"
-#include "helpers.hpp"
-#include "client.hpp"
-#include "filesystem.hpp"
 
 extern "C" {
-#include <unistd.h>
 #include <fcntl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/vfs.h>
-#include <sys/mount.h>
-#include <sys/sysinfo.h>
 #include <linux/falloc.h>
 #include <linux/kdev_t.h>
 #include <linux/loop.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
+#include <sys/sysinfo.h>
+#include <sys/types.h>
+#include <sys/vfs.h>
+#include <unistd.h>
 }
 
 TNbdConn NbdConn;
@@ -54,14 +55,9 @@ bool NeedStopStatFsLoop(false);
 std::condition_variable StatFsCv;
 std::mutex StatFsLock;
 
-static const std::set<std::string> FsTypes = {
-    "erofs",
-    "ext3",
-    "ext4",
-    "squashfs"
-};
+static const std::set<std::string> FsTypes = {"erofs", "ext3", "ext4", "squashfs"};
 
-void SleepStatFsLoop(std::unique_lock<std::mutex>& locker, const uint64_t sleepTime) {
+void SleepStatFsLoop(std::unique_lock<std::mutex> &locker, const uint64_t sleepTime) {
     auto now = GetCurrentTimeMs();
     auto deadline = now + sleepTime;
 
@@ -82,7 +78,7 @@ void StatFsUpdateLoop() {
         locker.unlock();
         auto volumes_lock = LockVolumes();
 
-        for (auto& it: Volumes)
+        for (auto &it: Volumes)
             volumes.push_back(it.second);
 
         volumes_lock.unlock();
@@ -95,7 +91,7 @@ void StatFsUpdateLoop() {
             continue;
         }
 
-        for (auto& volume: volumes) {
+        for (auto &volume: volumes) {
             if (NeedStopStatFsLoop)
                 return;
 
@@ -122,7 +118,7 @@ void StopStatFsLoop() {
     StatFsThread.join();
 }
 
-static class TPinCloser : public TWorker<TFile> {
+static class TPinCloser: public TWorker<TFile> {
 protected:
     TFile Pop() override {
         auto request = std::move(Queue.front());
@@ -134,8 +130,11 @@ protected:
         pin.Close();
         return true;
     }
+
 public:
-    TPinCloser(const std::string &name) : TWorker(name, 0) { }
+    TPinCloser(const std::string &name)
+        : TWorker(name, 0)
+    {}
 
     void Start(size_t nr) {
         Nr = nr;
@@ -147,10 +146,12 @@ struct TUmountRequest {
     TPath path;
     std::promise<TError> promise;
 
-    TUmountRequest(const TPath &path) : path(path) { }
+    TUmountRequest(const TPath &path)
+        : path(path)
+    {}
 };
 
-static class TAsyncUmounter : public TWorker<TUmountRequest> {
+static class TAsyncUmounter: public TWorker<TUmountRequest> {
 protected:
     TUmountRequest Pop() override {
         auto request = std::move(Queue.front());
@@ -185,7 +186,9 @@ protected:
     }
 
 public:
-    TAsyncUmounter(const std::string &name) : TWorker(name, 0) { }
+    TAsyncUmounter(const std::string &name)
+        : TWorker(name, 0)
+    {}
 
     void Start(size_t nr) {
         Nr = nr;
@@ -222,7 +225,7 @@ TError StartAsyncUmounter() {
     std::promise<TError> p;
     auto fut = p.get_future();
 
-    auto t = std::thread([&p](){
+    auto t = std::thread([&p]() {
         if (unshare(CLONE_FILES) < 0) {
             p.set_value(TError::System("unshare(CLONE_FILES) failed:"));
             return;
@@ -266,11 +269,9 @@ std::string TVolumeBackend::ClaimPlace() {
 
 /* TVolumeDirBackend - directory */
 
-class TVolumeDirBackend : public TVolumeBackend {
+class TVolumeDirBackend: public TVolumeBackend {
 public:
-
     TError Configure() override {
-
         if (Volume->IsAutoPath)
             return TError(EError::InvalidProperty, "Dir backend requires path");
 
@@ -295,7 +296,6 @@ public:
     }
 
     TError Restore() {
-
         /* Restore configuration */
         Volume->InternalPath = Volume->Path;
         Volume->StoragePath = Volume->Path;
@@ -323,11 +323,9 @@ public:
 
 /* TVolumePlainBackend - bindmount */
 
-class TVolumePlainBackend : public TVolumeBackend {
+class TVolumePlainBackend: public TVolumeBackend {
 public:
-
     TError Configure() override {
-
         if (Volume->HaveQuota())
             return TError(EError::InvalidProperty, "Plain backend have no support of quota");
 
@@ -335,8 +333,7 @@ public:
     }
 
     TError Build() override {
-        return Volume->InternalPath.BindRemount(Volume->StoragePath,
-                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return Volume->InternalPath.BindRemount(Volume->StoragePath, Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
     }
 
     TError Destroy() override {
@@ -350,11 +347,9 @@ public:
 
 /* TVolumeBindBackend - bind mount */
 
-class TVolumeBindBackend : public TVolumeBackend {
+class TVolumeBindBackend: public TVolumeBackend {
 public:
-
     TError Configure() override {
-
         if (!Volume->HaveStorage())
             return TError(EError::InvalidProperty, "bind backed require storage");
 
@@ -374,8 +369,7 @@ public:
     }
 
     TError Build() override {
-        return Volume->InternalPath.BindRemount(Volume->StoragePath,
-                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return Volume->InternalPath.BindRemount(Volume->StoragePath, Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
     }
 
     std::string ClaimPlace() override {
@@ -393,11 +387,9 @@ public:
 
 /* TVolumeRBindBackend - recursive bind mount */
 
-class TVolumeRBindBackend : public TVolumeBackend {
+class TVolumeRBindBackend: public TVolumeBackend {
 public:
-
     TError Configure() override {
-
         if (!Volume->HaveStorage())
             return TError(EError::InvalidProperty, "rbind backed require storage");
 
@@ -412,7 +404,7 @@ public:
 
     TError Build() override {
         return Volume->InternalPath.BindRemount(Volume->StoragePath,
-                Volume->GetMountFlags() | MS_REC | MS_SLAVE | MS_SHARED);
+                                                Volume->GetMountFlags() | MS_REC | MS_SLAVE | MS_SHARED);
     }
 
     std::string ClaimPlace() override {
@@ -430,13 +422,10 @@ public:
 
 /* TVolumeTmpfsBackend - tmpfs */
 
-class TVolumeTmpfsBackend : public TVolumeBackend {
+class TVolumeTmpfsBackend: public TVolumeBackend {
 public:
-
     TError Configure() override {
-
-        if (Volume->BackendType == "hugetmpfs" &&
-                !TPath("/sys/kernel/mm/transparent_hugepage/shmem_enabled").Exists())
+        if (Volume->BackendType == "hugetmpfs" && !TPath("/sys/kernel/mm/transparent_hugepage/shmem_enabled").Exists())
             return TError(EError::NotSupported, "kernel does not support transparent huge pages in tmpfs");
 
         if (!Volume->SpaceLimit)
@@ -463,8 +452,7 @@ public:
         if (Volume->InodeLimit)
             opts.emplace_back("nr_inodes=" + std::to_string(Volume->InodeLimit));
 
-        return Volume->InternalPath.Mount("porto_tmpfs_" + Volume->Id, "tmpfs",
-                                          Volume->GetMountFlags(), opts);
+        return Volume->InternalPath.Mount("porto_tmpfs_" + Volume->Id, "tmpfs", Volume->GetMountFlags(), opts);
     }
 
     TError Resize(uint64_t space_limit, uint64_t inode_limit) override {
@@ -479,8 +467,7 @@ public:
         if (inode_limit)
             opts.emplace_back("nr_inodes=" + std::to_string(inode_limit));
 
-        return Volume->InternalPath.Mount("porto_tmpfs_" + Volume->Id, "tmpfs",
-                                          Volume->GetMountFlags() | MS_REMOUNT,
+        return Volume->InternalPath.Mount("porto_tmpfs_" + Volume->Id, "tmpfs", Volume->GetMountFlags() | MS_REMOUNT,
                                           opts);
     }
 
@@ -499,10 +486,9 @@ public:
 
 /* TVolumeQuotaBackend - project quota */
 
-class TVolumeQuotaBackend : public TVolumeBackend {
+class TVolumeQuotaBackend: public TVolumeBackend {
 public:
     TError Configure() override {
-
         if (Volume->IsAutoPath)
             return TError(EError::InvalidProperty, "Quota backend requires path");
 
@@ -527,7 +513,6 @@ public:
     }
 
     TError Restore() {
-
         /* Restore configuration */
         Volume->InternalPath = Volume->Path;
         Volume->StoragePath = Volume->Path;
@@ -542,8 +527,7 @@ public:
 
         quota.SpaceLimit = Volume->SpaceLimit;
         quota.InodeLimit = Volume->InodeLimit;
-        L_ACT("Creating project quota: {} bytes: {} inodes: {}",
-              quota.Path, quota.SpaceLimit, quota.InodeLimit);
+        L_ACT("Creating project quota: {} bytes: {} inodes: {}", quota.Path, quota.SpaceLimit, quota.InodeLimit);
         return quota.Create();
     }
 
@@ -579,9 +563,8 @@ public:
 
 /* TVolumeNativeBackend - project quota + bindmount */
 
-class TVolumeNativeBackend : public TVolumeBackend {
+class TVolumeNativeBackend: public TVolumeBackend {
 public:
-
     static bool Supported(const TPath &place) {
         static bool printed = false;
 
@@ -602,7 +585,6 @@ public:
     }
 
     TError Configure() override {
-
         if (!config().volumes().enable_quota() && Volume->HaveQuota())
             return TError(EError::NotSupported, "project quota is disabled");
 
@@ -616,15 +598,13 @@ public:
         if (Volume->HaveQuota()) {
             quota.SpaceLimit = Volume->SpaceLimit;
             quota.InodeLimit = Volume->InodeLimit;
-            L_ACT("Creating project quota: {} bytes: {} inodes: {}",
-                  quota.Path, quota.SpaceLimit, quota.InodeLimit);
+            L_ACT("Creating project quota: {} bytes: {} inodes: {}", quota.Path, quota.SpaceLimit, quota.InodeLimit);
             error = quota.Create();
             if (error)
                 return error;
         }
 
-        return Volume->InternalPath.BindRemount(Volume->StoragePath,
-                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return Volume->InternalPath.BindRemount(Volume->StoragePath, Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
     }
 
     TError Destroy() override {
@@ -679,8 +659,7 @@ static TError SetupLoopDev(const TFile &file, const TPath &path, int &loopNr) {
     if (error)
         return error;
 
-    if (config().volumes().direct_io_loop() &&
-            fcntl(file.Fd, F_SETFL, fcntl(file.Fd, F_GETFL) | O_DIRECT))
+    if (config().volumes().direct_io_loop() && fcntl(file.Fd, F_SETFL, fcntl(file.Fd, F_GETFL) | O_DIRECT))
         L("Cannot enable O_DIRECT for loop {}", TError::System("fcntl"));
 
     auto lock = std::unique_lock<std::mutex>(BigLoopLock);
@@ -734,11 +713,10 @@ TError PutLoopDev(const int loopNr) {
 
 static const std::list<std::string> ReadOnlyFs{"squashfs", "erofs"};
 
-class TVolumeLoopBackend : public TVolumeBackend {
+class TVolumeLoopBackend: public TVolumeBackend {
     static constexpr const char *AutoImage = "loop.img";
 
 public:
-
     static std::string FsType(const TVolume &volume) {
         if (volume.FilesystemType.empty())
             return "ext4";
@@ -755,16 +733,14 @@ public:
         TPath image = ImagePath(Volume->StoragePath);
 
         if (!image.Exists() && !Volume->SpaceLimit)
-            return TError(EError::InvalidProperty,
-                          "loop backend requires space_limit");
+            return TError(EError::InvalidProperty, "loop backend requires space_limit");
 
         /* Do not allow read-write loop share storage */
         if (Volume->HaveStorage()) {
             for (auto &it: Volumes) {
                 auto other = it.second;
-                if (other->BackendType != "loop" ||
-                        (other->IsReadOnly && Volume->IsReadOnly) ||
-                        !image.IsSameInode(ImagePath(other->StoragePath)))
+                if (other->BackendType != "loop" || (other->IsReadOnly && Volume->IsReadOnly) ||
+                    !image.IsSameInode(ImagePath(other->StoragePath)))
                     continue;
                 return TError(EError::Busy, "Storage already used by volume " + other->Path.ToString());
             }
@@ -779,8 +755,7 @@ public:
         return TPath("/dev/loop" + std::to_string(Volume->DeviceIndex));
     }
 
-    static TError MakeExt4Image(TFile &file, const TFile &dir, TPath &path,
-                            off_t size, off_t guarantee) {
+    static TError MakeExt4Image(TFile &file, const TFile &dir, TPath &path, off_t size, off_t guarantee) {
         TError error;
 
         L_ACT("Allocate loop image with size {} guarantee {}", size, guarantee);
@@ -790,14 +765,13 @@ public:
 
         if (guarantee && fallocate(file.Fd, FALLOC_FL_KEEP_SIZE, 0, guarantee))
             return TError(EError::ResourceNotAvailable, errno,
-                           "cannot fallocate guarantee " + std::to_string(guarantee));
+                          "cannot fallocate guarantee " + std::to_string(guarantee));
 
-        return RunCommand({ "mkfs.ext4", "-q", "-F", "-m", "0", "-E", "nodiscard",
-                            "-O", "^has_journal", path.ToString()}, dir);
+        return RunCommand(
+            {"mkfs.ext4", "-q", "-F", "-m", "0", "-E", "nodiscard", "-O", "^has_journal", path.ToString()}, dir);
     }
 
-    static TError ResizeImage(const TFile &file, const TFile &dir, const TPath &path,
-                              off_t current, off_t target) {
+    static TError ResizeImage(const TFile &file, const TFile &dir, const TPath &path, off_t current, off_t target) {
         std::string size = std::to_string(target >> 10) + "K";
         TError error;
 
@@ -852,14 +826,12 @@ public:
             file_storage = true;
         } else if (Volume->StorageFd.ExistsAt(AutoImage)) {
             error = file.OpenAt(Volume->StorageFd, AutoImage,
-                                (Volume->IsReadOnly ? O_RDONLY : O_RDWR) |
-                                O_CLOEXEC | O_NOCTTY | O_NOFOLLOW, 0);
+                                (Volume->IsReadOnly ? O_RDONLY : O_RDWR) | O_CLOEXEC | O_NOCTTY | O_NOFOLLOW, 0);
         } else {
             if (fsType != "ext4")
                 return TError(EError::InvalidValue, "image generation supported only for ext4");
 
-            error = file.OpenAt(Volume->StorageFd, AutoImage,
-                                O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+            error = file.OpenAt(Volume->StorageFd, AutoImage, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
             if (!error) {
                 Volume->KeepStorage = false; /* New storage */
                 error = MakeExt4Image(file, Volume->StorageFd, path, Volume->SpaceLimit, Volume->SpaceGuarantee);
@@ -891,11 +863,9 @@ public:
             Volume->SpaceLimit = st.st_size;
         } else if (!Volume->IsReadOnly && (uint64_t)st.st_size != Volume->SpaceLimit) {
             if (file_storage) {
-                error = ResizeImage(file, TFile(),
-                        path, st.st_size, Volume->SpaceLimit);
+                error = ResizeImage(file, TFile(), path, st.st_size, Volume->SpaceLimit);
             } else {
-                error = ResizeImage(file, Volume->StorageFd,
-                        path, st.st_size, Volume->SpaceLimit);
+                error = ResizeImage(file, Volume->StorageFd, path, st.st_size, Volume->SpaceLimit);
             }
             if (error)
                 return error;
@@ -907,8 +877,7 @@ public:
 
         Volume->DeviceName = fmt::format("loop{}", Volume->DeviceIndex);
 
-        error = Volume->InternalPath.Mount(GetLoopDevice(), fsType,
-                                           Volume->GetMountFlags(), {});
+        error = Volume->InternalPath.Mount(GetLoopDevice(), fsType, Volume->GetMountFlags(), {});
         if (error) {
             PutLoopDev(Volume->DeviceIndex);
             Volume->DeviceIndex = -1;
@@ -943,11 +912,11 @@ public:
         if (Volume->IsReadOnly)
             return TError(EError::Busy, "Volume is read-only");
         if (Volume->SpaceLimit < (512ul << 20))
-            return TError(EError::InvalidProperty, "Refusing to online resize loop volume with initial limit < 512M (kernel bug)");
+            return TError(EError::InvalidProperty,
+                          "Refusing to online resize loop volume with initial limit < 512M (kernel bug)");
 
         (void)inode_limit;
-        return ResizeLoopDev(Volume->DeviceIndex, ImagePath(Volume->StoragePath),
-                             Volume->SpaceLimit, space_limit);
+        return ResizeLoopDev(Volume->DeviceIndex, ImagePath(Volume->StoragePath), Volume->SpaceLimit, space_limit);
     }
 
     TError StatFS(TStatFS &result) override {
@@ -957,9 +926,8 @@ public:
 
 /* TVolumeOverlayBackend - project quota + overlayfs */
 
-class TVolumeOverlayBackend : public TVolumeBackend {
+class TVolumeOverlayBackend: public TVolumeBackend {
 public:
-
     static bool Supported() {
         static bool supported = false, tested = false;
 
@@ -977,7 +945,6 @@ public:
     }
 
     TError Configure() override {
-
         if (!Supported())
             return TError(EError::NotSupported, "overlay not supported");
 
@@ -997,18 +964,17 @@ public:
         int layer_idx = 0;
         TFile upperFd, workFd, cowFd;
         struct stat st;
-        std::unordered_map<dev_t, std::unordered_set<ino_t> > ovlInodes;
+        std::unordered_map<dev_t, std::unordered_set<ino_t>> ovlInodes;
         EStorageType layerType = Volume->GetLayerType();
         std::vector<std::string> options;
 
         if (Volume->HaveQuota()) {
             quota.SpaceLimit = Volume->SpaceLimit;
             quota.InodeLimit = Volume->InodeLimit;
-            L_ACT("Creating project quota: {} bytes: {} inodes: {}",
-                  quota.Path, quota.SpaceLimit, quota.InodeLimit);
+            L_ACT("Creating project quota: {} bytes: {} inodes: {}", quota.Path, quota.SpaceLimit, quota.InodeLimit);
             error = quota.Create();
             if (error)
-                  return error;
+                return error;
         }
 
         for (auto &name: Volume->Layers) {
@@ -1115,11 +1081,8 @@ public:
         if (cowFd)
             lower = cowFd.ProcPath().ToString() + ":" + lower;
 
-        options = {
-            "lowerdir=" + lower,
-            "upperdir=" + upperFd.ProcPath().ToString(),
-            "workdir=" + workFd.ProcPath().ToString()
-        };
+        options = {"lowerdir=" + lower, "upperdir=" + upperFd.ProcPath().ToString(),
+                   "workdir=" + workFd.ProcPath().ToString()};
 
         if (Volume->Ephemeral() && CompareVersions(config().linux_version(), "5.15") >= 0)
             options.push_back("volatile");
@@ -1131,7 +1094,7 @@ public:
 
         (void)TPath("/").Chdir();
 
-cleanup:
+    cleanup:
         while (layer_idx--) {
             TPath temp = Volume->GetInternal("L" + std::to_string(Volume->Layers.size() - layer_idx - 1));
             (void)AsyncUmount(temp);
@@ -1196,9 +1159,8 @@ cleanup:
 
 /* TVolumeSquashBackend - loop + squashfs + overlayfs + quota */
 
-class TVolumeSquashBackend : public TVolumeBackend {
+class TVolumeSquashBackend: public TVolumeBackend {
 public:
-
     TError Configure() override {
         if (!TVolumeOverlayBackend::Supported())
             return TError(EError::NotSupported, "overlay not supported");
@@ -1220,7 +1182,7 @@ public:
         TError error;
         TPath lower;
         struct stat st;
-        std::unordered_map<dev_t, std::unordered_set<ino_t> > ovlInodes;
+        std::unordered_map<dev_t, std::unordered_set<ino_t>> ovlInodes;
         EStorageType layerType = Volume->GetLayerType();
 
         lower = Volume->GetInternal("lower");
@@ -1254,8 +1216,8 @@ public:
         if (error)
             return error;
 
-        error = lower.Mount("/dev/loop" + std::to_string(Volume->DeviceIndex),
-                            "squashfs", MS_RDONLY | MS_NODEV | MS_NOSUID, {});
+        error = lower.Mount("/dev/loop" + std::to_string(Volume->DeviceIndex), "squashfs",
+                            MS_RDONLY | MS_NODEV | MS_NOSUID, {});
         if (error) {
             if (error.Errno == EINVAL || error.Errno == EIO)
                 error = TError(EError::InvalidFilesystem, "Cannot mount loop device: {}", error);
@@ -1273,11 +1235,10 @@ public:
         if (Volume->HaveQuota()) {
             quota.SpaceLimit = Volume->SpaceLimit;
             quota.InodeLimit = Volume->InodeLimit;
-            L_ACT("Creating project quota: {} bytes: {} inodes: {}",
-                  quota.Path, quota.SpaceLimit, quota.InodeLimit);
+            L_ACT("Creating project quota: {} bytes: {} inodes: {}", quota.Path, quota.SpaceLimit, quota.InodeLimit);
             error = quota.Create();
             if (error)
-                  goto err;
+                goto err;
         }
 
         error = Volume->GetInternal("").Chdir();
@@ -1330,8 +1291,7 @@ public:
                 ovlInodes.emplace(st.st_dev, std::unordered_set<ino_t>()).first->second.emplace(st.st_ino);
             }
 
-            std::string layer_id = "L" + std::to_string(Volume->Layers.size() -
-                                                        ++layer_idx - 1);
+            std::string layer_id = "L" + std::to_string(Volume->Layers.size() - ++layer_idx - 1);
             temp = Volume->GetInternal(layer_id);
             error = temp.Mkdir(700);
             if (!error)
@@ -1369,11 +1329,9 @@ public:
         if (cowFd)
             lowerdir = cowFd.ProcPath().ToString() + ":" + lowerdir;
 
-        error = Volume->InternalPath.Mount("overlay", "overlay",
-                                   Volume->GetMountFlags(),
-                                   { "lowerdir=" + lowerdir,
-                                     "upperdir=" + upperFd.ProcPath().ToString(),
-                                     "workdir=" + workFd.ProcPath().ToString() });
+        error = Volume->InternalPath.Mount("overlay", "overlay", Volume->GetMountFlags(),
+                                           {"lowerdir=" + lowerdir, "upperdir=" + upperFd.ProcPath().ToString(),
+                                            "workdir=" + workFd.ProcPath().ToString()});
 
         if (error && error.Errno == EINVAL && Volume->Layers.size() >= 500)
             error = TError(EError::InvalidValue, "Too many layers, kernel limits is 499 plus 1 for upper");
@@ -1384,7 +1342,7 @@ public:
             (void)temp.Rmdir();
         }
 
-err:
+    err:
         (void)TPath("/").Chdir();
 
         if (error) {
@@ -1437,17 +1395,15 @@ err:
 
 /* TVolumeRbdBackend - ext4 in ceph rados block device */
 
-class TVolumeRbdBackend : public TVolumeBackend {
+class TVolumeRbdBackend: public TVolumeBackend {
 public:
-
     std::string GetDevice() {
         if (Volume->DeviceIndex < 0)
             return "";
         return "/dev/rbd" + std::to_string(Volume->DeviceIndex);
     }
 
-    TError MapDevice(std::string id, std::string pool, std::string image,
-                     std::string &device) {
+    TError MapDevice(std::string id, std::string pool, std::string image, std::string &device) {
         L_ACT("Map rbd device {}@{}/{}", id, pool, image);
         TError error;
         TFile out;
@@ -1502,8 +1458,7 @@ public:
 
         Volume->DeviceName = fmt::format("rbd{}", Volume->DeviceIndex);
 
-        error = Volume->InternalPath.Mount(device, "ext4",
-                                           Volume->GetMountFlags(), {});
+        error = Volume->InternalPath.Mount(device, "ext4", Volume->GetMountFlags(), {});
         if (error)
             UnmapDevice(device);
         return error;
@@ -1546,7 +1501,7 @@ public:
 /* TVolumeNbdBackend - fs on NBD */
 static std::unordered_map<int, std::shared_ptr<TVolume>> NbdVolumes;
 
-class TVolumeNbdBackend : public TVolumeBackend {
+class TVolumeNbdBackend: public TVolumeBackend {
     TPath Root;
     TCred Cred;
 
@@ -1557,6 +1512,7 @@ class TVolumeNbdBackend : public TVolumeBackend {
             return it->second;
         return nullptr;
     }
+
 public:
     TNbdConnParams NbdConnParams;
     std::string FilesystemType;
@@ -1589,10 +1545,10 @@ public:
 
         std::map<std::string, std::string> options;
 
-        for (auto& opt : u.Options)
+        for (auto &opt: u.Options)
             options[opt.first] = opt.second;
 
-        auto parseOptionInt = [&options](const char* name, int& x, int default_x) {
+        auto parseOptionInt = [&options](const char *name, int &x, int default_x) {
             auto it = options.find(name);
             if (it != options.end()) {
                 auto error = StringToInt(it->second, x);
@@ -1683,10 +1639,10 @@ public:
         NbdVolumes[index] = Volume->shared_from_this();
         VolumesMutex.unlock();
 
-        error = Volume->InternalPath.Mount(GetDevice(), FilesystemType,
-                                           Volume->GetMountFlags(), {});
+        error = Volume->InternalPath.Mount(GetDevice(), FilesystemType, Volume->GetMountFlags(), {});
         if (error.Errno == EIO)
-            return TError(Reconns ? EError::NbdSocketTimeout : EError::InvalidFilesystem, "Cannot mount nbd device: {}", error);
+            return TError(Reconns ? EError::NbdSocketTimeout : EError::InvalidFilesystem, "Cannot mount nbd device: {}",
+                          error);
         else if (error.Errno == EINVAL)
             return TError(EError::InvalidFilesystem, "Cannot mount nbd device: {}", error);
         return error;
@@ -1716,7 +1672,7 @@ public:
         auto volume = ResolveNbd(deviceIndex);
         if (!volume)
             return TError(EError::VolumeNotFound);
-        auto backend = static_cast<TVolumeNbdBackend*>(volume->Backend.get());
+        auto backend = static_cast<TVolumeNbdBackend *>(volume->Backend.get());
         return backend->Rebuild(numConnections);
     }
 
@@ -1762,7 +1718,8 @@ struct TNbdReconnRequest {
         : DeviceIndex(deviceIndex),
           NumConnections(numConnections),
           DueMs(dueMs),
-          Retry(retry) { }
+          Retry(retry)
+    {}
 
     TNbdReconnRequest NextRetry() {
         uint64_t delay = 1 << (6 + std::min(6UL, Retry));
@@ -1782,6 +1739,7 @@ struct TNbdReconnRequest {
 class TNbdReconnQueue {
     std::unordered_map<int, int> Devices;
     std::priority_queue<TNbdReconnRequest> Q;
+
 public:
     void push(const TNbdReconnRequest &r) {
         auto it = Devices.find(r.DeviceIndex);
@@ -1809,7 +1767,7 @@ public:
     }
 };
 
-static class TNbdReconnectWorker : public TWorker<TNbdReconnRequest, TNbdReconnQueue> {
+static class TNbdReconnectWorker: public TWorker<TNbdReconnRequest, TNbdReconnQueue> {
 protected:
     TNbdReconnRequest Pop() override {
         auto request = Queue.top();
@@ -1834,14 +1792,16 @@ protected:
     }
 
 public:
-    TNbdReconnectWorker(const std::string &name) : TWorker(name, 0) { }
+    TNbdReconnectWorker(const std::string &name)
+        : TWorker(name, 0)
+    {}
 
     void Start(size_t nr) {
         Nr = nr;
         TWorker::Start();
     }
 
-    bool Handle(TNbdReconnRequest& req) override {
+    bool Handle(TNbdReconnRequest &req) override {
         if (req.DueMs > GetCurrentTimeMs())
             return false;
 
@@ -1860,9 +1820,8 @@ public:
 
 /* TVolumeLvmBackend - ext4 on LVM */
 
-class TVolumeLvmBackend : public TVolumeBackend {
+class TVolumeLvmBackend: public TVolumeBackend {
 public:
-
     bool Persistent;
     std::string Group;
     std::string Name;
@@ -1960,27 +1919,23 @@ public:
             Volume->KeepStorage = false; /* Do chown and chmod */
 
             if (Origin.size()) {
-                error = RunCommand({"lvm", "lvcreate", "--name", Name,
-                                    "--snapshot", Group + "/" + Origin,
+                error = RunCommand({"lvm", "lvcreate", "--name", Name, "--snapshot", Group + "/" + Origin,
                                     "--setactivationskip", "n"});
                 if (!error && Volume->SpaceLimit)
                     error = Resize(Volume->SpaceLimit, Volume->InodeLimit);
             } else if (Thin.size()) {
-                error = RunCommand({"lvm", "lvcreate", "--name", Name, "--thin",
-                                    "--virtualsize", std::to_string(Volume->SpaceLimit) + "B",
-                                    Group + "/" + Thin});
+                error = RunCommand({"lvm", "lvcreate", "--name", Name, "--thin", "--virtualsize",
+                                    std::to_string(Volume->SpaceLimit) + "B", Group + "/" + Thin});
             } else {
-                error = RunCommand({"lvm", "lvcreate", "--name", Name,
-                                    "--size", std::to_string(Volume->SpaceLimit) + "B",
-                                    Group});
+                error = RunCommand(
+                    {"lvm", "lvcreate", "--name", Name, "--size", std::to_string(Volume->SpaceLimit) + "B", Group});
             }
             if (error)
                 return error;
 
             if (Origin.empty()) {
-                error = RunCommand({ "mkfs.ext4", "-q", "-m", "0",
-                                     "-O", std::string(Persistent ? "" : "^") + "has_journal",
-                                     Device});
+                error = RunCommand(
+                    {"mkfs.ext4", "-q", "-m", "0", "-O", std::string(Persistent ? "" : "^") + "has_journal", Device});
                 if (error)
                     Persistent = false;
             }
@@ -1989,13 +1944,11 @@ public:
         TPath::GetDevName(TPath(Device).GetBlockDev(), Volume->DeviceName);
 
         if (!error)
-            error = Volume->InternalPath.Mount(Device, "ext4",
-                                               Volume->GetMountFlags(),
-                                               { Persistent ? "barrier" : "nobarrier",
-                                                 "errors=continue" });
+            error = Volume->InternalPath.Mount(Device, "ext4", Volume->GetMountFlags(),
+                                               {Persistent ? "barrier" : "nobarrier", "errors=continue"});
 
         if (error && !Persistent)
-            (void)RunCommand({"lvm", "lvremove", "--force", Device });
+            (void)RunCommand({"lvm", "lvremove", "--force", Device});
 
         return error;
     }
@@ -2012,8 +1965,7 @@ public:
 
     TError Resize(uint64_t space_limit, uint64_t) override {
         /* needs CAP_SYS_RESOURCE */
-        return RunCommand({"lvm", "lvresize", "--force", "--resizefs",
-                           "--size", std::to_string(space_limit) + "B",
+        return RunCommand({"lvm", "lvresize", "--force", "--resizefs", "--size", std::to_string(space_limit) + "B",
                            Device}, TFile(), TFile(), TFile(), PrivilegedHelperCapabilities);
     }
 
@@ -2159,14 +2111,14 @@ void TVolume::CacheQuotaFile() {
     tmp.Close();
     err = tmp_path.Unlink();
     if (err)
-        L_WRN("Failed to unlink tmp file \"{}\" on volume \"{}\" created to load quota file into cache : {}", tmp_path, Path, err);
+        L_WRN("Failed to unlink tmp file \"{}\" on volume \"{}\" created to load quota file into cache : {}", tmp_path,
+              Path, err);
 
     return;
 }
 
 /* /place/porto_volumes/<id>/<type> */
 TPath TVolume::GetInternal(const std::string &type) const {
-
     TPath base = Place / PORTO_VOLUMES / Id;
     if (type.size())
         return base / type;
@@ -2213,12 +2165,10 @@ TError TVolume::CheckGuarantee(uint64_t space_guarantee, uint64_t inode_guarante
     /* Check available space as is */
     if (total.SpaceAvail + current.SpaceUsage < space_guarantee)
         return TError(EError::NoSpace, "Not enough space for volume guarantee {}, avail {}, our usage {}",
-                      StringFormatSize(space_guarantee),
-                      StringFormatSize(total.SpaceAvail),
+                      StringFormatSize(space_guarantee), StringFormatSize(total.SpaceAvail),
                       StringFormatSize(current.SpaceUsage));
 
-    if (total.InodeAvail + current.InodeUsage < inode_guarantee &&
-            BackendType != "loop")
+    if (total.InodeAvail + current.InodeUsage < inode_guarantee && BackendType != "loop")
         return TError(EError::NoSpace, "Not enough inodes for volume guarantee {}, avail {}, our usage {}",
                       inode_guarantee, total.InodeAvail, current.InodeUsage);
 
@@ -2230,11 +2180,8 @@ TError TVolume::CheckGuarantee(uint64_t space_guarantee, uint64_t inode_guarante
         auto volume = it.second;
 
         /* data stored remotely, plain cannot provide usage */
-        if (volume.get() == this ||
-                volume->RemoteStorage() ||
-                volume->BackendType == "plain" ||
-                volume->StoragePath.GetDev() != storage.GetDev() ||
-                (!volume->SpaceGuarantee && !volume->InodeGuarantee))
+        if (volume.get() == this || volume->RemoteStorage() || volume->BackendType == "plain" ||
+            volume->StoragePath.GetDev() != storage.GetDev() || (!volume->SpaceGuarantee && !volume->InodeGuarantee))
             continue;
 
         TStatFS stat;
@@ -2249,26 +2196,22 @@ TError TVolume::CheckGuarantee(uint64_t space_guarantee, uint64_t inode_guarante
         }
     }
 
-    if (total.SpaceAvail + current.SpaceUsage + space_claimed <
-            space_guarantee + space_guaranteed)
-        return TError(EError::NoSpace, "Not enough space for volume guarantee {}, avail {}, claimed {} of {}, our usage {}",
-                      StringFormatSize(space_guarantee),
-                      StringFormatSize(total.SpaceAvail),
-                      StringFormatSize(space_claimed),
-                      StringFormatSize(space_guaranteed),
-                      StringFormatSize(current.SpaceUsage));
+    if (total.SpaceAvail + current.SpaceUsage + space_claimed < space_guarantee + space_guaranteed)
+        return TError(
+            EError::NoSpace, "Not enough space for volume guarantee {}, avail {}, claimed {} of {}, our usage {}",
+            StringFormatSize(space_guarantee), StringFormatSize(total.SpaceAvail), StringFormatSize(space_claimed),
+            StringFormatSize(space_guaranteed), StringFormatSize(current.SpaceUsage));
 
     if (BackendType != "loop" &&
-            total.InodeAvail + current.InodeUsage + inode_claimed <
-            inode_guarantee + inode_guaranteed)
-        return TError(EError::NoSpace, "Not enough inodes for volume guarantee {}, avail {}, claimed {} of {}, our usage {}",
+        total.InodeAvail + current.InodeUsage + inode_claimed < inode_guarantee + inode_guaranteed)
+        return TError(EError::NoSpace,
+                      "Not enough inodes for volume guarantee {}, avail {}, claimed {} of {}, our usage {}",
                       inode_guarantee, total.InodeAvail, inode_claimed, inode_guaranteed, current.InodeUsage);
 
     return OK;
 }
 
 TError TVolume::ClaimPlace(uint64_t size) {
-
     if (!VolumeOwnerContainer || !Backend)
         return TError(EError::Busy, "Volume has no backend or owner");
 
@@ -2279,27 +2222,17 @@ TError TVolume::ClaimPlace(uint64_t size) {
     for (auto ct = VolumeOwnerContainer; ct; ct = ct->Parent) {
         ct->LockStateWrite();
 
-        if ((!size || size > ClaimedSpace) && !CL->IsInternalUser() &&
-                State != EVolumeState::Destroying) {
+        if ((!size || size > ClaimedSpace) && !CL->IsInternalUser() && State != EVolumeState::Destroying) {
+            uint64_t total_limit = ct->PlaceLimit.count("total") ? ct->PlaceLimit.at("total") : UINT64_MAX;
+            uint64_t place_limit = ct->PlaceLimit.count(place)       ? ct->PlaceLimit.at(place)
+                                   : ct->PlaceLimit.count("default") ? ct->PlaceLimit.at("default")
+                                                                     : UINT64_MAX;
+            uint64_t total_usage = ct->PlaceUsage.count("total") ? ct->PlaceUsage.at("total") : 0;
+            uint64_t place_usage = ct->PlaceUsage.count(place) ? ct->PlaceUsage.at(place) : 0;
 
-            uint64_t total_limit = ct->PlaceLimit.count("total") ?
-                                   ct->PlaceLimit.at("total") : UINT64_MAX;
-            uint64_t place_limit = ct->PlaceLimit.count(place) ?
-                                   ct->PlaceLimit.at(place) :
-                                   ct->PlaceLimit.count("default") ?
-                                   ct->PlaceLimit.at("default") : UINT64_MAX;
-            uint64_t total_usage = ct->PlaceUsage.count("total") ?
-                                   ct->PlaceUsage.at("total") : 0;
-            uint64_t place_usage = ct->PlaceUsage.count(place) ?
-                                   ct->PlaceUsage.at(place) : 0;
-
-            if ((total_limit != UINT64_MAX && size == 0) ||
-                    (place_limit != UINT64_MAX && size == 0) ||
-                    (total_usage - ClaimedSpace > UINT64_MAX - size) ||
-                    (total_limit < total_usage - ClaimedSpace + size) ||
-                    (place_usage - ClaimedSpace > UINT64_MAX - size) ||
-                    (place_limit < place_usage - ClaimedSpace + size)) {
-
+            if ((total_limit != UINT64_MAX && size == 0) || (place_limit != UINT64_MAX && size == 0) ||
+                (total_usage - ClaimedSpace > UINT64_MAX - size) || (total_limit < total_usage - ClaimedSpace + size) ||
+                (place_usage - ClaimedSpace > UINT64_MAX - size) || (place_limit < place_usage - ClaimedSpace + size)) {
                 ct->UnlockState();
 
                 // Undo
@@ -2312,9 +2245,9 @@ TError TVolume::ClaimPlace(uint64_t size) {
 
                 return TError(EError::ResourceNotAvailable,
                               "Not enough place limit in {} for {} limit {}, total usage {} of {}, {} usage {} of {}",
-                              ct->Name, Path, StringFormatSize(size - ClaimedSpace),
-                              StringFormatSize(total_usage), StringFormatSize(total_limit),
-                              place, StringFormatSize(place_usage), StringFormatSize(place_limit));
+                              ct->Name, Path, StringFormatSize(size - ClaimedSpace), StringFormatSize(total_usage),
+                              StringFormatSize(total_limit), place, StringFormatSize(place_usage),
+                              StringFormatSize(place_limit));
             }
         }
 
@@ -2336,8 +2269,7 @@ TError TVolume::DependsOn(const TPath &path) {
 
     auto link = ResolveOriginLocked(path);
     if (link) {
-        if (link->Volume->State != EVolumeState::Ready &&
-                link->Volume->State != EVolumeState::Tuning)
+        if (link->Volume->State != EVolumeState::Ready && link->Volume->State != EVolumeState::Tuning)
             return TError(EError::VolumeNotReady, "Volume {} depends on non-ready volume {}", Path, link->Volume->Path);
         L("Volume {} depends on volume {}", Path, link->Volume->Path);
         link->Volume->Nested.insert(shared_from_this());
@@ -2359,7 +2291,7 @@ TError TVolume::CheckDependencies() {
     if (!error && !RemoteStorage())
         error = DependsOn(StoragePath);
 
-    for (auto &l : Layers) {
+    for (auto &l: Layers) {
         TPath layer(l);
         if (!layer.IsAbsolute()) {
             TStorage layer_storage;
@@ -2372,7 +2304,7 @@ TError TVolume::CheckDependencies() {
 
     if (error) {
         /* undo dependencies */
-        for (auto &it : Volumes)
+        for (auto &it: Volumes)
             it.second->Nested.erase(shared_from_this());
     }
 
@@ -2383,7 +2315,7 @@ TError TVolume::CheckConflicts(const TPath &path) {
     if (IsSystemPath(path))
         return TError(EError::InvalidPath, "Volume path {} in system directory", path);
 
-    for (auto &it : Volumes) {
+    for (auto &it: Volumes) {
         auto &vol = it.second;
 
         if (vol->Path == path)
@@ -2392,22 +2324,22 @@ TError TVolume::CheckConflicts(const TPath &path) {
         if (vol->BackendType != "bind" && vol->Path.IsInside(path))
             return TError(EError::InvalidPath, "Volume path {} overlaps with volume {}", path, vol->Path);
 
-        if (path.IsInside(vol->Path) &&
-                vol->State != EVolumeState::Ready &&
-                vol->State != EVolumeState::Tuning)
-            return TError(EError::VolumeNotReady, "Volume path {} inside volume {} and it is not ready", path, vol->Path);
+        if (path.IsInside(vol->Path) && vol->State != EVolumeState::Ready && vol->State != EVolumeState::Tuning)
+            return TError(EError::VolumeNotReady, "Volume path {} inside volume {} and it is not ready", path,
+                          vol->Path);
 
         if (vol->Place.IsInside(path))
             return TError(EError::InvalidPath, "Volume path {} overlaps with place {}", path, vol->Place);
 
         if (vol->RemoteStorage()) {
-
         } else if (vol->BackendType == "rbind") {
             if (vol->StoragePath.IsInside(path))
-                return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} storage {}", path, vol->Path, vol->StoragePath);
+                return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} storage {}", path, vol->Path,
+                              vol->StoragePath);
         } else if (vol->BackendType != "bind") {
             if (vol->StoragePath.IsInside(path) || path.IsInside(vol->StoragePath))
-                return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} storage {}", path, vol->Path, vol->StoragePath);
+                return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} storage {}", path, vol->Path,
+                              vol->StoragePath);
         }
 
         for (auto &l: vol->Layers) {
@@ -2418,9 +2350,11 @@ TError TVolume::CheckConflicts(const TPath &path) {
 
         for (auto &link: vol->Links) {
             if (link->HostTarget == path)
-                return TError(EError::Busy, "Volume path {} is used by volume {} for {}", path, vol->Path, link->Container->Name);
+                return TError(EError::Busy, "Volume path {} is used by volume {} for {}", path, vol->Path,
+                              link->Container->Name);
             if (link->HostTarget.IsInside(path))
-                return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} link {} for {}", path, vol->Path, link->HostTarget, link->Container->Name);
+                return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} link {} for {}", path,
+                              vol->Path, link->HostTarget, link->Container->Name);
         }
     }
 
@@ -2439,14 +2373,12 @@ TError TVolume::Configure(const TPath &target_root) {
     if (error)
         return TError(error, "Volume {}", Path);
 
-    if (VolumeOwner.GetGid() != CL->Cred.GetGid() && !CL->IsSuperUser() &&
-            !CL->Cred.IsMemberOf(VolumeOwner.GetGid()))
+    if (VolumeOwner.GetGid() != CL->Cred.GetGid() && !CL->IsSuperUser() && !CL->Cred.IsMemberOf(VolumeOwner.GetGid()))
         return TError(EError::Permission, "Changing owner group is not permitted");
 
     /* Autodetect volume backend, prefer native or overlay */
     if (BackendType == "") {
-        if ((HaveQuota() && !TVolumeNativeBackend::Supported(Place)) ||
-                StoragePath.IsRegularFollow())
+        if ((HaveQuota() && !TVolumeNativeBackend::Supported(Place)) || StoragePath.IsRegularFollow())
             BackendType = "loop";
         else if (HaveLayers() && TVolumeOverlayBackend::Supported())
             BackendType = "overlay";
@@ -2509,14 +2441,11 @@ TError TVolume::Configure(const TPath &target_root) {
     if (!RemoteStorage()) {
         for (auto &it: Volumes) {
             auto other = it.second;
-            if (!other->RemoteStorage() &&
-                    StoragePath == other->StoragePath &&
-                    Place == other->Place &&
-                    (!IsReadOnly || !other->IsReadOnly) &&
-                    (!(BackendType == "bind" || BackendType == "rbind") ||
-                     !(other->BackendType == "bind" || other->BackendType == "rbind")))
-                return TError(EError::Busy, "Storage already in use by volume " +
-                        other->Path.ToString());
+            if (!other->RemoteStorage() && StoragePath == other->StoragePath && Place == other->Place &&
+                (!IsReadOnly || !other->IsReadOnly) &&
+                (!(BackendType == "bind" || BackendType == "rbind") ||
+                 !(other->BackendType == "bind" || other->BackendType == "rbind")))
+                return TError(EError::Busy, "Storage already in use by volume " + other->Path.ToString());
         }
     }
 
@@ -2601,7 +2530,7 @@ TError TVolume::MergeLayers() {
     if (!HaveLayers())
         return OK;
 
-    for (auto &name : Layers) {
+    for (auto &name: Layers) {
         L_ACT("Merge layer {} into volume: {}", name, Path);
 
         if (name[0] == '/') {
@@ -2723,7 +2652,6 @@ TError TVolume::MakeShares(const TFile &base, bool cow) {
         return error;
 
     for (auto &share: Spec->shares()) {
-
         if (share.cow() != cow)
             continue;
 
@@ -2736,7 +2664,7 @@ TError TVolume::MakeShares(const TFile &base, bool cow) {
         if (!origin_path.IsAbsolute() || !origin_path.IsNormal())
             return TError(EError::InvalidPath, "share origin {}", origin_path);
 
-        L("Make{} share {} -> {}", share.cow()? " cow" : "", path, origin_path);
+        L("Make{} share {} -> {}", share.cow() ? " cow" : "", path, origin_path);
 
         TPath root_path = CL->ClientContainer->RootPath;
         TFile new_root;
@@ -2880,8 +2808,7 @@ TError TVolume::Build() {
             return error;
 
         error = StorageFd.OpenAt(dir, StoragePath.BaseNameNormal(),
-                                 (IsReadOnly ? O_RDONLY : O_RDWR) |
-                                 O_CLOEXEC | O_NOCTTY | O_NOFOLLOW);
+                                 (IsReadOnly ? O_RDONLY : O_RDWR) | O_CLOEXEC | O_NOCTTY | O_NOFOLLOW);
     } else if (!RemoteStorage()) {
         if (StoragePath.IsDirectoryStrict())
             error = StorageFd.OpenDir(StoragePath);
@@ -3024,9 +2951,7 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
         return OK;
 
     auto volumes_lock = LockVolumes();
-    if (State != EVolumeState::Ready &&
-            State != EVolumeState::Tuning &&
-            State != EVolumeState::Building)
+    if (State != EVolumeState::Ready && State != EVolumeState::Tuning && State != EVolumeState::Building)
         return TError(EError::VolumeNotReady, "Volume {} not ready", Path);
 
     if (link->Volume.get() != this)
@@ -3065,8 +2990,8 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
 
     volumes_lock.unlock();
 
-    L_ACT("Mount volume {} link {} for CT{}:{} target {}", Path, host_target,
-            link->Container->Id, link->Container->Name, link->Target);
+    L_ACT("Mount volume {} link {} for CT{}:{} target {}", Path, host_target, link->Container->Id,
+          link->Container->Name, link->Target);
     Statistics->VolumeLinksMounted++;
 
     TFile target_dir;
@@ -3091,9 +3016,7 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
         if (!error)
             continue;
 
-        if (error.Errno != ENOENT &&
-                error.Errno != ELOOP &&
-                error.Errno != ENOTDIR)
+        if (error.Errno != ENOENT && error.Errno != ELOOP && error.Errno != ENOTDIR)
             break;
 
         /* Check permissions for change */
@@ -3205,8 +3128,7 @@ undo:
     return error;
 }
 
-TError TVolume::UmountLink(std::shared_ptr<TVolumeLink> link,
-                           std::list<std::shared_ptr<TVolume>> &unlinked,
+TError TVolume::UmountLink(std::shared_ptr<TVolumeLink> link, std::list<std::shared_ptr<TVolume>> &unlinked,
                            bool strict) {
     TError error;
 
@@ -3222,8 +3144,8 @@ TError TVolume::UmountLink(std::shared_ptr<TVolumeLink> link,
 
     error = host_target.Umount(UMOUNT_NOFOLLOW | (strict ? 0 : MNT_DETACH));
     if (error) {
-        error = TError(error, "Cannot umount volume {} link {} for CT{}:{} target {}", Path,
-                host_target, link->Container->Id, link->Container->Name, link->Target);
+        error = TError(error, "Cannot umount volume {} link {} for CT{}:{} target {}", Path, host_target,
+                       link->Container->Id, link->Container->Name, link->Target);
         if (error.Error == EError::NotFound)
             L("{}", error.Text);
         else if (strict)
@@ -3234,8 +3156,7 @@ TError TVolume::UmountLink(std::shared_ptr<TVolumeLink> link,
 
     volumes_lock.lock();
 
-    for (auto it = VolumeLinks.lower_bound(host_target);
-            it != VolumeLinks.end() && it->first.IsInside(host_target);) {
+    for (auto it = VolumeLinks.lower_bound(host_target); it != VolumeLinks.end() && it->first.IsInside(host_target);) {
         auto &link = it->second;
         auto &vol = link->Volume;
 
@@ -3248,13 +3169,12 @@ TError TVolume::UmountLink(std::shared_ptr<TVolumeLink> link,
         vol->Links.remove(link);
 
         if (link->HostTarget != host_target)
-            L_ACT("Umount nested volume {} link {} for CT{}:{}",
-                    link->Volume->Path, link->HostTarget,
-                    link->Container->Id, link->Container->Name);
+            L_ACT("Umount nested volume {} link {} for CT{}:{}", link->Volume->Path, link->HostTarget,
+                  link->Container->Id, link->Container->Name);
 
         /* Last or common link */
         if ((vol->Links.empty() || it->first == link->Volume->Path) &&
-                (vol->State == EVolumeState::Ready || vol->State == EVolumeState::Tuning)) {
+            (vol->State == EVolumeState::Ready || vol->State == EVolumeState::Tuning)) {
             link->Volume->SetState(EVolumeState::Unlinked);
             unlinked.emplace_back(link->Volume);
         }
@@ -3279,12 +3199,12 @@ TError TVolume::UmountLink(std::shared_ptr<TVolumeLink> link,
 
 void TVolume::DestroyAll() {
     std::list<std::shared_ptr<TVolume>> plan;
-    for (auto &it : Volumes)
+    for (auto &it: Volumes)
         plan.push_front(it.second);
     for (auto &vol: plan) {
         TError error = vol->Destroy();
         if (error)
-            L_WRN("Cannot destroy volume {} : {}", vol->Path , error);
+            L_WRN("Cannot destroy volume {} : {}", vol->Path, error);
     }
 }
 
@@ -3320,7 +3240,7 @@ TError TVolume::Destroy() {
         if (volume->State != EVolumeState::Destroyed)
             volume->SetState(EVolumeState::ToDestroy);
 
-        for (auto &nested : volume->Nested) {
+        for (auto &nested: volume->Nested) {
             if (nested == cycle) {
                 L_WRN("Cyclic dependencies for {} detected", cycle->Path);
             } else {
@@ -3362,8 +3282,7 @@ TError TVolume::Destroy() {
         volumes_lock.lock();
     }
 
-    for (auto &volume : plan) {
-
+    for (auto &volume: plan) {
         while (volume->State == EVolumeState::Destroying)
             VolumesCv.wait(volumes_lock);
 
@@ -3401,7 +3320,7 @@ TError TVolume::Destroy() {
 
         volumes_lock.lock();
 
-        for (auto &it : Volumes)
+        for (auto &it: Volumes)
             it.second->Nested.erase(volume);
 
         Volumes.erase(volume->Path);
@@ -3529,9 +3448,7 @@ TError TVolume::DestroyOne() {
 }
 
 TError TVolume::StatFS(TStatFS &result) {
-    if (State != EVolumeState::Ready &&
-            State != EVolumeState::Tuning &&
-            State != EVolumeState::Unlinked) {
+    if (State != EVolumeState::Ready && State != EVolumeState::Tuning && State != EVolumeState::Unlinked) {
         result.Reset();
         return TError(EError::VolumeNotReady, "Volume {} is not ready", Path);
     }
@@ -3541,14 +3458,11 @@ TError TVolume::StatFS(TStatFS &result) {
 TError TVolume::Tune(const std::map<std::string, std::string> &properties) {
     TError error;
 
-    for (auto &p : properties) {
-        if (p.first != V_INODE_LIMIT &&
-            p.first != V_INODE_GUARANTEE &&
-            p.first != V_SPACE_LIMIT &&
+    for (auto &p: properties) {
+        if (p.first != V_INODE_LIMIT && p.first != V_INODE_GUARANTEE && p.first != V_SPACE_LIMIT &&
             p.first != V_SPACE_GUARANTEE)
             /* Prop not found omitted */
-                return TError(EError::InvalidProperty,
-                              "Volume property " + p.first + " cannot be changed");
+            return TError(EError::InvalidProperty, "Volume property " + p.first + " cannot be changed");
     }
 
     auto volumes_lock = LockVolumes();
@@ -3579,8 +3493,7 @@ TError TVolume::Tune(const std::map<std::string, std::string> &properties) {
                 goto out;
         }
 
-        L_ACT("Resize volume: {} to bytes: {} inodes: {}",
-                Path, spaceLimit, inodeLimit);
+        L_ACT("Resize volume: {} to bytes: {} inodes: {}", Path, spaceLimit, inodeLimit);
 
         error = Backend->Resize(spaceLimit, inodeLimit);
         if (error) {
@@ -3650,9 +3563,7 @@ EStorageType TVolume::GetLayerType() const {
     return Image.empty() ? EStorageType::Layer : EStorageType::DockerLayer;
 }
 
-TError TVolume::LinkVolume(std::shared_ptr<TContainer> container,
-                           const TPath &target, bool read_only, bool required) {
-
+TError TVolume::LinkVolume(std::shared_ptr<TContainer> container, const TPath &target, bool read_only, bool required) {
     PORTO_ASSERT(container->IsActionLocked());
 
     if (target) {
@@ -3671,14 +3582,11 @@ TError TVolume::LinkVolume(std::shared_ptr<TContainer> container,
             return TError(EError::VolumeAlreadyLinked, "Volume already linked");
     }
 
-    if (State != EVolumeState::Ready &&
-            State != EVolumeState::Tuning &&
-            State != EVolumeState::Building)
+    if (State != EVolumeState::Ready && State != EVolumeState::Tuning && State != EVolumeState::Building)
         return TError(EError::VolumeNotReady, "Volume not ready: {}", Path);
 
     /* Mount link if volume is ready */
-    if (target && (State == EVolumeState::Ready ||
-                   State == EVolumeState::Tuning)) {
+    if (target && (State == EVolumeState::Ready || State == EVolumeState::Tuning)) {
         host_target = container->RootPath / target;
         error = CheckConflicts(host_target);
         if (error)
@@ -3691,13 +3599,13 @@ TError TVolume::LinkVolume(std::shared_ptr<TContainer> container,
     link->Target = target;
     link->ReadOnly = read_only;
     link->Required = required;
-    link->HostTarget = host_target;   /* protect path from conflicts */
+    link->HostTarget = host_target; /* protect path from conflicts */
 
     Links.emplace_back(link);
     container->VolumeLinks.emplace_back(link);
 
-    bool was_required = std::find(container->RequiredVolumes.begin(),
-            container->RequiredVolumes.end(), target.ToString()) != container->RequiredVolumes.end();
+    bool was_required = std::find(container->RequiredVolumes.begin(), container->RequiredVolumes.end(),
+                                  target.ToString()) != container->RequiredVolumes.end();
 
     if (required && !was_required)
         container->RequiredVolumes.emplace_back(target.ToString());
@@ -3737,8 +3645,7 @@ undo:
     Links.remove(link);
     container->VolumeLinks.remove(link);
     if (required && !was_required) {
-        auto it = std::find(container->RequiredVolumes.begin(),
-                            container->RequiredVolumes.end(), target.ToString());
+        auto it = std::find(container->RequiredVolumes.begin(), container->RequiredVolumes.end(), target.ToString());
         if (it != container->RequiredVolumes.end())
             container->RequiredVolumes.erase(it);
     }
@@ -3748,7 +3655,6 @@ undo:
 
 TError TVolume::UnlinkVolume(std::shared_ptr<TContainer> container, const TPath &target,
                              std::list<std::shared_ptr<TVolume>> &unlinked, bool strict) {
-
     PORTO_ASSERT(container->IsActionLocked());
 
     TError error;
@@ -3798,8 +3704,7 @@ next:
     L_ACT("Del volume {} link {} for CT{}:{}", Path, link->Target, container->Id, container->Name);
 
     Links.remove(link);
-    if (Links.empty() && (State == EVolumeState::Ready ||
-                          State == EVolumeState::Tuning)) {
+    if (Links.empty() && (State == EVolumeState::Ready || State == EVolumeState::Tuning)) {
         SetState(EVolumeState::Unlinked);
         unlinked.emplace_back(shared_from_this());
     }
@@ -3818,8 +3723,7 @@ next:
     return OK;
 }
 
-void TVolume::UnlinkAllVolumes(std::shared_ptr<TContainer> container,
-                               std::list<std::shared_ptr<TVolume>> &unlinked) {
+void TVolume::UnlinkAllVolumes(std::shared_ptr<TContainer> container, std::list<std::shared_ptr<TVolume>> &unlinked) {
     auto volumes_lock = LockVolumes();
     TError error;
 
@@ -3863,8 +3767,7 @@ TError TVolume::CheckRequired(TContainer &ct) {
         auto link = ResolveLinkLocked(ct.RootPath / path);
         if (!link)
             return TError(EError::VolumeNotFound, "Required volume {} not found", path);
-        if (link->Volume->State != EVolumeState::Ready &&
-                link->Volume->State != EVolumeState::Tuning)
+        if (link->Volume->State != EVolumeState::Ready && link->Volume->State != EVolumeState::Tuning)
             return TError(EError::VolumeNotReady, "Required volume {} not ready", path);
         link->Volume->HasDependentContainer = true;
     }
@@ -3896,8 +3799,7 @@ void TVolume::DumpDescription(TVolumeLink *link, const TPath &path, rpc::TVolume
         ret[V_GROUP] = VolumeCred.Group();
     ret[V_PERMISSIONS] = fmt::format("{:#o}", VolumePermissions);
     ret[V_CREATOR] = Creator;
-    ret[V_READY] = BoolToString(State == EVolumeState::Ready ||
-                                State == EVolumeState::Tuning);
+    ret[V_READY] = BoolToString(State == EVolumeState::Ready || State == EVolumeState::Tuning);
     if (BuildTime)
         ret[V_BUILD_TIME] = FormatTime(BuildTime);
     ret[V_CHANGE_TIME] = FormatTime(ChangeTime);
@@ -3986,9 +3888,7 @@ TError TVolume::Save(bool locked) {
     if (!locked)
         volumes_lock = LockVolumes();
 
-    if (State == EVolumeState::ToDestroy ||
-            State == EVolumeState::Destroying ||
-            State == EVolumeState::Destroyed)
+    if (State == EVolumeState::ToDestroy || State == EVolumeState::Destroying || State == EVolumeState::Destroyed)
         return OK;
 
     ChangeTime = time(nullptr);
@@ -4019,8 +3919,7 @@ TError TVolume::Save(bool locked) {
         node.Set(V_GROUP, VolumeCred.Group());
 
     node.Set(V_PERMISSIONS, fmt::format("{:#o}", VolumePermissions));
-    node.Set(V_READY, BoolToString(State == EVolumeState::Ready ||
-                                   State == EVolumeState::Tuning));
+    node.Set(V_READY, BoolToString(State == EVolumeState::Ready || State == EVolumeState::Tuning));
     node.Set(V_PRIVATE, Private);
     node.Set(V_LOOP_DEV, std::to_string(DeviceIndex));
     node.Set(V_READ_ONLY, BoolToString(IsReadOnly));
@@ -4037,11 +3936,8 @@ TError TVolume::Save(bool locked) {
     TMultiTuple links;
     for (auto &link: Links) {
         if (link->Target)
-            links.push_back({link->Container->Name,
-                             link->Target.ToString(),
-                             link->ReadOnly ? "ro" : "rw",
-                             link->Required ? "!" : ".",
-                             link->HostTarget.ToString()});
+            links.push_back({link->Container->Name, link->Target.ToString(), link->ReadOnly ? "ro" : "rw",
+                             link->Required ? "!" : ".", link->HostTarget.ToString()});
         else
             links.push_back({link->Container->Name});
     }
@@ -4166,14 +4062,14 @@ TError TVolume::Restore(const TKeyValue &node) {
                 duplicate = true;
         }
         if (duplicate) {
-            L_WRN("Duplicate volume {} link {} for CT{}:{} target {}", Path, link->HostTarget,
-                    link->Container->Id, link->Container->Name, link->Target);
+            L_WRN("Duplicate volume {} link {} for CT{}:{} target {}", Path, link->HostTarget, link->Container->Id,
+                  link->Container->Name, link->Target);
             continue;
         }
 
         if (link->HostTarget) {
-            L("Restore volume {} link {} for CT{}:{} target {}", Path, link->HostTarget,
-                    link->Container->Id, link->Container->Name, link->Target);
+            L("Restore volume {} link {} for CT{}:{} target {}", Path, link->HostTarget, link->Container->Id,
+              link->Container->Name, link->Target);
 
             if (!link->HostTarget.IsMountPoint()) {
                 L("Link {} is lost", link->HostTarget);
@@ -4195,42 +4091,42 @@ TError TVolume::Restore(const TKeyValue &node) {
 }
 
 std::vector<TVolumeProperty> VolumeProperties = {
-    { V_BACKEND,     "dir|plain|bind|rbind|tmpfs|hugetmpfs|quota|native|overlay|squash|lvm|loop|rbd (default - autodetect)", false },
-    { V_STORAGE,     "path to data storage (default - internal)", false },
-    { V_READY,       "true|false - contruction complete (ro)", true },
-    { V_STATE,       "volume state (ro)", true },
-    { V_PRIVATE,     "user-defined property", false },
-    { V_TARGET_CONTAINER, "target container (default - self)", false },
-    { V_OWNER_CONTAINER, "owner container (default - self)", false },
-    { V_OWNER_USER,  "owner user (default - creator)", false },
-    { V_OWNER_GROUP, "owner group (default - creator)", false },
-    { V_USER,        "directory user (default - creator)", false },
-    { V_GROUP,       "directory group (default - creator)", false },
-    { V_PERMISSIONS, "directory permissions (default - 0775)", false },
-    { V_CREATOR,     "container user group (ro)", true },
-    { V_READ_ONLY,   "true|false (default - false)", false },
-    { V_FILESYSTEM_TYPE,   "ext4|squashfs|erofs...", false },
-    { V_CONTAINERS,  "container [target] [ro] [!];... - initial links (default - self)", false },
-    { V_IMAGE,       "[<registry>/][<repository>/]<name>[:<tag>][@<digest>] - docker image", false },
-    { V_LAYERS,      "top-layer;...;bottom-layer - overlayfs layers", false },
-    { V_PLACE,       "place for layers and default storage (optional)", false },
-    { V_DEVICE_NAME, "name of backend disk device (ro)", true },
-    { V_PLACE_KEY,   "key for charging place_limit for owner_container (ro)", true },
-    { V_SPACE_LIMIT, "disk space limit (dynamic, default zero - unlimited)", false },
-    { V_INODE_LIMIT, "disk inode limit (dynamic, default zero - unlimited)", false },
-    { V_SPACE_GUARANTEE,    "disk space guarantee (dynamic, default - zero)", false },
-    { V_INODE_GUARANTEE,    "disk inode guarantee (dynamic, default - zero)", false },
-    { V_SPACE_USED,  "current disk space usage (ro)", true },
-    { V_INODE_USED,  "current disk inode used (ro)", true },
-    { V_SPACE_AVAILABLE,    "available disk space (ro)", true },
-    { V_INODE_AVAILABLE,    "available disk inodes (ro)", true },
+    {V_BACKEND, "dir|plain|bind|rbind|tmpfs|hugetmpfs|quota|native|overlay|squash|lvm|loop|rbd (default - autodetect)",
+     false},
+    {V_STORAGE, "path to data storage (default - internal)", false},
+    {V_READY, "true|false - contruction complete (ro)", true},
+    {V_STATE, "volume state (ro)", true},
+    {V_PRIVATE, "user-defined property", false},
+    {V_TARGET_CONTAINER, "target container (default - self)", false},
+    {V_OWNER_CONTAINER, "owner container (default - self)", false},
+    {V_OWNER_USER, "owner user (default - creator)", false},
+    {V_OWNER_GROUP, "owner group (default - creator)", false},
+    {V_USER, "directory user (default - creator)", false},
+    {V_GROUP, "directory group (default - creator)", false},
+    {V_PERMISSIONS, "directory permissions (default - 0775)", false},
+    {V_CREATOR, "container user group (ro)", true},
+    {V_READ_ONLY, "true|false (default - false)", false},
+    {V_FILESYSTEM_TYPE, "ext4|squashfs|erofs...", false},
+    {V_CONTAINERS, "container [target] [ro] [!];... - initial links (default - self)", false},
+    {V_IMAGE, "[<registry>/][<repository>/]<name>[:<tag>][@<digest>] - docker image", false},
+    {V_LAYERS, "top-layer;...;bottom-layer - overlayfs layers", false},
+    {V_PLACE, "place for layers and default storage (optional)", false},
+    {V_DEVICE_NAME, "name of backend disk device (ro)", true},
+    {V_PLACE_KEY, "key for charging place_limit for owner_container (ro)", true},
+    {V_SPACE_LIMIT, "disk space limit (dynamic, default zero - unlimited)", false},
+    {V_INODE_LIMIT, "disk inode limit (dynamic, default zero - unlimited)", false},
+    {V_SPACE_GUARANTEE, "disk space guarantee (dynamic, default - zero)", false},
+    {V_INODE_GUARANTEE, "disk inode guarantee (dynamic, default - zero)", false},
+    {V_SPACE_USED, "current disk space usage (ro)", true},
+    {V_INODE_USED, "current disk inode used (ro)", true},
+    {V_SPACE_AVAILABLE, "available disk space (ro)", true},
+    {V_INODE_AVAILABLE, "available disk inodes (ro)", true},
 };
 
 std::vector<std::string> AuxPlacesPaths;
 std::vector<std::string> InsecureUserPaths;
 
-TError TVolume::Create(const rpc::TVolumeSpec &spec,
-                       std::shared_ptr<TVolume> &volume) {
+TError TVolume::Create(const rpc::TVolumeSpec &spec, std::shared_ptr<TVolume> &volume) {
     TError error;
 
     if (!CL)
@@ -4471,7 +4367,7 @@ void TVolume::RestoreAll(void) {
     if (error)
         L_ERR("Cannot prepare place {}: {}", def_place.Path, error);
 
-    for (const auto &path : AuxPlacesPaths) {
+    for (const auto &path: AuxPlacesPaths) {
         TStorage aux_place;
 
         aux_place.Open(EStorageType::Place, path);
@@ -4486,7 +4382,7 @@ void TVolume::RestoreAll(void) {
     if (error)
         L_ERR("Cannot list nodes: {}", error);
 
-    for (auto &node : nodes) {
+    for (auto &node: nodes) {
         error = node.Load();
         if (error) {
             L_WRN("Cannot load {} removed: {}", node.Path, error);
@@ -4503,7 +4399,7 @@ void TVolume::RestoreAll(void) {
 
     std::list<std::shared_ptr<TVolume>> broken_volumes;
 
-    for (auto &node : nodes) {
+    for (auto &node: nodes) {
         if (!node.Name.size())
             continue;
 
@@ -4557,11 +4453,10 @@ void TVolume::RestoreAll(void) {
             continue;
         }
 
-next_link:
+    next_link:
         for (auto &link: volume->Links) {
             /* remove placeholder links */
-            if (link->Container == RootContainer &&
-                    link->Target.ToString() == "placeholder") {
+            if (link->Container == RootContainer && link->Target.ToString() == "placeholder") {
                 L("Remove placeholder link {} for missing container", link->HostTarget);
                 CL->LockContainer(RootContainer);
                 error = volume->UnlinkVolume(RootContainer, link->Target, broken_volumes);
@@ -4584,7 +4479,7 @@ next_link:
 
     L_SYS("Remove broken volumes...");
 
-    for (auto &volume : broken_volumes) {
+    for (auto &volume: broken_volumes) {
         Statistics->VolumeLost++;
         error = volume->Destroy();
         if (error)
@@ -4598,10 +4493,10 @@ next_link:
     auto all_def_places = aux_places;
     all_def_places.push_back(def_place);
 
-    for (const auto &place : all_def_places)
+    for (const auto &place: all_def_places)
         volumes.push_back(place.Path / PORTO_VOLUMES);
 
-    for (const auto &volume : volumes) {
+    for (const auto &volume: volumes) {
         std::vector<std::string> subdirs;
 
         error = volume.ReadDirectory(subdirs);
@@ -4635,13 +4530,13 @@ next_link:
 
     std::list<TStorage> storages;
 
-    for (auto &place : all_def_places) {
+    for (auto &place: all_def_places) {
         storages.clear();
         error = place.List(EStorageType::Layer, storages);
         if (error) {
             L_WRN("Layers listing failed : {}", error);
         } else {
-            for (auto &layer : storages) {
+            for (auto &layer: storages) {
                 if (layer.Weak()) {
                     error = layer.Remove(true);
                     if (error && error != EError::Busy)
@@ -4653,13 +4548,13 @@ next_link:
 
     L_SYS("Remove stale storages...");
 
-    for (auto &place : all_def_places) {
+    for (auto &place: all_def_places) {
         storages.clear();
         error = place.List(EStorageType::Storage, storages);
         if (error) {
             L_WRN("Storage listing failed : {}", error);
         } else {
-            for (auto &storage : storages) {
+            for (auto &storage: storages) {
                 if (storage.Weak()) {
                     error = storage.Remove(true);
                     if (error && error != EError::Busy)
@@ -4671,7 +4566,6 @@ next_link:
 }
 
 TError TVolume::VerifyConfig(const TStringMap &cfg) {
-
     for (auto &it: cfg) {
         if (it.first == V_PATH)
             continue;
@@ -4692,8 +4586,7 @@ TError TVolume::VerifyConfig(const TStringMap &cfg) {
 }
 
 TError TVolume::ParseConfig(const TStringMap &cfg, rpc::TVolumeSpec &spec) {
-
-    for (auto &it : cfg) {
+    for (auto &it: cfg) {
         auto &key = it.first;
         auto &val = it.second;
         TError error;
@@ -4715,7 +4608,8 @@ TError TVolume::ParseConfig(const TStringMap &cfg, rpc::TVolumeSpec &spec) {
         } else if (key == V_LOOP_DEV) {
             int v;
             error = StringToInt(val, v);
-            spec.set_device_index(v);;
+            spec.set_device_index(v);
+            ;
         } else if (key == V_DEVICE_NAME) {
             spec.set_device_name(val);
         } else if (key == V_BACKEND) {
@@ -4744,8 +4638,7 @@ TError TVolume::ParseConfig(const TStringMap &cfg, rpc::TVolumeSpec &spec) {
                     link->set_target(l[1]);
                 if (l.size() > 2 && l[2] == "ro")
                     link->set_read_only(true);
-                if ((l.size() > 2 && l[2] == "!") ||
-                        (l.size() > 3 && l[3] == "!"))
+                if ((l.size() > 2 && l[2] == "!") || (l.size() > 3 && l[3] == "!"))
                     link->set_required(true);
             }
         } else if (key == V_RAW_CONTAINERS) {
@@ -4767,7 +4660,7 @@ TError TVolume::ParseConfig(const TStringMap &cfg, rpc::TVolumeSpec &spec) {
             spec.set_read_only(v);
         } else if (key == V_FILESYSTEM_TYPE) {
             spec.set_filesystem_type(val);
-        }else if (key == V_IMAGE) {
+        } else if (key == V_IMAGE) {
             spec.set_image(val);
         } else if (key == V_LAYERS) {
             for (auto &l: SplitEscapedString(val, ';'))
@@ -5025,7 +4918,7 @@ TError StartNbd() {
         if (error)
             L_ERR("Cannot list nodes: {}", error);
 
-        for (auto &node : nodes) {
+        for (auto &node: nodes) {
             error = node.Load();
             if (error) {
                 L_WRN("Cannot load {} removed: {}", node.Path, error);
@@ -5033,29 +4926,21 @@ TError StartNbd() {
                 continue;
             }
 
-            NbdReconnectWorker.Push(
-                TNbdReconnRequest(
-                    /*.DeviceIndex = */     std::stoi(node.Data["DeviceIndex"]),
-                    /*.NumConnections = */  std::stoi(node.Data["NumConnections"]),
-                    /*.DueMs = */           std::stoul(node.Data["DueMs"]),
-                    /*.Retry = */           std::stoul(node.Data["Retry"])
-                    )
-                );
+            NbdReconnectWorker.Push(TNbdReconnRequest(
+                /*.DeviceIndex = */ std::stoi(node.Data["DeviceIndex"]),
+                /*.NumConnections = */ std::stoi(node.Data["NumConnections"]),
+                /*.DueMs = */ std::stoul(node.Data["DueMs"]), /*.Retry = */ std::stoul(node.Data["Retry"])));
         }
     } else {
         auto lock = LockVolumes();
 
-        for (const auto &p : NbdVolumes) {
+        for (const auto &p: NbdVolumes) {
             const auto &volume = p.second;
-            auto backend = static_cast<TVolumeNbdBackend*>(volume->Backend.get());
+            auto backend = static_cast<TVolumeNbdBackend *>(volume->Backend.get());
 
-            NbdReconnectWorker.Push(
-                TNbdReconnRequest(
-                    /*.DeviceIndex = */     p.first,
-                    /*.NumConnections = */  backend->NbdConnParams.NumConnections,
-                    /*.DueMs = */           0
-                    )
-                );
+            NbdReconnectWorker.Push(TNbdReconnRequest(
+                /*.DeviceIndex = */ p.first, /*.NumConnections = */ backend->NbdConnParams.NumConnections,
+                /*.DueMs = */ 0));
         }
     }
     (void)NbdKV.ClearDirectory();

@@ -1,16 +1,17 @@
 #include "stream.hpp"
+
+#include "client.hpp"
 #include "config.hpp"
+#include "container.hpp"
 #include "util/log.hpp"
 #include "util/proc.hpp"
-#include "client.hpp"
-#include "container.hpp"
 
 extern "C" {
-#include <sys/ioctl.h>
-#include <sys/types.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 }
 
 TError TStdStream::SetInside(const std::string &path, const TClient &client, bool restore) {
@@ -104,8 +105,7 @@ retry:
     if (fd != Stream) {
         if (dup2(fd, Stream) < 0) {
             close(fd);
-            return TError::System("dup2(" + std::to_string(fd) +
-                          ", " + std::to_string(Stream) + ")");
+            return TError::System("dup2(" + std::to_string(fd) + ", " + std::to_string(Stream) + ")");
         }
         close(fd);
     } else {
@@ -115,8 +115,7 @@ retry:
     return OK;
 }
 
-TError TStdStream::OpenOutside(const TContainer &container,
-                               const TClient &client) {
+TError TStdStream::OpenOutside(const TContainer &container, const TClient &client) {
     if (IsNull())
         return Open("/dev/null", container.TaskCred);
 
@@ -125,8 +124,7 @@ TError TStdStream::OpenOutside(const TContainer &container,
         TError error;
 
         if (!client.Pid)
-            return TError(EError::InvalidValue,
-                    "Cannot open redirect without client pid");
+            return TError(EError::InvalidValue, "Cannot open redirect without client pid");
 
         error = StringToInt(Path.ToString().substr(8), clientFd);
         if (error)
@@ -148,7 +146,8 @@ TError TStdStream::OpenOutside(const TContainer &container,
             if (pathStat.st_dev != PathStat.st_dev || pathStat.st_ino != PathStat.st_ino) {
                 Statistics->Fatals++;
                 L_ERR("Inode of std stream changed: {} != {}", PathStat.st_ino, pathStat.st_ino);
-                return TError(EError::Permission, "Inode of std stream changed: {} != {}", PathStat.st_ino, pathStat.st_ino);
+                return TError(EError::Permission, "Inode of std stream changed: {} != {}", PathStat.st_ino,
+                              pathStat.st_ino);
             }
         }
 
@@ -159,9 +158,8 @@ TError TStdStream::OpenOutside(const TContainer &container,
         if (error)
             return error;
         if (!TFile::Access(st, client.TaskCred, Stream ? TFile::W : TFile::R) &&
-                !TFile::Access(st, client.Cred, Stream ? TFile::W : TFile::R))
-            return TError(EError::Permission,
-                    "Not enough permissions for redirect: " + Path.ToString());
+            !TFile::Access(st, client.Cred, Stream ? TFile::W : TFile::R))
+            return TError(EError::Permission, "Not enough permissions for redirect: " + Path.ToString());
 
         // PORTO-853
         uint64_t clientStartTime;
@@ -172,7 +170,8 @@ TError TStdStream::OpenOutside(const TContainer &container,
         if (clientStartTime != client.StartTime) {
             Statistics->Fatals++;
             L_ERR("Client process changed: start time {} != {}", client.StartTime, clientStartTime);
-            return TError(EError::Permission, "Client process changed: start time {} != {}", client.StartTime, clientStartTime);
+            return TError(EError::Permission, "Client process changed: start time {} != {}", client.StartTime,
+                          clientStartTime);
         }
     } else if (Outside)
         return Open(ResolveOutside(container), container.TaskCred);
@@ -224,8 +223,7 @@ TError TStdStream::Rotate(const TContainer &container) {
     return OK;
 }
 
-TError TStdStream::Read(const TContainer &container, std::string &text,
-                        const std::string &range) const {
+TError TStdStream::Read(const TContainer &container, std::string &text, const std::string &range) const {
     std::string off = "", lim = "";
     uint64_t offset, limit;
     TError error;

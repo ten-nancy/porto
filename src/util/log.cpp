@@ -1,16 +1,17 @@
 #include "log.hpp"
-#include "util/unix.hpp"
-#include "util/signal.hpp"
+
 #include "common.hpp"
+#include "util/signal.hpp"
+#include "util/unix.hpp"
 
 extern "C" {
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <execinfo.h>
 #include <cxxabi.h>
+#include <execinfo.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 }
 
 bool StdLog = false;
@@ -37,10 +38,8 @@ void InitStatistics() {
         file.Close();
     }
 
-    Statistics = (TStatistics *)mmap(nullptr, sizeof(TStatistics),
-                                     PROT_READ | PROT_WRITE,
-                                     MAP_SHARED | (file ? 0 : MAP_ANONYMOUS),
-                                     file.Fd, 0);
+    Statistics = (TStatistics *)mmap(nullptr, sizeof(TStatistics), PROT_READ | PROT_WRITE,
+                                     MAP_SHARED | (file ? 0 : MAP_ANONYMOUS), file.Fd, 0);
     PORTO_ASSERT(Statistics != nullptr);
 
     PortoStatMembers.insert(std::make_pair("spawned", TStatistic(&TStatistics::PortoStarts)));
@@ -106,17 +105,24 @@ void InitStatistics() {
     PortoStatMembers.insert(std::make_pair("spec_requests_completed", TStatistic(&TStatistics::SpecRequestsCompleted)));
     PortoStatMembers.insert(std::make_pair("spec_requests_longer_1s", TStatistic(&TStatistics::SpecRequestsLonger1s)));
     PortoStatMembers.insert(std::make_pair("spec_requests_longer_3s", TStatistic(&TStatistics::SpecRequestsLonger3s)));
-    PortoStatMembers.insert(std::make_pair("spec_requests_longer_30s", TStatistic(&TStatistics::SpecRequestsLonger30s)));
+    PortoStatMembers.insert(
+        std::make_pair("spec_requests_longer_30s", TStatistic(&TStatistics::SpecRequestsLonger30s)));
     PortoStatMembers.insert(std::make_pair("spec_requests_longer_5m", TStatistic(&TStatistics::SpecRequestsLonger5m)));
     PortoStatMembers.insert(std::make_pair("spec_requests_failed", TStatistic(&TStatistics::SpecRequestsFailed)));
-    PortoStatMembers.insert(std::make_pair("spec_fail_invalid_value", TStatistic(&TStatistics::SpecRequestsFailedInvalidValue)));
+    PortoStatMembers.insert(
+        std::make_pair("spec_fail_invalid_value", TStatistic(&TStatistics::SpecRequestsFailedInvalidValue)));
     PortoStatMembers.insert(std::make_pair("spec_fail_unknown", TStatistic(&TStatistics::SpecRequestsFailedUnknown)));
-    PortoStatMembers.insert(std::make_pair("spec_fail_no_container", TStatistic(&TStatistics::SpecRequestsFailedContainerDoesNotExist)));
+    PortoStatMembers.insert(
+        std::make_pair("spec_fail_no_container", TStatistic(&TStatistics::SpecRequestsFailedContainerDoesNotExist)));
     PortoStatMembers.insert(std::make_pair("lock_operations_count", TStatistic(&TStatistics::LockOperationsCount)));
-    PortoStatMembers.insert(std::make_pair("lock_operations_longer_1s", TStatistic(&TStatistics::LockOperationsLonger1s)));
-    PortoStatMembers.insert(std::make_pair("lock_operations_longer_3s", TStatistic(&TStatistics::LockOperationsLonger3s)));
-    PortoStatMembers.insert(std::make_pair("lock_operations_longer_30s", TStatistic(&TStatistics::LockOperationsLonger30s)));
-    PortoStatMembers.insert(std::make_pair("lock_operations_longer_5m", TStatistic(&TStatistics::LockOperationsLonger5m)));
+    PortoStatMembers.insert(
+        std::make_pair("lock_operations_longer_1s", TStatistic(&TStatistics::LockOperationsLonger1s)));
+    PortoStatMembers.insert(
+        std::make_pair("lock_operations_longer_3s", TStatistic(&TStatistics::LockOperationsLonger3s)));
+    PortoStatMembers.insert(
+        std::make_pair("lock_operations_longer_30s", TStatistic(&TStatistics::LockOperationsLonger30s)));
+    PortoStatMembers.insert(
+        std::make_pair("lock_operations_longer_5m", TStatistic(&TStatistics::LockOperationsLonger5m)));
 }
 
 TFile LogFile;
@@ -135,8 +141,7 @@ void OpenLog(const TPath &path) {
         fd = STDOUT_FILENO;
     } else {
         struct stat st;
-        fd = open(path.c_str(), O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC |
-                                O_NOFOLLOW | O_NOCTTY, 0644);
+        fd = open(path.c_str(), O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY, 0644);
         if (fd >= 0 && !fstat(fd, &st) && (st.st_mode & 0777) != 0644)
             fchmod(fd, 0644);
     }
@@ -167,8 +172,8 @@ void WriteLog(const char *prefix, const std::string &log_msg) {
     clock_gettime(CLOCK_REALTIME, &ts);
     std::string currentTimeMs = fmt::format("{}.{:03}", FormatTime(ts.tv_sec), ts.tv_nsec / 1000000);
 
-    std::string msg = fmt::format("{} {}[{}]{}: {} {}\n",
-            currentTimeMs, GetTaskName(), GetTid(), reqIdMsg, prefix, log_msg);
+    std::string msg =
+        fmt::format("{} {}[{}]{}: {} {}\n", currentTimeMs, GetTaskName(), GetTid(), reqIdMsg, prefix, log_msg);
 
     if (Statistics) {
         Statistics->LogLines++;
@@ -180,11 +185,8 @@ void WriteLog(const char *prefix, const std::string &log_msg) {
 
     TError error = LogFile.WriteAll(msg);
     if (error && Statistics) {
-        if (error.Errno != ENOSPC &&
-                error.Errno != EDQUOT &&
-                error.Errno != EROFS &&
-                error.Errno != EIO &&
-                error.Errno != EUCLEAN)
+        if (error.Errno != ENOSPC && error.Errno != EDQUOT && error.Errno != EROFS && error.Errno != EIO &&
+            error.Errno != EUCLEAN)
             Statistics->Warns++;
         Statistics->LogLinesLost++;
         Statistics->LogBytesLost += msg.size();
@@ -204,10 +206,10 @@ void Stacktrace() {
     L_STK("Stacktrace:");
 
     // storage array for stack trace address data
-    void* addrlist[64];
+    void *addrlist[64];
 
     // retrieve current stack addresses
-    int addrlen = backtrace(addrlist, sizeof(addrlist) / sizeof(void*));
+    int addrlen = backtrace(addrlist, sizeof(addrlist) / sizeof(void *));
 
     if (addrlen == 0) {
         L_STK("  <empty, possibly corrupt>\n");
@@ -216,11 +218,11 @@ void Stacktrace() {
 
     // resolve addresses into strings containing "filename(function+address)",
     // this array must be free()-ed
-    char** symbollist = backtrace_symbols(addrlist, addrlen);
+    char **symbollist = backtrace_symbols(addrlist, addrlen);
 
     // allocate string which will be filled with the demangled function name
     size_t funcnamesize = 256;
-    char* funcname = (char*)malloc(funcnamesize);
+    char *funcname = (char *)malloc(funcnamesize);
 
     // iterate over the returned symbol lines. skip the first, it is the
     // address of this function.
@@ -253,9 +255,9 @@ void Stacktrace() {
             // __cxa_demangle():
 
             int status;
-            char* ret = abi::__cxa_demangle(begin_name, funcname, &funcnamesize, &status);
+            char *ret = abi::__cxa_demangle(begin_name, funcname, &funcnamesize, &status);
             if (status == 0) {
-                funcname = ret; // use possibly realloc()-ed string
+                funcname = ret;  // use possibly realloc()-ed string
                 L_STK("{}: {} {}", symbollist[i], funcname, begin_addr);
             } else {
                 // demangling failed. Output function name as a C function with no arguments.
@@ -274,18 +276,18 @@ void Stacktrace() {
 void AccountErrorType(const TError &error) {
     if (Statistics) {
         switch (error.Error) {
-            case EError::Unknown:
-                Statistics->FailSystem++;
-                break;
-            case EError::InvalidValue:
-                Statistics->FailInvalidValue++;
-                break;
-            case EError::InvalidCommand:
-                Statistics->FailInvalidCommand++;
-                break;
-            /* InvalidNetworkAddress accounted inside network.cpp */
-            default:
-                break;
+        case EError::Unknown:
+            Statistics->FailSystem++;
+            break;
+        case EError::InvalidValue:
+            Statistics->FailInvalidValue++;
+            break;
+        case EError::InvalidCommand:
+            Statistics->FailInvalidCommand++;
+            break;
+        /* InvalidNetworkAddress accounted inside network.cpp */
+        default:
+            break;
         }
     }
 }

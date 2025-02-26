@@ -1,22 +1,22 @@
 #pragma once
 
-#include <string>
-#include <vector>
+#include <atomic>
 #include <list>
 #include <memory>
-#include <atomic>
+#include <string>
+#include <vector>
 
 #include "cgroup.hpp"
-#include "util/unix.hpp"
-#include "util/task.hpp"
+#include "device.hpp"
+#include "network.hpp"
+#include "property.hpp"
+#include "seccomp.hpp"
+#include "stream.hpp"
+#include "task.hpp"
 #include "util/idmap.hpp"
 #include "util/mutex.hpp"
-#include "task.hpp"
-#include "stream.hpp"
-#include "property.hpp"
-#include "network.hpp"
-#include "device.hpp"
-#include "seccomp.hpp"
+#include "util/task.hpp"
+#include "util/unix.hpp"
 
 class TEpollSource;
 class TEvent;
@@ -72,8 +72,7 @@ struct ExtraProperty {
 
 class TProperty;
 
-class TContainer : public std::enable_shared_from_this<TContainer>,
-                   public TNonCopyable {
+class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCopyable {
     friend class TProperty;
 
     int StateLocked = 0;
@@ -111,16 +110,15 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
     void Exit(int status, bool oomKilled);
 
     TError BuildCpuTopology();
-    TError ReserveCpus(unsigned nr_threads, unsigned nr_cores,
-                       TBitMap &threads, TBitMap &cores);
+    TError ReserveCpus(unsigned nr_threads, unsigned nr_cores, TBitMap &threads, TBitMap &cores);
     void SetAffinity(const TBitMap &affinity);
     TError ApplyCpuSet();
 
-    void UpdateJailCpuStateLocked(const TBitMap& affinity, bool release = false);
+    void UpdateJailCpuStateLocked(const TBitMap &affinity, bool release = false);
     TError NextJailCpu(TBitMap &affinity, int node = -1);
     TError JailCpus();
-    void UnjailCpus(const TBitMap& affinity);
-    void UnjailCpusLocked(const TBitMap& affinity);
+    void UnjailCpus(const TBitMap &affinity);
+    void UnjailCpusLocked(const TBitMap &affinity);
 
     TError SetCpuLimit(uint64_t limit);
     TError ApplyCpuLimit();
@@ -131,7 +129,7 @@ class TContainer : public std::enable_shared_from_this<TContainer>,
 
 public:
     const std::shared_ptr<TContainer> Parent;
-    const int Level; // 0 for root
+    const int Level;  // 0 for root
     const int Id;
     const std::string Name;
     const std::string FirstName;
@@ -141,8 +139,7 @@ public:
     std::atomic<int> StartingChildren;
 
     bool HasResources() const {
-        return State != EContainerState::Stopped &&
-               State != EContainerState::Destroyed;
+        return State != EContainerState::Stopped && State != EContainerState::Destroyed;
     }
 
     bool IsRunningOrMeta() {
@@ -173,11 +170,11 @@ public:
     std::string Root;
     bool RootRo;
     mode_t Umask;
-    bool BindDns = false;       /* deprecated */
-    bool Isolate;               /* New pid/ipc/utc/env namespace */
-    bool OsMode = false;        /* Start as init process */
-    bool HostMode = false;      /* Preserve host capabilites */
-    bool JobMode = false;       /* Process group */
+    bool BindDns = false;  /* deprecated */
+    bool Isolate;          /* New pid/ipc/utc/env namespace */
+    bool OsMode = false;   /* Start as init process */
+    bool HostMode = false; /* Preserve host capabilites */
+    bool JobMode = false;  /* Process group */
     bool DockerMode = false;
     bool UserNs = false;
     TCred UserNsCred;
@@ -189,8 +186,8 @@ public:
     TSessionInfo SessionInfo;
 
     TMultiTuple NetProp;
-    bool NetIsolate;            /* Create new network namespace */
-    bool NetInherit;            /* Use parent network namespace */
+    bool NetIsolate; /* Create new network namespace */
+    bool NetInherit; /* Use parent network namespace */
     TMultiTuple NetXVlanSettings;
 
     std::string Hostname;
@@ -206,10 +203,10 @@ public:
 
     /* CapLimit >= CapBound >= CapAmbient */
     /* Host mode and owner is root are exceptions for the first condition. */
-    TCapabilities CapAmbient;   /* get at start */
-    TCapabilities CapLimit;     /* upper limit set by user */
-    TCapabilities CapBound;     /* actual bounding set and can be set as ambient */
-    TCapabilities CapExtra;     /* from extra properties */
+    TCapabilities CapAmbient; /* get at start */
+    TCapabilities CapLimit;   /* upper limit set by user */
+    TCapabilities CapBound;   /* actual bounding set and can be set as ambient */
+    TCapabilities CapExtra;   /* from extra properties */
     TMultiTuple DefaultGw;
     std::string ResolvConf;
     std::string EtcHosts;
@@ -401,7 +398,7 @@ public:
         return true;
     }
 
-    template<typename... T>
+    template <typename... T>
     bool TestClearPropsDirty(T... props) {
         bool dirty = false;
         for (auto prop: {props...})
@@ -428,13 +425,16 @@ public:
     void LockStateWrite();
     void DowngradeStateLock();
     void UnlockState();
-    bool IsStateLockedRead() { return StateLocked != 0; }
-    bool IsStateLockedWrite() { return StateLocked == -1; }
+    bool IsStateLockedRead() {
+        return StateLocked != 0;
+    }
+    bool IsStateLockedWrite() {
+        return StateLocked == -1;
+    }
 
     static void DumpLocks();
 
     TTuple Taint();
-
 
     TUlimit GetUlimit() const;
     void SanitizeCapabilities();
@@ -447,7 +447,9 @@ public:
     TError ChooseDirtyMemLimit();
     void PropagateDirtyMemLimit();
 
-    bool IsRoot() const { return !Level; }
+    bool IsRoot() const {
+        return !Level;
+    }
     bool IsChildOf(const TContainer &ct) const;
 
     std::list<std::shared_ptr<TContainer>> Subtree();
@@ -491,7 +493,8 @@ public:
     bool MatchLabels(const rpc::TStringMap &labels) const;
 
     TError Load(const rpc::TContainerSpec &spec, bool restoreOnError = false);
-    void Dump(const std::vector<std::string> &props, std::unordered_map<std::string, std::string> &propsOps, rpc::TContainer &spec);
+    void Dump(const std::vector<std::string> &props, std::unordered_map<std::string, std::string> &propsOps,
+              rpc::TContainer &spec);
 
     /* Protected with ContainersLock */
     static TError ValidLabel(const std::string &label, const std::string &value);
@@ -542,8 +545,9 @@ public:
         std::vector<unsigned> Permutation;
         std::vector<unsigned> Usage;
 
-        TJailCpuState(const std::vector<unsigned>& permutation, std::vector<unsigned> usage)
-            : Permutation(permutation), Usage(usage)
+        TJailCpuState(const std::vector<unsigned> &permutation, std::vector<unsigned> usage)
+            : Permutation(permutation),
+              Usage(usage)
         {}
     };
 

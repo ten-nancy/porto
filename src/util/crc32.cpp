@@ -1,3 +1,5 @@
+// clang-format off
+
 /* $OpenBSD: crc32.c,v 1.11 2006/04/22 18:29:33 stevesk Exp $ */
 /*
 * Copyright (c) 2003 Markus Friedl. All rights reserved.

@@ -2,6 +2,7 @@
 
 #include <map>
 #include <string>
+
 #include "common.hpp"
 
 constexpr const char *P_RAW_ROOT_PID = "_root_pid";
@@ -78,7 +79,7 @@ constexpr const char *P_CPU_LIMIT_BOUND = "cpu_limit_bound";
 constexpr const char *P_CPU_PERIOD = "cpu_period";
 constexpr const char *P_CPU_WEIGHT = "cpu_weight";
 constexpr const char *P_CPU_SET = "cpu_set";
-constexpr const char *P_CPU_SET_AFFINITY  = "cpu_set_affinity";
+constexpr const char *P_CPU_SET_AFFINITY = "cpu_set_affinity";
 constexpr const char *P_CPU_USAGE = "cpu_usage";
 constexpr const char *P_CPU_SYSTEM = "cpu_usage_system";
 constexpr const char *P_CPU_WAIT = "cpu_wait";
@@ -360,4 +361,4 @@ void InitContainerProperties(void);
 
 class TContainer;
 extern thread_local std::shared_ptr<TContainer> CT;
-extern std::map<std::string, TProperty*> ContainerProperties;
+extern std::map<std::string, TProperty *> ContainerProperties;

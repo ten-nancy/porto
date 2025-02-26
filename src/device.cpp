@@ -1,10 +1,11 @@
 #include "device.hpp"
+
 #include "cgroup.hpp"
 #include "util/log.hpp"
 
 extern "C" {
-#include <sys/stat.h>
 #include <linux/kdev_t.h>
+#include <sys/stat.h>
 #include <sys/sysmacros.h>
 }
 
@@ -22,8 +23,7 @@ TError TDevice::Parse(TTuple &opt, const TCred &cred) {
     TError error;
 
     if (opt.size() < 2)
-        return TError(EError::InvalidValue, "Invalid device config: " +
-                      MergeEscapeStrings(opt, ' '));
+        return TError(EError::InvalidValue, "Invalid device config: " + MergeEscapeStrings(opt, ' '));
 
     /* <device> [r][w][m][-][?] [path] [mode] [user] [group] */
     Path = opt[0];
@@ -35,28 +35,28 @@ TError TDevice::Parse(TTuple &opt, const TCred &cred) {
     MayRead = MayWrite = MayMknod = Wildcard = Optional = false;
     for (char c: opt[1]) {
         switch (c) {
-            case 'r':
-                MayRead = true;
-                break;
-            case 'w':
-                MayWrite = true;
-                break;
-            case 'm':
-                MayMknod = true;
-                break;
-            case '*':
-                if (!cred.IsRootUser())
-                    return TError(EError::Permission, "{} cannot setup wildcard {}", cred.ToString(), Path);
-                Wildcard = true;
-                break;
-            case '-':
-                Optional = true;
-                break;
-            case '?':
-                Optional = true;
-                break;
-            default:
-                return TError(EError::InvalidValue, "Invalid access: " + opt[1]);
+        case 'r':
+            MayRead = true;
+            break;
+        case 'w':
+            MayWrite = true;
+            break;
+        case 'm':
+            MayMknod = true;
+            break;
+        case '*':
+            if (!cred.IsRootUser())
+                return TError(EError::Permission, "{} cannot setup wildcard {}", cred.ToString(), Path);
+            Wildcard = true;
+            break;
+        case '-':
+            Optional = true;
+            break;
+        case '?':
+            Optional = true;
+            break;
+        default:
+            return TError(EError::InvalidValue, "Invalid access: " + opt[1]);
         }
     }
 
@@ -103,8 +103,8 @@ TError TDevice::Parse(TTuple &opt, const TCred &cred) {
         if (mode & ~0777)
             return TError(EError::InvalidValue, "invalid device mode: " + opt[3]);
         if ((mode & ~(Mode & 0777)) && cred.GetUid() != Uid && !cred.IsRootUser())
-            return TError(EError::Permission, "{} cannot change device {} permissions {:#o} to {:#o}",
-                          cred.ToString(), Path, Mode & 0777, mode);
+            return TError(EError::Permission, "{} cannot change device {} permissions {:#o} to {:#o}", cred.ToString(),
+                          Path, Mode & 0777, mode);
         Mode = mode | (Mode & ~0777);
     }
 
@@ -114,8 +114,8 @@ TError TDevice::Parse(TTuple &opt, const TCred &cred) {
         if (error)
             return error;
         if (uid != Uid && cred.GetUid() != Uid && !cred.IsRootUser())
-            return TError(EError::Permission, "{} cannot change device {} uid {} to {}",
-                          cred.ToString(), Path, UserName(Uid), UserName(uid));
+            return TError(EError::Permission, "{} cannot change device {} uid {} to {}", cred.ToString(), Path,
+                          UserName(Uid), UserName(uid));
         Uid = uid;
     }
 
@@ -125,8 +125,8 @@ TError TDevice::Parse(TTuple &opt, const TCred &cred) {
         if (error)
             return error;
         if (gid != Gid && cred.GetUid() != Uid && !cred.IsRootUser())
-            return TError(EError::Permission, "{} cannot change device {} gid {} to {}",
-                          cred.ToString(), Path, GroupName(Gid), GroupName(gid));
+            return TError(EError::Permission, "{} cannot change device {} gid {} to {}", cred.ToString(), Path,
+                          GroupName(Gid), GroupName(gid));
         Gid = gid;
     }
 
@@ -157,8 +157,8 @@ std::string TDevice::FormatAccess() const {
 }
 
 std::string TDevice::Format() const {
-    return fmt::format("{} {} {} {:#o} {} {}", Path, FormatAccess(), PathInside,
-                       Mode & 0777, UserName(Uid), GroupName(Gid));
+    return fmt::format("{} {} {} {:#o} {} {}", Path, FormatAccess(), PathInside, Mode & 0777, UserName(Uid),
+                       GroupName(Gid));
 }
 
 TError TDevice::Load(const rpc::TContainerDevice &dev, const TCred &cred) {
@@ -184,7 +184,7 @@ void TDevice::Dump(rpc::TContainerDevice &dev) const {
     dev.set_device(Path.ToString());
     dev.set_access(FormatAccess());
     dev.set_path(PathInside.ToString());
-    dev.set_mode(fmt::format("{:#o}",Mode & 0777));
+    dev.set_mode(fmt::format("{:#o}", Mode & 0777));
     dev.set_user(UserName(Uid));
     dev.set_group(GroupName(Gid));
 }
@@ -202,10 +202,8 @@ TError TDevice::Makedev(const TPath &root) const {
         return OK;
 
     if (path.StatFollow(st)) {
-        L_ACT("Make {} device node {} {}:{} {:#o} {}:{}",
-                S_ISBLK(Mode) ? "blk" : "chr", PathInside,
-                major(Node), minor(Node), Mode & 0777,
-                Uid, Gid);
+        L_ACT("Make {} device node {} {}:{} {:#o} {}:{}", S_ISBLK(Mode) ? "blk" : "chr", PathInside, major(Node),
+              minor(Node), Mode & 0777, Uid, Gid);
         error = path.Mknod(Mode, Node);
         if (error)
             return error;
@@ -214,8 +212,8 @@ TError TDevice::Makedev(const TPath &root) const {
             return error;
     } else {
         if ((st.st_mode & S_IFMT) != (Mode & S_IFMT) || st.st_rdev != Node)
-            return TError(EError::Busy, "Different device node {} {:#o} {}:{} in container",
-                          PathInside, st.st_mode, major(st.st_rdev), minor(st.st_rdev));
+            return TError(EError::Busy, "Different device node {} {:#o} {}:{} in container", PathInside, st.st_mode,
+                          major(st.st_rdev), minor(st.st_rdev));
         if (st.st_mode != Mode) {
             L_ACT("Update device node {} permissions {:#o}", PathInside, Mode & 0777);
             error = path.Chmod(Mode & 0777);
@@ -238,7 +236,6 @@ TError TDevices::Parse(const std::string &str, const TCred &cred) {
     TError error;
 
     for (auto &cfg: devices_cfg) {
-
         if (cfg.size() == 2 && cfg[0] == "preset") {
             bool found = false;
 
@@ -322,9 +319,7 @@ struct TDeviceRule {
     char Action;
 
     bool operator==(const TDeviceRule &o) {
-        return Mode == o.Mode &&
-            Node == o.Node &&
-            Action == o.Action;
+        return Mode == o.Mode && Node == o.Node && Action == o.Action;
     }
 
     static std::vector<TDeviceRule> Flatten(const TDevices &devices) {
@@ -385,9 +380,8 @@ struct TDeviceRule {
 
         for (auto &p: grouped) {
             auto s = fmt::format("{} {} {}", p.first.first, p.first.second, p.second);
-            auto error = allow ?
-                CgroupDriver.DevicesSubsystem->SetAllow(cg, s) :
-                CgroupDriver.DevicesSubsystem->SetDeny(cg, s);
+            auto error =
+                allow ? CgroupDriver.DevicesSubsystem->SetAllow(cg, s) : CgroupDriver.DevicesSubsystem->SetDeny(cg, s);
             if (error)
                 return error;
         }
@@ -432,15 +426,9 @@ TError TDevices::InitDefault() {
     TError error;
 
     Devices = {
-        {"/dev/null", MKDEV(1, 3)},
-        {"/dev/zero", MKDEV(1, 5)},
-        {"/dev/full", MKDEV(1, 7)},
-        {"/dev/random", MKDEV(1, 8)},
-        {"/dev/urandom", MKDEV(1, 9)},
-        {"/dev/tty", MKDEV(5, 0)},
-        {"/dev/console", MKDEV(1, 3)},
-        {"/dev/ptmx", MKDEV(5, 2)},
-        {"/dev/pts/*", MKDEV(136, 0)},
+        {"/dev/null", MKDEV(1, 3)},    {"/dev/zero", MKDEV(1, 5)},    {"/dev/full", MKDEV(1, 7)},
+        {"/dev/random", MKDEV(1, 8)},  {"/dev/urandom", MKDEV(1, 9)}, {"/dev/tty", MKDEV(5, 0)},
+        {"/dev/console", MKDEV(1, 3)}, {"/dev/ptmx", MKDEV(5, 2)},    {"/dev/pts/*", MKDEV(136, 0)},
     };
 
     Devices[6].Path = "/dev/null";
@@ -459,10 +447,8 @@ TError TDevices::InitDefault() {
 
 TDevices &TDevices::Merge(const TDevices &other) {
     for (auto &dev: other.Devices) {
-        auto it = std::find_if(
-            Devices.begin(), Devices.end(),
-            [&dev](const TDevice &d) { return d.PathInside == dev.PathInside; }
-        );
+        auto it = std::find_if(Devices.begin(), Devices.end(),
+                               [&dev](const TDevice &d) { return d.PathInside == dev.PathInside; });
         if (it != Devices.end()) {
             *it = dev;
         } else {
@@ -473,19 +459,17 @@ TDevices &TDevices::Merge(const TDevices &other) {
 }
 
 bool TDevices::operator<=(const TDevices &other) const {
-        for (auto &dev : Devices) {
-            if (!dev.Allowed())
-                continue;
+    for (auto &dev: Devices) {
+        if (!dev.Allowed())
+            continue;
 
-            auto it = std::find_if(
-                other.Devices.begin(), other.Devices.end(),
-                [&dev](const TDevice &d) { return d.Node == dev.Node; }
-            );
-            if (it == other.Devices.end())
-                return false;
+        auto it = std::find_if(other.Devices.begin(), other.Devices.end(),
+                               [&dev](const TDevice &d) { return d.Node == dev.Node; });
+        if (it == other.Devices.end())
+            return false;
 
-            if  (dev.MayRead > it->MayRead || dev.MayWrite > it->MayWrite || dev.MayMknod > it->MayMknod)
-                return false;
-        }
-        return true;
+        if (dev.MayRead > it->MayRead || dev.MayWrite > it->MayWrite || dev.MayMknod > it->MayMknod)
+            return false;
     }
+    return true;
+}

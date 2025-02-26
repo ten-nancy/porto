@@ -1,33 +1,33 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <map>
+#include <memory>
+#include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
-#include <string>
-#include <memory>
-#include <functional>
-#include <thread>
 
 namespace rpc {
-    class TContainerRequest;
-    class TContainerResponse;
-    class TGetContainerResponse;
-    class TContainerSpec;
-    class TContainer;
-    class TStorageListResponse;
-    class TGetVolumeResponse;
-    class TVolumeSpec;
-    class TListContainersRequest;
-    class TGetVolumeRequest;
-    class TDockerImage;
-}
+class TContainerRequest;
+class TContainerResponse;
+class TGetContainerResponse;
+class TContainerSpec;
+class TContainer;
+class TStorageListResponse;
+class TGetVolumeResponse;
+class TVolumeSpec;
+class TListContainersRequest;
+class TGetVolumeRequest;
+class TDockerImage;
+}  // namespace rpc
 
 namespace Porto {
 
 constexpr int INFINITE_TIMEOUT = -1;
-constexpr int DEFAULT_TIMEOUT = 300;    // 5min
-constexpr int DISK_TIMEOUT = 900;       // 15min
+constexpr int DEFAULT_TIMEOUT = 300;  // 5min
+constexpr int DISK_TIMEOUT = 900;     // 15min
 
 struct Property {
     std::string Name;
@@ -74,8 +74,8 @@ struct DockerImage {
     DockerImage(const DockerImage &i) = default;
     DockerImage(DockerImage &&i) = default;
 
-    DockerImage& operator=(const DockerImage &i) = default;
-    DockerImage& operator=(DockerImage &&i) = default;
+    DockerImage &operator=(const DockerImage &i) = default;
+    DockerImage &operator=(DockerImage &&i) = default;
 };
 
 struct Storage {
@@ -112,8 +112,8 @@ class Connection {
 
     std::unique_ptr<ConnectionImpl> Impl;
 
-    Connection(const Connection&) = delete;
-    void operator=(const Connection&) = delete;
+    Connection(const Connection &) = delete;
+    void operator=(const Connection &) = delete;
 
 public:
     Connection();
@@ -136,8 +136,7 @@ public:
 
     uint64_t ResponseTimestamp() const;
 
-    int Call(const rpc::TContainerRequest &req, rpc::TContainerResponse &rsp,
-             int extra_timeout = 0);
+    int Call(const rpc::TContainerRequest &req, rpc::TContainerResponse &rsp, int extra_timeout = 0);
     int Call(const std::string &req, std::string &rsp, int extra_timeout = 0);
 
     int Create(const std::string &name);
@@ -151,46 +150,34 @@ public:
     int Resume(const std::string &name);
     int Respawn(const std::string &name);
 
-    int WaitContainers(const std::vector<std::string> &containers,
-                       const std::vector<std::string> &labels,
+    int WaitContainers(const std::vector<std::string> &containers, const std::vector<std::string> &labels,
                        std::string &name, int timeout = INFINITE_TIMEOUT);
 
-    int AsyncWait(const std::vector<std::string> &containers,
-                  const std::vector<std::string> &labels,
-                  std::function<void(AsyncWaitEvent &event)> callbacks,
-                  int timeout = INFINITE_TIMEOUT,
+    int AsyncWait(const std::vector<std::string> &containers, const std::vector<std::string> &labels,
+                  std::function<void(AsyncWaitEvent &event)> callbacks, int timeout = INFINITE_TIMEOUT,
                   const std::string &targetState = "");
 
-    int StopAsyncWait(const std::vector<std::string> &containers,
-                      const std::vector<std::string> &labels,
+    int StopAsyncWait(const std::vector<std::string> &containers, const std::vector<std::string> &labels,
                       const std::string &targetState = "");
 
     int Recv();
 
-    int List(std::vector<std::string> &list,
-             const std::string &mask = "");
+    int List(std::vector<std::string> &list, const std::string &mask = "");
     int ListProperties(std::vector<Property> &list);
 
-    int Get(const std::vector<std::string> &name,
-            const std::vector<std::string> &variable,
-            std::map<std::string, std::map<std::string, GetResponse>> &result,
-            int flags = 0);
+    int Get(const std::vector<std::string> &name, const std::vector<std::string> &variable,
+            std::map<std::string, std::map<std::string, GetResponse>> &result, int flags = 0);
 
-    int GetProperty(const std::string &name,
-            const std::string &property, std::string &value, int flags = 0);
-    int SetProperty(const std::string &name,
-            const std::string &property, std::string value);
+    int GetProperty(const std::string &name, const std::string &property, std::string &value, int flags = 0);
+    int SetProperty(const std::string &name, const std::string &property, std::string value);
 
-    int GetData(const std::string &name, const std::string &property,
-                std::string &value) {
+    int GetData(const std::string &name, const std::string &property, std::string &value) {
         return GetProperty(name, property, value);
     }
 
-    int IncLabel(const std::string &name, const std::string &label,
-                 int64_t add, int64_t &result);
+    int IncLabel(const std::string &name, const std::string &label, int64_t add, int64_t &result);
 
-    int IncLabel(const std::string &name, const std::string &label,
-                 int64_t add = 1) {
+    int IncLabel(const std::string &name, const std::string &label, int64_t add = 1) {
         int64_t result;
         return IncLabel(name, label, add, result);
     }
@@ -198,85 +185,54 @@ public:
     int GetVersion(std::string &tag, std::string &revision);
 
     int ListVolumeProperties(std::vector<Property> &list);
-    int CreateVolume(const std::string &path,
-                     const std::map<std::string, std::string> &config,
-                     Volume &result);
-    int CreateVolume(std::string &path,
-                     const std::map<std::string, std::string> &config);
-    int LinkVolume(const std::string &path,
-                   const std::string &container = "",
-                   const std::string &target = "",
-                   bool read_only = false,
-                   bool required = false);
-    int UnlinkVolume(const std::string &path,
-                     const std::string &container = "",
-                     const std::string &target = "***",
+    int CreateVolume(const std::string &path, const std::map<std::string, std::string> &config, Volume &result);
+    int CreateVolume(std::string &path, const std::map<std::string, std::string> &config);
+    int LinkVolume(const std::string &path, const std::string &container = "", const std::string &target = "",
+                   bool read_only = false, bool required = false);
+    int UnlinkVolume(const std::string &path, const std::string &container = "", const std::string &target = "***",
                      bool strict = false);
-    int ListVolumes(const std::string &path, const std::string &container,
-                    std::vector<Volume> &volumes);
+    int ListVolumes(const std::string &path, const std::string &container, std::vector<Volume> &volumes);
     int ListVolumes(std::vector<Volume> &volumes) {
         return ListVolumes(std::string(), std::string(), volumes);
     }
-    int TuneVolume(const std::string &path,
-                   const std::map<std::string, std::string> &config);
+    int TuneVolume(const std::string &path, const std::map<std::string, std::string> &config);
     int CheckVolume(const std::string &path, std::string &message);
 
-    int ImportLayer(const std::string &layer, const std::string &tarball,
-                    bool merge = false, const std::string &place = "",
-                    const std::string &private_value = "", const std::string &memCgroup = "",
-                    bool verboseError = false);
+    int ImportLayer(const std::string &layer, const std::string &tarball, bool merge = false,
+                    const std::string &place = "", const std::string &private_value = "",
+                    const std::string &memCgroup = "", bool verboseError = false);
 
-    int ExportLayer(const std::string &volume, const std::string &tarball,
-                    const std::string &compress = "");
+    int ExportLayer(const std::string &volume, const std::string &tarball, const std::string &compress = "");
     int RemoveLayer(const std::string &layer, const std::string &place = "", bool async = false);
-    int ListLayers(std::vector<Layer> &layers,
-                   const std::string &place = "",
-                   const std::string &mask = "");
+    int ListLayers(std::vector<Layer> &layers, const std::string &place = "", const std::string &mask = "");
 
-    int GetLayerPrivate(std::string &private_value, const std::string &layer,
-                        const std::string &place = "");
-    int SetLayerPrivate(const std::string &private_value, const std::string &layer,
-                        const std::string &place = "");
+    int GetLayerPrivate(std::string &private_value, const std::string &layer, const std::string &place = "");
+    int SetLayerPrivate(const std::string &private_value, const std::string &layer, const std::string &place = "");
 
-    int DockerImageStatus(DockerImage &image,
-                          const std::string &name,
-                          const std::string &place = "");
-    int ListDockerImages(std::vector<DockerImage> &images,
-                         const std::string &place = "",
-                         const std::string &mask = "");
-    int PullDockerImage(DockerImage &image,
-                        const std::string &name,
-                        const std::string &place = "",
-                        const std::string &auth_token = "",
-                        const std::string &auth_host = "",
+    int DockerImageStatus(DockerImage &image, const std::string &name, const std::string &place = "");
+    int ListDockerImages(std::vector<DockerImage> &images, const std::string &place = "", const std::string &mask = "");
+    int PullDockerImage(DockerImage &image, const std::string &name, const std::string &place = "",
+                        const std::string &auth_token = "", const std::string &auth_host = "",
                         const std::string &auth_service = "");
-    int RemoveDockerImage(const std::string &name,
-                          const std::string &place = "");
+    int RemoveDockerImage(const std::string &name, const std::string &place = "");
 
     const rpc::TStorageListResponse *ListStorage(const std::string &place = "", const std::string &mask = "");
 
     int RemoveStorage(const std::string &name, const std::string &place = "");
-    int ImportStorage(const std::string &name,
-                      const std::string &archive,
-                      const std::string &place = "",
-                      const std::string &compression = "",
-                      const std::string &private_value = "");
-    int ExportStorage(const std::string &name,
-                      const std::string &archive,
-                      const std::string &place = "",
+    int ImportStorage(const std::string &name, const std::string &archive, const std::string &place = "",
+                      const std::string &compression = "", const std::string &private_value = "");
+    int ExportStorage(const std::string &name, const std::string &archive, const std::string &place = "",
                       const std::string &compression = "");
 
-    int ConvertPath(const std::string &path, const std::string &src,
-                    const std::string &dest, std::string &res);
+    int ConvertPath(const std::string &path, const std::string &src, const std::string &dest, std::string &res);
 
-    int AttachProcess(const std::string &name,
-                      int pid, const std::string &comm);
-    int AttachThread(const std::string &name,
-                     int pid, const std::string &comm);
+    int AttachProcess(const std::string &name, int pid, const std::string &comm);
+    int AttachThread(const std::string &name, int pid, const std::string &comm);
     int LocateProcess(int pid, const std::string &comm, std::string &name);
 
     int GetContainerSpec(const std::string &name, rpc::TContainer &container);
-    int ListContainersBy(const rpc::TListContainersRequest &listContainersRequest, std::vector<rpc::TContainer> &containers);
+    int ListContainersBy(const rpc::TListContainersRequest &listContainersRequest,
+                         std::vector<rpc::TContainer> &containers);
     int CreateFromSpec(const rpc::TContainerSpec &container, std::vector<rpc::TVolumeSpec> volumes, bool start = false);
     int UpdateFromSpec(const rpc::TContainerSpec &container, bool start = false);
 
@@ -315,9 +271,7 @@ class AsyncWaiter {
 
     void MainCallback(Porto::AsyncWaitEvent &event);
     inline TAsyncPortoCallback GetMainCallback() {
-        return [this](Porto::AsyncWaitEvent &event) {
-            MainCallback(event);
-        };
+        return [this](Porto::AsyncWaitEvent &event) { MainCallback(event); };
     }
 
     int Repair();

@@ -52,8 +52,7 @@ static bool RunningInContainer() {
     std::string env;
     if (TPath("/proc/1/environ").ReadAll(env))
         return false;
-    return StringStartsWith(env, "container=") ||
-        env.find(std::string("\0container=", 11)) != std::string::npos;
+    return StringStartsWith(env, "container=") || env.find(std::string("\0container=", 11)) != std::string::npos;
 }
 
 bool SanityCheck() {
@@ -99,7 +98,7 @@ static void ReportZombies(int fd) {
             status = info.si_status;
         } else if (info.si_code == CLD_DUMPED) {
             status = info.si_status | (1 << 7);
-        } else { // CLD_EXITED
+        } else {  // CLD_EXITED
             status = info.si_status << 8;
         }
 
@@ -191,13 +190,12 @@ static TError CreatePortoSocket() {
 
     if (dup2(PORTO_SK_FD, PORTO_SK_FD) == PORTO_SK_FD) {
         sock.SetFd = PORTO_SK_FD;
-        if (!sock.Stat(fd_stat) && S_ISSOCK(fd_stat.st_mode) &&
-                !path.StatStrict(sk_stat) && S_ISSOCK(sk_stat.st_mode)) {
+        if (!sock.Stat(fd_stat) && S_ISSOCK(fd_stat.st_mode) && !path.StatStrict(sk_stat) &&
+            S_ISSOCK(sk_stat.st_mode)) {
             time_t now = time(nullptr);
-            L_SYS("Reuse porto socket: inode {} : {} "
-                  "age {} : {}",
-                  fd_stat.st_ino, sk_stat.st_ino,
-                  now - fd_stat.st_ctime, now - sk_stat.st_ctime);
+            L_SYS(
+                "Reuse porto socket: inode {} : {} "
+                "age {} : {}", fd_stat.st_ino, sk_stat.st_ino, now - fd_stat.st_ctime, now - sk_stat.st_ctime);
             SocketIno = sk_stat.st_ino;
         } else {
             L_WRN("Unlinked porto socket. Recreating...");
@@ -216,7 +214,7 @@ static TError CreatePortoSocket() {
 
         (void)path.Unlink();
 
-        if (bind(sock.Fd, (struct sockaddr *) &addr, sizeof(addr)) < 0)
+        if (bind(sock.Fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
             return TError::System("bind()");
 
         error = path.StatStrict(sk_stat);
@@ -251,8 +249,7 @@ static TError CreatePortoNlSocket() {
     struct stat st;
     if (!fstat(PORTO_NL_SK_FD, &st) && S_ISSOCK(st.st_mode)) {
         time_t now = time(nullptr);
-        L_SYS("Reuse porto nl socket: inode {} age {}",
-              st.st_ino, now - st.st_ctime);
+        L_SYS("Reuse porto nl socket: inode {} age {}", st.st_ino, now - st.st_ctime);
         PortoNlSocketReused = true;
     } else {
         L_SYS("Create new porto nl socket");
@@ -370,8 +367,7 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
                     L_ERR("Cannot kill portod: {}", TError::System("kill"));
 
                 L_SYS("Waiting for portod shutdown...");
-                uint64_t deadline = GetCurrentTimeMs() +
-                                    config().daemon().portod_stop_timeout() * 1000;
+                uint64_t deadline = GetCurrentTimeMs() + config().daemon().portod_stop_timeout() * 1000;
                 do {
                     if (waitpid(ServerPid, &PortodStatus, WNOHANG) == ServerPid) {
                         ServerPid = 0;
@@ -400,13 +396,12 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
             }
         }
 
-        for (auto ev : events) {
+        for (auto ev: events) {
             auto source = loop->GetSource(ev.data.fd);
             if (!source)
                 continue;
 
             if (source->Fd == sigFd) {
-
             } else if (source->Fd == ackfd[0]) {
                 if (!ReapZombies(ackfd[0])) {
                     goto exit;

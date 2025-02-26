@@ -31,8 +31,7 @@ static void PrintVersion() {
     TPath thisBin, currBin;
 
     TPath("/proc/self/exe").ReadLink(thisBin);
-    if (MasterPidFile.Read() || TPath("/proc/" +
-                std::to_string(MasterPidFile.Pid) +"/exe").ReadLink(currBin))
+    if (MasterPidFile.Read() || TPath("/proc/" + std::to_string(MasterPidFile.Pid) + "/exe").ReadLink(currBin))
         TPath(PORTO_BINARY_PATH).ReadLink(currBin);
 
     std::cout << "version: " << PORTO_VERSION << " " << PORTO_REVISION << " " << thisBin << std::endl;
@@ -40,7 +39,7 @@ static void PrintVersion() {
     Porto::Connection conn;
     std::string ver, rev;
     if (!conn.GetVersion(ver, rev))
-        std::cout << "running: " <<  ver + " " + rev << " " << currBin << std::endl;
+        std::cout << "running: " << ver + " " + rev << " " << currBin << std::endl;
 }
 
 static int Status() {
@@ -314,39 +313,38 @@ undo:
 }
 
 static void Usage() {
-    std::cout
-        << std::endl
-        << "Usage: portod [options...] <command> [argments...]" << std::endl
-        << std::endl
-        << "Option: " << std::endl
-        << "  -h | --help      print this message" << std::endl
-        << "  -v | --version   print version and revision" << std::endl
-        << "  --stdlog         print log into stdout" << std::endl
-        << "  --norespawn      exit after failure" << std::endl
-        << "  --verbose        verbose logging" << std::endl
-        << "  --debug          debug logging" << std::endl
-        << "  --discard        discard state after start" << std::endl
-        << std::endl
-        << "Commands: " << std::endl
-        << "  status           check current portod status" << std::endl
-        << "  daemon           start portod, this is default" << std::endl
-        << "  start            daemonize and start portod" << std::endl
-        << "  stop             stop running portod" << std::endl
-        << "  kill             kill running portod" << std::endl
-        << "  restart          stop followed by start" << std::endl
-        << "  reload           reexec portod" << std::endl
-        << "  reopenlog        reopen portod.log" << std::endl
-        << "  upgrade          upgrade running portod" << std::endl
-        << "  dump             print internal key-value state" << std::endl
-        << "  get              print system properties" << std::endl
-        << "  set <key> <val>  change system properties" << std::endl
-        << "  clearstat [stat] reset statistics" << std::endl
-        << "  freeze           freeze changes" << std::endl
-        << "  unfreeze         unfreeze changes" << std::endl
-        << "  core             receive and forward core dump" << std::endl
-        << "  help             print this message" << std::endl
-        << "  version          print version and revision" << std::endl
-        << std::endl;
+    std::cout << std::endl
+              << "Usage: portod [options...] <command> [argments...]" << std::endl
+              << std::endl
+              << "Option: " << std::endl
+              << "  -h | --help      print this message" << std::endl
+              << "  -v | --version   print version and revision" << std::endl
+              << "  --stdlog         print log into stdout" << std::endl
+              << "  --norespawn      exit after failure" << std::endl
+              << "  --verbose        verbose logging" << std::endl
+              << "  --debug          debug logging" << std::endl
+              << "  --discard        discard state after start" << std::endl
+              << std::endl
+              << "Commands: " << std::endl
+              << "  status           check current portod status" << std::endl
+              << "  daemon           start portod, this is default" << std::endl
+              << "  start            daemonize and start portod" << std::endl
+              << "  stop             stop running portod" << std::endl
+              << "  kill             kill running portod" << std::endl
+              << "  restart          stop followed by start" << std::endl
+              << "  reload           reexec portod" << std::endl
+              << "  reopenlog        reopen portod.log" << std::endl
+              << "  upgrade          upgrade running portod" << std::endl
+              << "  dump             print internal key-value state" << std::endl
+              << "  get              print system properties" << std::endl
+              << "  set <key> <val>  change system properties" << std::endl
+              << "  clearstat [stat] reset statistics" << std::endl
+              << "  freeze           freeze changes" << std::endl
+              << "  unfreeze         unfreeze changes" << std::endl
+              << "  core             receive and forward core dump" << std::endl
+              << "  help             print this message" << std::endl
+              << "  version          print version and revision" << std::endl
+              << std::endl;
 }
 
 int main(int argc, char **argv) {
@@ -376,8 +374,8 @@ int main(int argc, char **argv) {
         else if (arg == "--discard")
             DiscardState = true;
         else if (arg == "--timeout") {
-           if (StringToInt(argv[++opt], CmdTimeout))
-               return EXIT_FAILURE;
+            if (StringToInt(argv[++opt], CmdTimeout))
+                return EXIT_FAILURE;
         } else {
             std::cerr << "Unknown option: " << arg << std::endl;
             Usage();

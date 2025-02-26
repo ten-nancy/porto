@@ -1,6 +1,7 @@
+#include "env.hpp"
+
 #include <sstream>
 
-#include "env.hpp"
 #include "util/log.hpp"
 #include "util/md5.hpp"
 
@@ -30,8 +31,7 @@ TError TEnv::GetEnv(const std::string &name, std::string &value) const {
     return TError(EError::InvalidValue, "Environment variable {} not defined", name);
 }
 
-TError TEnv::SetEnv(const std::string &name, const std::string &value,
-                    bool overwrite /* true */, bool lock /* false */,
+TError TEnv::SetEnv(const std::string &name, const std::string &value, bool overwrite /* true */, bool lock /* false */,
                     bool secret /* false */) {
     for (auto &var: Vars) {
         if (var.Name != name)
@@ -73,8 +73,7 @@ TError TEnv::UnsetEnv(const std::string &name, bool overwrite /* true */) {
     return OK;
 }
 
-TError TEnv::Parse(const std::string &cfg, bool overwrite,
-                   bool secret /* false */) {
+TError TEnv::Parse(const std::string &cfg, bool overwrite, bool secret /* false */) {
     for (auto &str: SplitEscapedString(cfg, ';')) {
         auto sep = str.find('=');
         TError error;
@@ -82,8 +81,7 @@ TError TEnv::Parse(const std::string &cfg, bool overwrite,
         if (sep == std::string::npos)
             error = UnsetEnv(str, overwrite);
         else
-            error = SetEnv(str.substr(0, sep), str.substr(sep + 1),
-                           overwrite, false, secret);
+            error = SetEnv(str.substr(0, sep), str.substr(sep + 1), overwrite, false, secret);
         if (error && overwrite)
             return error;
     }
@@ -99,9 +97,8 @@ void TEnv::Format(std::string &cfg, bool show_secret /* false */) const {
             std::string value;
             std::string salt = GenerateSalt();
             Md5Sum(salt, var.Value, value);
-            tuple.push_back(fmt::format("{}=<secret salt={} md5={}>",var.Name, salt, value));
-        }
-        else
+            tuple.push_back(fmt::format("{}=<secret salt={} md5={}>", var.Name, salt, value));
+        } else
             tuple.push_back(var.Name + "=" + var.Value);
     }
     cfg = MergeEscapeStrings(tuple, ';');
@@ -177,22 +174,12 @@ std::string TUlimitResource::Format() const {
 
 int TUlimit::GetType(const std::string &name) {
     static const std::map<std::string, int> types = {
-        { "as", RLIMIT_AS },
-        { "core", RLIMIT_CORE },
-        { "cpu", RLIMIT_CPU },
-        { "data", RLIMIT_DATA },
-        { "fsize", RLIMIT_FSIZE },
-        { "locks", RLIMIT_LOCKS },
-        { "memlock", RLIMIT_MEMLOCK },
-        { "msgqueue", RLIMIT_MSGQUEUE },
-        { "nice", RLIMIT_NICE },
-        { "nofile", RLIMIT_NOFILE },
-        { "nproc", RLIMIT_NPROC },
-        { "rss", RLIMIT_RSS },
-        { "rtprio", RLIMIT_RTPRIO },
-        { "rttime", RLIMIT_RTTIME },
-        { "sigpending", RLIMIT_SIGPENDING },
-        { "stack", RLIMIT_STACK },
+        {"as", RLIMIT_AS},           {"core", RLIMIT_CORE},         {"cpu", RLIMIT_CPU},
+        {"data", RLIMIT_DATA},       {"fsize", RLIMIT_FSIZE},       {"locks", RLIMIT_LOCKS},
+        {"memlock", RLIMIT_MEMLOCK}, {"msgqueue", RLIMIT_MSGQUEUE}, {"nice", RLIMIT_NICE},
+        {"nofile", RLIMIT_NOFILE},   {"nproc", RLIMIT_NPROC},       {"rss", RLIMIT_RSS},
+        {"rtprio", RLIMIT_RTPRIO},   {"rttime", RLIMIT_RTTIME},     {"sigpending", RLIMIT_SIGPENDING},
+        {"stack", RLIMIT_STACK},
     };
     auto idx = types.find(name);
     return idx == types.end() ? -1 : idx->second;
@@ -242,7 +229,7 @@ TError TUlimit::Parse(const std::string &str) {
     std::string lim;
     TError error;
 
-    while(std::getline(ss, lim, ';')) {
+    while (std::getline(ss, lim, ';')) {
         lim = StringTrim(lim);
         if (!lim.size())
             continue;

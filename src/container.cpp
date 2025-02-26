@@ -1,46 +1,47 @@
-#include <memory>
+#include "container.hpp"
+
+#include <algorithm>
+#include <climits>
+#include <condition_variable>
 #include <csignal>
 #include <cstdlib>
-#include <climits>
-#include <algorithm>
-#include <condition_variable>
+#include <memory>
 #include <mutex>
 
-#include "portod.hpp"
-#include "container.hpp"
-#include "config.hpp"
-#include "task.hpp"
 #include "cgroup.hpp"
-#include "device.hpp"
-#include "property.hpp"
-#include "event.hpp"
-#include "waiter.hpp"
-#include "network.hpp"
-#include "epoll.hpp"
-#include "kvalue.hpp"
-#include "volume.hpp"
-#include "util/log.hpp"
-#include "util/string.hpp"
-#include "util/cred.hpp"
-#include "util/unix.hpp"
-#include "util/proc.hpp"
 #include "client.hpp"
+#include "config.hpp"
+#include "device.hpp"
+#include "epoll.hpp"
+#include "event.hpp"
 #include "filesystem.hpp"
+#include "kvalue.hpp"
+#include "network.hpp"
+#include "portod.hpp"
+#include "property.hpp"
 #include "rpc.hpp"
+#include "task.hpp"
+#include "util/cred.hpp"
+#include "util/log.hpp"
+#include "util/proc.hpp"
+#include "util/string.hpp"
+#include "util/unix.hpp"
+#include "volume.hpp"
+#include "waiter.hpp"
 
 extern "C" {
-#include <sys/sysinfo.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/time.h>
-#include <sys/reboot.h>
 #include <fcntl.h>
-#include <sys/fsuid.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <sys/vfs.h>
 #include <linux/magic.h>
 #include <sched.h>
+#include <sys/fsuid.h>
+#include <sys/reboot.h>
+#include <sys/stat.h>
+#include <sys/sysinfo.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/vfs.h>
+#include <sys/wait.h>
+#include <unistd.h>
 }
 
 static const std::string LOCK_ACTION("LockAction");
@@ -58,27 +59,22 @@ std::vector<ExtraProperty> ExtraProperties;
 std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 
 std::unordered_set<std::string> SupportedExtraProperties = {
-    "cgroupfs",
-    "command",
-    "max_respawns",
-    "userns",
-    "unshare_on_exec",
-    "resolv_conf",
-    "capabilities",
+    "cgroupfs", "command", "max_respawns", "userns", "unshare_on_exec", "resolv_conf", "capabilities",
 };
 
 std::mutex CpuAffinityMutex;
-static bool HyperThreadingEnabled = false; /* hyperthreading is disabled in vms and sandbox tests */
+static bool HyperThreadingEnabled = false;    /* hyperthreading is disabled in vms and sandbox tests */
 static std::vector<unsigned> NeighborThreads; /* cpu -> neighbor hyperthread */
 
 static TBitMap NumaNodes;
-static std::vector<TBitMap> NodeThreads; /* numa node -> list of cpus */
+static std::vector<TBitMap> NodeThreads;  /* numa node -> list of cpus */
 static std::vector<unsigned> ThreadsNode; /* cpu -> numa node */
 
 // PORTO-914
-static std::vector<unsigned> JailCpuPermutation; /* 0,8,16,24,1,9,17,25,2,10,18,26,... */
+static std::vector<unsigned> JailCpuPermutation;        /* 0,8,16,24,1,9,17,25,2,10,18,26,... */
 static std::vector<unsigned> CpuToJailPermutationIndex; /* cpu -> index in JailCpuPermutation */
-static std::vector<unsigned> JailCpuPermutationUsage; /* how many containers are jailed at JailCpuPermutation[cpu] core */
+static std::vector<unsigned>
+    JailCpuPermutationUsage; /* how many containers are jailed at JailCpuPermutation[cpu] core */
 
 static TError CommitSubtreeCpus(const TCgroup &root, std::list<std::shared_ptr<TContainer>> &subtree);
 
@@ -102,7 +98,6 @@ static bool ParsePropertyName(std::string &name, std::string &idx) {
 }
 
 TError TContainer::ValidName(const std::string &name, bool superuser) {
-
     if (name.length() == 0)
         return TError(EError::InvalidValue, "container path too short");
 
@@ -118,36 +113,31 @@ TError TContainer::ValidName(const std::string &name, bool superuser) {
 
     for (std::string::size_type first = 0, i = 0; i <= name.length(); i++) {
         switch (name[i]) {
-            case '/':
-            case '\0':
-                if (i == first)
-                    return TError(EError::InvalidValue,
-                            "double/trailing '/' in container path: " + name);
-                if (i - first > CONTAINER_NAME_MAX)
-                    return TError(EError::InvalidValue,
-                            "container name component too long, limit is " +
-                            std::to_string(CONTAINER_NAME_MAX) +
-                            ": '" + name.substr(first, i - first) + "'");
-                if (name.substr(first, i - first) == SELF_CONTAINER)
-                    return TError(EError::InvalidValue,
-                            "container name 'self' is reserved");
-                if (name.substr(first, i - first) == DOT_CONTAINER)
-                    return TError(EError::InvalidValue,
-                            "container name '.' is reserved");
-                first = i + 1;
-            case 'a'...'z':
-            case 'A'...'Z':
-            case '0'...'9':
-            case '_':
-            case '-':
-            case '@':
-            case ':':
-            case '.':
-                /* Ok */
-                break;
-            default:
-                return TError(EError::InvalidValue, "forbidden character " +
-                              StringFormat("%#x", (unsigned char)name[i]));
+        case '/':
+        case '\0':
+            if (i == first)
+                return TError(EError::InvalidValue, "double/trailing '/' in container path: " + name);
+            if (i - first > CONTAINER_NAME_MAX)
+                return TError(EError::InvalidValue, "container name component too long, limit is " +
+                                                        std::to_string(CONTAINER_NAME_MAX) + ": '" +
+                                                        name.substr(first, i - first) + "'");
+            if (name.substr(first, i - first) == SELF_CONTAINER)
+                return TError(EError::InvalidValue, "container name 'self' is reserved");
+            if (name.substr(first, i - first) == DOT_CONTAINER)
+                return TError(EError::InvalidValue, "container name '.' is reserved");
+            first = i + 1;
+        case 'a' ... 'z':
+        case 'A' ... 'Z':
+        case '0' ... '9':
+        case '_':
+        case '-':
+        case '@':
+        case ':':
+        case '.':
+            /* Ok */
+            break;
+        default:
+            return TError(EError::InvalidValue, "forbidden character " + StringFormat("%#x", (unsigned char)name[i]));
         }
     }
 
@@ -357,12 +347,9 @@ void TContainer::DumpLocks() {
     auto lock = LockContainers();
     for (auto &it: Containers) {
         auto &ct = it.second;
-        if (ct->ActionLocked || ct->PendingWrite || ct->StateLocked ||
-            ct->SubtreeRead)
-            L_SYS("CT{}:{} StateLocked {} by {} ActionLocked {} by {} SubtreeRead {}{}",
-                  ct->Id, ct->Name, ct->StateLocked, ct->LastStatePid,
-                  ct->ActionLocked, ct->LastActionPid,
-                  ct->SubtreeRead,
+        if (ct->ActionLocked || ct->PendingWrite || ct->StateLocked || ct->SubtreeRead)
+            L_SYS("CT{}:{} StateLocked {} by {} ActionLocked {} by {} SubtreeRead {}{}", ct->Id, ct->Name,
+                  ct->StateLocked, ct->LastStatePid, ct->ActionLocked, ct->LastActionPid, ct->SubtreeRead,
                   (ct->PendingWrite ? " PendingWrite" : ""));
     }
 }
@@ -389,12 +376,21 @@ void TContainer::Unregister() {
     State = EContainerState::Destroyed;
 }
 
-TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::string &name) :
-    Parent(parent), Level(parent ? parent->Level + 1 : 0), Id(id), Name(name),
-    FirstName(!parent ? "" : parent->IsRoot() ? name : name.substr(parent->Name.length() + 1)),
-    Stdin(0), Stdout(1), Stderr(2),
-    ClientsCount(0), ContainerRequests(0), OomEvents(0),
-    NetLimitSoftValue(0)
+TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::string &name)
+    : Parent(parent),
+      Level(parent ? parent->Level + 1 : 0),
+      Id(id),
+      Name(name),
+      FirstName(!parent            ? ""
+                : parent->IsRoot() ? name
+                                   : name.substr(parent->Name.length() + 1)),
+      Stdin(0),
+      Stdout(1),
+      Stderr(2),
+      ClientsCount(0),
+      ContainerRequests(0),
+      OomEvents(0),
+      NetLimitSoftValue(0)
 
 {
     Statistics->ContainersCount++;
@@ -420,11 +416,11 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     Isolate = true;
     HostMode = IsRoot();
 
-    NetProp = { { "inherited" } };
+    NetProp = {{"inherited"}};
     NetIsolate = false;
     NetInherit = true;
 
-    IpLimit = { { "any" } };
+    IpLimit = {{"any"}};
     IpPolicy = "any";
 
     Hostname = "";
@@ -448,7 +444,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     SetProp(EProperty::PORTO_NAMESPACE);
 
     if (IsRoot())
-        PlacePolicy = { PORTO_PLACE, "***" };
+        PlacePolicy = {PORTO_PLACE, "***"};
     else
         PlacePolicy = Parent->PlacePolicy;
 
@@ -499,8 +495,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
         Controllers |= CGROUP_CPUACCT;
 
     if (Level <= 1) {
-        Controllers |= CGROUP_MEMORY | CGROUP_CPU | CGROUP_CPUACCT |
-                       CGROUP_DEVICES;
+        Controllers |= CGROUP_MEMORY | CGROUP_CPU | CGROUP_CPUACCT | CGROUP_DEVICES;
 
         if (CgroupDriver.BlkioSubsystem->Supported)
             Controllers |= CGROUP_BLKIO;
@@ -515,14 +510,11 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     if (Level == 1 && config().container().memory_limit_margin()) {
         uint64_t total = GetTotalMemory();
 
-        MemLimit = total - std::min(total / 4,
-                config().container().memory_limit_margin());
+        MemLimit = total - std::min(total / 4, config().container().memory_limit_margin());
         SetPropDirty(EProperty::MEM_LIMIT);
 
-        if (CgroupDriver.MemorySubsystem->SupportAnonLimit() &&
-                config().container().anon_limit_margin()) {
-            AnonMemLimit = MemLimit - std::min(MemLimit / 4,
-                    config().container().anon_limit_margin());
+        if (CgroupDriver.MemorySubsystem->SupportAnonLimit() && config().container().anon_limit_margin()) {
+            AnonMemLimit = MemLimit - std::min(MemLimit / 4, config().container().anon_limit_margin());
             SetPropDirty(EProperty::ANON_LIMIT);
         }
     }
@@ -606,8 +598,7 @@ TError TContainer::Create(const std::string &name, std::shared_ptr<TContainer> &
     }
 
     if (Containers.size() >= max_ct + NR_SERVICE_CONTAINERS) {
-        error = TError(EError::ResourceNotAvailable,
-                "number of containers reached limit: " + std::to_string(max_ct));
+        error = TError(EError::ResourceNotAvailable, "number of containers reached limit: " + std::to_string(max_ct));
         goto err;
     }
 
@@ -718,9 +709,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
     ct->TestClearPropDirty(EProperty::RESOLV_CONF);
 
     /* Restore cgroups only for running containers */
-    if (ct->State != EContainerState::Stopped &&
-            ct->State != EContainerState::Dead) {
-
+    if (ct->State != EContainerState::Stopped && ct->State != EContainerState::Dead) {
         error = TNetwork::RestoreNetwork(*ct);
         if (error)
             goto err;
@@ -752,8 +741,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
                         retry = false;
                         for (auto pid: pids) {
                             if (std::find(prev.begin(), prev.end(), pid) == prev.end() &&
-                                    sched_getscheduler(pid) == SCHED_RR &&
-                                    !sched_setscheduler(pid, SCHED_OTHER, &param))
+                                sched_getscheduler(pid) == SCHED_RR && !sched_setscheduler(pid, SCHED_OTHER, &param))
                                 retry = true;
                         }
                         prev = pids;
@@ -773,7 +761,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
         if (ct->MemGuarantee) {
             std::unique_ptr<const TCgroup> memCg;
             if (!CgroupDriver.MemorySubsystem->TaskCgroup(ct->Task.Pid, memCg) &&
-                    *memCg != *CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get()))
+                *memCg != *CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get()))
                 CgroupDriver.MemorySubsystem->SetGuarantee(*memCg, 0);
         }
 
@@ -859,7 +847,6 @@ EContainerState TContainer::ParseState(const std::string &name) {
 }
 
 TError TContainer::ValidLabel(const std::string &label, const std::string &value) {
-
     if (label.size() > PORTO_LABEL_NAME_LEN_MAX)
         return TError(EError::InvalidLabel, "Label name too log, max {} bytes", PORTO_LABEL_NAME_LEN_MAX);
 
@@ -867,12 +854,9 @@ TError TContainer::ValidLabel(const std::string &label, const std::string &value
         return TError(EError::InvalidLabel, "Label value too log, max {} bytes", PORTO_LABEL_VALUE_LEN_MAX);
 
     auto sep = label.find('.');
-    if (sep == std::string::npos ||
-            sep < PORTO_LABEL_PREFIX_LEN_MIN ||
-            sep > PORTO_LABEL_PREFIX_LEN_MAX ||
-            label.find_first_not_of(PORTO_LABEL_PREFIX_CHARS) < sep ||
-            label.find_first_not_of(PORTO_NAME_CHARS) != std::string::npos ||
-            StringStartsWith(label, "PORTO"))
+    if (sep == std::string::npos || sep < PORTO_LABEL_PREFIX_LEN_MIN || sep > PORTO_LABEL_PREFIX_LEN_MAX ||
+        label.find_first_not_of(PORTO_LABEL_PREFIX_CHARS) < sep ||
+        label.find_first_not_of(PORTO_NAME_CHARS) != std::string::npos || StringStartsWith(label, "PORTO"))
         return TError(EError::InvalidLabel, "Invalid label name: {}", label);
 
     if (value.find_first_not_of(PORTO_NAME_CHARS) != std::string::npos)
@@ -1033,8 +1017,7 @@ TPath TContainer::GetCwd() const {
 }
 
 int TContainer::GetExitCode() const {
-    if (State != EContainerState::Dead &&
-            State != EContainerState::Respawning)
+    if (State != EContainerState::Dead && State != EContainerState::Respawning)
         return 256;
     if (OomKilled)
         return -99;
@@ -1055,9 +1038,8 @@ TError TContainer::UpdateSoftLimit() {
 
         /* Set memory soft limit for dead or hollow meta containers */
         if (ct->PressurizeOnDeath &&
-                (ct->State == EContainerState::Dead ||
-                 (ct->State == EContainerState::Meta &&
-                  !ct->RunningChildren && !ct->StartingChildren)))
+            (ct->State == EContainerState::Dead ||
+             (ct->State == EContainerState::Meta && !ct->RunningChildren && !ct->StartingChildren)))
             limit = config().container().dead_memory_soft_limit();
 
         if (ct->MemSoftLimit != limit) {
@@ -1106,13 +1088,11 @@ void TContainer::SetState(EContainerState next) {
 
     std::string label, value;
 
-    if ((State == EContainerState::Stopped ||
-         State == EContainerState::Dead ||
-         State ==  EContainerState::Respawning) && StartError) {
+    if ((State == EContainerState::Stopped || State == EContainerState::Dead || State == EContainerState::Respawning) &&
+        StartError) {
         label = P_START_ERROR;
         value = StartError.ToString();
-    } else if (State == EContainerState::Dead ||
-               State == EContainerState::Respawning) {
+    } else if (State == EContainerState::Dead || State == EContainerState::Respawning) {
         label = P_EXIT_CODE;
         value = std::to_string(GetExitCode());
     }
@@ -1170,7 +1150,7 @@ bool TContainer::IsChildOf(const TContainer &ct) const {
 
 /* Subtree in DFS post-order: childs first */
 std::list<std::shared_ptr<TContainer>> TContainer::Subtree() {
-    std::list<std::shared_ptr<TContainer>> subtree {shared_from_this()};
+    std::list<std::shared_ptr<TContainer>> subtree{shared_from_this()};
     auto lock = LockContainers();
     for (auto it = subtree.rbegin(); it != subtree.rend(); ++it) {
         for (auto child: (*it)->Children)
@@ -1249,7 +1229,7 @@ TError TContainer::GetProcessCount(uint64_t &count) const {
         error = TPath("/proc").StatStrict(st);
         if (error)
             return error;
-        count = st.st_nlink > ProcBaseDirs ? st.st_nlink  - ProcBaseDirs : 0;
+        count = st.st_nlink > ProcBaseDirs ? st.st_nlink - ProcBaseDirs : 0;
     } else {
         auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
         return CgroupDriver.GetCgroupProcessCount(*cg, count);
@@ -1280,7 +1260,6 @@ TError TContainer::CheckMemGuarantee() const {
     uint64_t hugetlb = GetHugetlbMemory();
 
     if (usage + reserve + hugetlb > total) {
-
         /*
          * under overcommit allow to start containers without guarantee
          * for root user or nested containers
@@ -1288,14 +1267,11 @@ TError TContainer::CheckMemGuarantee() const {
         if (!NewMemGuarantee && (Level > 1 || CL->IsSuperUser()))
             return OK;
 
-        return TError(EError::ResourceNotAvailable,
-                "Memory guarantee overcommit: requested {}, available {}, guaranteed {} + reserved {} + hugetlb {} of {}",
-                StringFormatSize(NewMemGuarantee),
-                StringFormatSize(total - std::min(total, old_usage + reserve + hugetlb)),
-                StringFormatSize(old_usage),
-                StringFormatSize(reserve),
-                StringFormatSize(hugetlb),
-                StringFormatSize(total));
+        return TError(
+            EError::ResourceNotAvailable,
+            "Memory guarantee overcommit: requested {}, available {}, guaranteed {} + reserved {} + hugetlb {} of {}",
+            StringFormatSize(NewMemGuarantee), StringFormatSize(total - std::min(total, old_usage + reserve + hugetlb)),
+            StringFormatSize(old_usage), StringFormatSize(reserve), StringFormatSize(hugetlb), StringFormatSize(total));
     }
 
     return OK;
@@ -1311,7 +1287,7 @@ uint64_t TContainer::GetTotalMemGuarantee(bool containers_locked) const {
     if (!containers_locked)
         ContainersMutex.lock();
 
-    for (auto &child : Children)
+    for (auto &child: Children)
         sum += child->GetTotalMemGuarantee(true);
 
     sum = std::max(NewMemGuarantee, sum);
@@ -1326,8 +1302,7 @@ uint64_t TContainer::GetMemLimit(bool effective) const {
     uint64_t lim = 0;
 
     for (auto ct = this; ct; ct = ct->Parent.get())
-        if ((effective || ct->HasProp(EProperty::MEM_LIMIT)) &&
-                ct->MemLimit && (ct->MemLimit < lim || !lim))
+        if ((effective || ct->HasProp(EProperty::MEM_LIMIT)) && ct->MemLimit && (ct->MemLimit < lim || !lim))
             lim = ct->MemLimit;
 
     if (effective && !lim)
@@ -1340,8 +1315,7 @@ uint64_t TContainer::GetAnonMemLimit(bool effective) const {
     uint64_t lim = 0;
 
     for (auto ct = this; ct; ct = ct->Parent.get())
-        if ((effective || ct->HasProp(EProperty::ANON_LIMIT)) &&
-                ct->AnonMemLimit && (ct->AnonMemLimit < lim || !lim))
+        if ((effective || ct->HasProp(EProperty::ANON_LIMIT)) && ct->AnonMemLimit && (ct->AnonMemLimit < lim || !lim))
             lim = ct->AnonMemLimit;
 
     if (effective && !lim)
@@ -1408,7 +1382,7 @@ TError TContainer::ApplyUlimits() {
     return OK;
 }
 
-static constexpr const char* CPU_POLICY_IDLE = "idle";
+static constexpr const char *CPU_POLICY_IDLE = "idle";
 
 void TContainer::ChooseSchedPolicy() {
     SchedPolicy = SCHED_OTHER;
@@ -1497,9 +1471,7 @@ TError TContainer::ApplySchedPolicy() {
             if (std::find(prev.begin(), prev.end(), pid) != prev.end()) {
                 if (!sched_getaffinity(pid, sizeof(current), &current) &&
                     // PORTO-993#627a4d9fcd10ac4784266ff7
-                    CPU_SUBSET(&current, &taskMask) &&
-                    sched_getscheduler(pid) == schedPolicy) {
-
+                    CPU_SUBSET(&current, &taskMask) && sched_getscheduler(pid) == schedPolicy) {
                     continue;
                 }
             }
@@ -1579,7 +1551,7 @@ TContainer::TJailCpuState TContainer::GetJailCpuState() {
     return {JailCpuPermutation, JailCpuPermutationUsage};
 }
 
-void TContainer::UpdateJailCpuStateLocked(const TBitMap& affinity, bool release) {
+void TContainer::UpdateJailCpuStateLocked(const TBitMap &affinity, bool release) {
     PORTO_LOCKED(CpuAffinityMutex);
 
     for (unsigned cpu = 0; cpu < affinity.Size(); cpu++) {
@@ -1620,12 +1592,12 @@ TError TContainer::NextJailCpu(TBitMap &affinity, int node) {
     return OK;
 }
 
-void TContainer::UnjailCpus(const TBitMap& affinity) {
+void TContainer::UnjailCpus(const TBitMap &affinity) {
     auto lock = LockCpuAffinity();
     UnjailCpusLocked(affinity);
 }
 
-void TContainer::UnjailCpusLocked(const TBitMap& affinity) {
+void TContainer::UnjailCpusLocked(const TBitMap &affinity) {
     UpdateJailCpuStateLocked(affinity, true);
 
     CpuJail = 0;
@@ -1646,7 +1618,8 @@ TError TContainer::JailCpus() {
         for (auto &ct: Subtree()) {
             if (ct.get() != this) {
                 if (ct->CpuJail)
-                    return TError(EError::ResourceNotAvailable, "Nested cpu jails are not supported for CT{}:{}", Id, Name);
+                    return TError(EError::ResourceNotAvailable, "Nested cpu jails are not supported for CT{}:{}", Id,
+                                  Name);
             }
         }
     }
@@ -1656,11 +1629,12 @@ TError TContainer::JailCpus() {
         if (!NumaNodes.Get(CpuSetArg))
             return TError(EError::ResourceNotAvailable, "Numa node not found for CT{}:{}", Id, Name);
 
-
         if ((unsigned)NewCpuJail >= NodeThreads[0].Weight())
-            return TError(EError::ResourceNotAvailable, "Invalid jail with numa value {} (max {}) for CT{}:{}", NewCpuJail, NodeThreads[0].Weight() - 1, Id, Name);
+            return TError(EError::ResourceNotAvailable, "Invalid jail with numa value {} (max {}) for CT{}:{}",
+                          NewCpuJail, NodeThreads[0].Weight() - 1, Id, Name);
     } else if ((unsigned)NewCpuJail >= JailCpuPermutation.size())
-        return TError(EError::ResourceNotAvailable, "Invalid jail value {} (max {}) for CT{}:{}", NewCpuJail, JailCpuPermutation.size() - 1, Id, Name);
+        return TError(EError::ResourceNotAvailable, "Invalid jail value {} (max {}) for CT{}:{}", NewCpuJail,
+                      JailCpuPermutation.size() - 1, Id, Name);
 
     /* read current cpus from cgroup */
     auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get());
@@ -1735,7 +1709,7 @@ TError TContainer::JailCpus() {
 
         auto subtree = Subtree();
         subtree.reverse();
-        for (auto &ct : subtree)
+        for (auto &ct: subtree)
             ct->CpuAffinity = affinity;
 
         error = CommitSubtreeCpus(*cg, subtree);
@@ -1783,19 +1757,18 @@ class TCgroupAffinityIndex {
 
       In this index foo/bar is not followed by its parent foo
      */
-    std::map< std::string, TBitMap, std::greater<std::string> > Index;
+    std::map<std::string, TBitMap, std::greater<std::string>> Index;
+
 public:
     TCgroupAffinityIndex(const std::list<std::shared_ptr<TContainer>> &subtree) {
-        for (auto &ct : subtree) {
-            if (ct->State == EContainerState::Stopped ||
-                ct->State == EContainerState::Dead ||
+        for (auto &ct: subtree) {
+            if (ct->State == EContainerState::Stopped || ct->State == EContainerState::Dead ||
                 !(ct->Controllers & CGROUP_CPUSET))
                 continue;
 
             auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpusetSubsystem.get());
             if (!cg->Exists()) {
-                L_WRN(" CT{}:{} with cpuset controller does not have cpuset cgroup",
-                      ct->Id, ct->Name);
+                L_WRN(" CT{}:{} with cpuset controller does not have cpuset cgroup", ct->Id, ct->Name);
                 continue;
             }
 
@@ -1819,9 +1792,8 @@ public:
 };
 
 static TError WidenSubtreeCpus(const std::list<std::unique_ptr<const TCgroup>> &cgroups,
-                               const TCgroupAffinityIndex &index,
-                               std::map<std::string, TBitMap> &cpusets) {
-    for (auto& cg : cgroups) {
+                               const TCgroupAffinityIndex &index, std::map<std::string, TBitMap> &cpusets) {
+    for (auto &cg: cgroups) {
         TBitMap affinity;
         if (!index.GetAffinity(*cg, affinity))
             return TError("Cannot find target affinity for cgroup {}", *cg);
@@ -1832,7 +1804,7 @@ static TError WidenSubtreeCpus(const std::list<std::unique_ptr<const TCgroup>> &
             return error;
 
         if (!affinity.IsSubsetOf(cur)) {
-            cur.Set(affinity); // union
+            cur.Set(affinity);  // union
 
             error = CgroupDriver.CpusetSubsystem->SetCpus(*cg, cur);
             if (error)
@@ -1844,16 +1816,15 @@ static TError WidenSubtreeCpus(const std::list<std::unique_ptr<const TCgroup>> &
 }
 
 static TError NarrowSubtreeCpus(const std::list<std::unique_ptr<const TCgroup>> &cgroups,
-                                const TCgroupAffinityIndex &index,
-                                std::map<std::string, TBitMap> &cpusets) {
+                                const TCgroupAffinityIndex &index, std::map<std::string, TBitMap> &cpusets) {
     for (auto it = cgroups.rbegin(); it != cgroups.rend(); ++it) {
-        auto& cg = *it;
+        auto &cg = *it;
 
         TBitMap affinity;
         if (!index.GetAffinity(*cg, affinity))
             return TError("Cannot find target affinity for cgroup {}", *cg);
 
-        auto kt = cpusets.find(cg->GetName()); // use find just in case
+        auto kt = cpusets.find(cg->GetName());  // use find just in case
         if (kt != cpusets.end() && kt->second.IsEqual(affinity))
             continue;
 
@@ -1888,9 +1859,8 @@ static TError ApplySubtreeCpus(const TCgroup &root, const std::list<std::shared_
 }
 
 static TError RevertSubtreeCpus(std::list<std::shared_ptr<TContainer>> &subtree) {
-    for (auto &ct : subtree) {
-        if (ct->State == EContainerState::Stopped ||
-            ct->State == EContainerState::Dead ||
+    for (auto &ct: subtree) {
+        if (ct->State == EContainerState::Stopped || ct->State == EContainerState::Dead ||
             !(ct->Controllers & CGROUP_CPUSET))
             continue;
 
@@ -1958,7 +1928,7 @@ TError TContainer::BuildCpuTopology() {
         if (!NumaNodes.Get(node))
             continue;
 
-        auto& nodeThreads = NodeThreads[node];
+        auto &nodeThreads = NodeThreads[node];
 
         error = nodeThreads.Read(StringFormat("/sys/devices/system/node/node%u/cpulist", node));
         if (error)
@@ -2024,7 +1994,8 @@ TError TContainer::ApplyCpuSet() {
             break;
         case ECpuSetType::Node:
             if (!NumaNodes.Get(ct->CpuSetArg))
-                return TError(EError::ResourceNotAvailable, "Numa node {} not found for CT{}:{}", ct->CpuSetArg, ct->Id, ct->Name);
+                return TError(EError::ResourceNotAvailable, "Numa node {} not found for CT{}:{}", ct->CpuSetArg, ct->Id,
+                              ct->Name);
             affinity = NodeThreads[ct->CpuSetArg];
             break;
         }
@@ -2033,7 +2004,8 @@ TError TContainer::ApplyCpuSet() {
         ct->CpuAffinity = affinity;
     }
 
-    auto error = CommitSubtreeCpus(*(CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get())), subtree);
+    auto error =
+        CommitSubtreeCpus(*(CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get())), subtree);
     if (error)
         return error;
 
@@ -2048,9 +2020,8 @@ TError TContainer::ApplyCpuGuarantee() {
         auto ct_lock = LockContainers();
         CpuGuaranteeSum = 0;
         for (auto child: Children) {
-            if (child->State == EContainerState::Running ||
-                    child->State == EContainerState::Meta ||
-                    child->State == EContainerState::Starting)
+            if (child->State == EContainerState::Running || child->State == EContainerState::Meta ||
+                child->State == EContainerState::Starting)
                 CpuGuaranteeSum += std::max(child->CpuGuarantee, child->CpuGuaranteeSum);
         }
         ct_lock.unlock();
@@ -2058,8 +2029,7 @@ TError TContainer::ApplyCpuGuarantee() {
 
     auto cur = std::max(CpuGuarantee, CpuGuaranteeSum);
     if (!IsRoot() && (Controllers & CGROUP_CPU) && cur != CpuGuaranteeCur) {
-        L_ACT("Set cpu guarantee CT{}:{} {} -> {}", Id, Name,
-                CpuPowerToString(CpuGuaranteeCur), CpuPowerToString(cur));
+        L_ACT("Set cpu guarantee CT{}:{} {} -> {}", Id, Name, CpuPowerToString(CpuGuaranteeCur), CpuPowerToString(cur));
         auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
         error = CgroupDriver.CpuSubsystem->SetGuarantee(*cpucg, CpuPeriod, cur);
         if (error) {
@@ -2101,13 +2071,12 @@ void TContainer::PropagateCpuLimit() {
     for (auto ct = this; ct; ct = ct->Parent.get()) {
         uint64_t sum = 0;
 
-        if (ct->State == EContainerState::Running ||
-                (ct->State == EContainerState::Starting && !ct->IsMeta()))
+        if (ct->State == EContainerState::Running || (ct->State == EContainerState::Starting && !ct->IsMeta()))
             sum += ct->CpuLimit ?: max;
 
         for (auto &child: ct->Children) {
             if (child->State == EContainerState::Running ||
-                    (child->State == EContainerState::Starting && !child->IsMeta()))
+                (child->State == EContainerState::Starting && !child->IsMeta()))
                 sum += child->CpuLimit ?: max;
             else if (child->State == EContainerState::Meta)
                 sum += std::min(child->CpuLimit ?: max, child->CpuLimitSum);
@@ -2119,8 +2088,8 @@ void TContainer::PropagateCpuLimit() {
         if (sum == ct->CpuLimitSum)
             break;
 
-        L_DBG("Propagate total cpu limit CT{}:{} {} -> {}", ct->Id, ct->Name,
-                CpuPowerToString(ct->CpuLimitSum), CpuPowerToString(sum));
+        L_DBG("Propagate total cpu limit CT{}:{} {} -> {}", ct->Id, ct->Name, CpuPowerToString(ct->CpuLimitSum),
+              CpuPowerToString(sum));
 
         ct->CpuLimitSum = sum;
     }
@@ -2156,7 +2125,7 @@ TError TContainer::ApplyExtraProperties() {
         if (!StringMatch(Name, extraProp.Filter))
             continue;
 
-        for (const auto &extraProperty : extraProp.Properties) {
+        for (const auto &extraProperty: extraProp.Properties) {
             std::string property = extraProperty.Name;
             std::string idx;
 
@@ -2180,7 +2149,6 @@ TError TContainer::ApplyExtraProperties() {
                         return error;
 
                     EnabledExtraProperties.emplace_back(extraProperty.Name);
-
                 }
             }
         }
@@ -2227,8 +2195,8 @@ TError TContainer::CanSetSeccomp() const {
         if (!ct->Seccomp.Empty())
             return TError(EError::InvalidState, "seccomp already set for ancestor");
     }
-    std::list<const TContainer*> subtree{this};
-    for (auto it = subtree.begin(); it != subtree.end(); ) {
+    std::list<const TContainer *> subtree{this};
+    for (auto it = subtree.begin(); it != subtree.end();) {
         for (const auto &child: (*it)->Children) {
             if (!child->Seccomp.Empty())
                 return TError(EError::InvalidState, "seccomp already set for descendant");
@@ -2266,13 +2234,11 @@ TError TContainer::SetSeccomp(const std::string &name) {
     return OK;
 }
 
-
 TError TContainer::SetCpuLimit(uint64_t limit) {
     auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
     TError error;
 
-    L_ACT("Set cpu limit CT{}:{} {} -> {}", Id, Name,
-            CpuPowerToString(CpuLimitCur), CpuPowerToString(limit));
+    L_ACT("Set cpu limit CT{}:{} {} -> {}", Id, Name, CpuPowerToString(CpuLimitCur), CpuPowerToString(limit));
 
     error = CgroupDriver.CpuSubsystem->SetRtLimit(*cpucg, limit, CpuPeriod);
     if (error) {
@@ -2295,9 +2261,8 @@ TError TContainer::ApplyCpuLimit() {
 
     for (auto *p = Parent.get(); p; p = p->Parent.get()) {
         if (p->CpuLimit && p->CpuLimit <= limit) {
-            L_ACT("Disable cpu limit {} for CT{}:{} parent CT{}:{} has lower limit {}",
-                 CpuPowerToString(limit), Id, Name,
-                 p->Id, p->Name, CpuPowerToString(p->CpuLimit));
+            L_ACT("Disable cpu limit {} for CT{}:{} parent CT{}:{} has lower limit {}", CpuPowerToString(limit), Id,
+                  Name, p->Id, p->Name, CpuPowerToString(p->CpuLimit));
             limit = 0;
             break;
         }
@@ -2307,8 +2272,8 @@ TError TContainer::ApplyCpuLimit() {
 
     if (limit && (limit < CpuLimitCur || !CpuLimitCur)) {
         for (auto &ct: subtree)
-            if (ct.get() != this && ct->State != EContainerState::Stopped &&
-                    (ct->Controllers & CGROUP_CPU) && ct->CpuLimitCur > limit)
+            if (ct.get() != this && ct->State != EContainerState::Stopped && (ct->Controllers & CGROUP_CPU) &&
+                ct->CpuLimitCur > limit)
                 ct->SetCpuLimit(limit);
     }
 
@@ -2317,8 +2282,7 @@ TError TContainer::ApplyCpuLimit() {
         return error;
 
     for (auto &ct: subtree) {
-        if (ct.get() != this && ct->State != EContainerState::Stopped &&
-                (ct->Controllers & CGROUP_CPU)) {
+        if (ct.get() != this && ct->State != EContainerState::Stopped && (ct->Controllers & CGROUP_CPU)) {
             uint64_t limit = ct->CpuLimit;
             for (auto *p = ct->Parent.get(); p && limit; p = p->Parent.get())
                 if (p->CpuLimit && p->CpuLimit <= limit)
@@ -2331,15 +2295,13 @@ TError TContainer::ApplyCpuLimit() {
     return OK;
 }
 
-
 TError TContainer::ApplyDynamicProperties(bool onRestore) {
     auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
     auto blkcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.BlkioSubsystem.get());
     TError error;
 
     if ((Controllers & CGROUP_CPU) &&
-            (TestPropDirty(EProperty::CPU_PERIOD) ||
-             TestPropDirty(EProperty::CPU_GUARANTEE))) {
+        (TestPropDirty(EProperty::CPU_PERIOD) || TestPropDirty(EProperty::CPU_GUARANTEE))) {
         for (auto ct = this; ct; ct = ct->Parent.get()) {
             error = ct->ApplyCpuGuarantee();
             if (error)
@@ -2358,10 +2320,8 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         PropagateCpuLimit();
 
     if ((Controllers & CGROUP_CPU) &&
-            (TestPropDirty(EProperty::CPU_POLICY) ||
-             TestPropDirty(EProperty::CPU_WEIGHT) ||
-             TestClearPropDirty(EProperty::CPU_LIMIT) ||
-             TestClearPropDirty(EProperty::CPU_PERIOD))) {
+        (TestPropDirty(EProperty::CPU_POLICY) || TestPropDirty(EProperty::CPU_WEIGHT) ||
+         TestClearPropDirty(EProperty::CPU_LIMIT) || TestClearPropDirty(EProperty::CPU_PERIOD))) {
         error = ApplyCpuLimit();
         if (error)
             return error;
@@ -2408,9 +2368,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if ((!JobMode) &&
-        (TestClearPropDirty(EProperty::CPU_POLICY) ||
-        TestClearPropDirty(EProperty::CPU_WEIGHT))) {
+    if ((!JobMode) && (TestClearPropDirty(EProperty::CPU_POLICY) || TestClearPropDirty(EProperty::CPU_WEIGHT))) {
         error = ApplySchedPolicy();
         if (error) {
             L_ERR("Cannot set scheduler policy: {}", error);
@@ -2532,8 +2490,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
             return error;
     }
 
-    if (TestClearPropDirty(EProperty::IO_WEIGHT) ||
-            TestPropDirty(EProperty::IO_POLICY)) {
+    if (TestClearPropDirty(EProperty::IO_WEIGHT) || TestPropDirty(EProperty::IO_POLICY)) {
         if (Controllers & CGROUP_BLKIO) {
             error = CgroupDriver.BlkioSubsystem->SetIoWeight(*blkcg, IoPolicy, IoWeight);
             if (error) {
@@ -2567,9 +2524,8 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if (TestClearPropDirty(EProperty::NET_LIMIT) ||
-            TestClearPropDirty(EProperty::NET_GUARANTEE) ||
-            TestClearPropDirty(EProperty::NET_RX_LIMIT)) {
+    if (TestClearPropDirty(EProperty::NET_LIMIT) || TestClearPropDirty(EProperty::NET_GUARANTEE) ||
+        TestClearPropDirty(EProperty::NET_RX_LIMIT)) {
         if (Net) {
             error = Net->SetupClasses(NetClass, true);
             if (error)
@@ -2585,8 +2541,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if ((Controllers & CGROUP_NETCLS) &&
-            TestClearPropDirty(EProperty::NET_TOS)) {
+    if ((Controllers & CGROUP_NETCLS) && TestClearPropDirty(EProperty::NET_TOS)) {
         auto netcls = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.NetclsSubsystem.get());
         error = CgroupDriver.NetclsSubsystem->SetClass(*netcls, NetClass.LeafHandle | NetClass.DefaultTos);
         if (error) {
@@ -2597,8 +2552,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
 
     if (TestClearPropDirty(EProperty::ULIMIT) && !onRestore) {
         for (auto &ct: Subtree()) {
-            if (ct->State == EContainerState::Stopped ||
-                    ct->State == EContainerState::Dead)
+            if (ct->State == EContainerState::Stopped || ct->State == EContainerState::Dead)
                 continue;
             error = ct->ApplyUlimits();
             if (error) {
@@ -2625,9 +2579,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if (TestClearPropsDirty(EProperty::DEVICE_CONF,
-                            EProperty::DEVICE_CONF_EXPLICIT,
-                            EProperty::ENABLE_FUSE)) {
+    if (TestClearPropsDirty(EProperty::DEVICE_CONF, EProperty::DEVICE_CONF_EXPLICIT, EProperty::ENABLE_FUSE)) {
         error = ApplyDeviceConf();
         if (error) {
             if (error != EError::Permission && error != EError::DeviceNotFound)
@@ -2673,9 +2625,8 @@ TDevices TContainer::EffectiveDevices(const TDevices &devices) const {
     if (IsRoot())
         return devices;
 
-    auto base = DevicesExplicit && HasProp(EProperty::DEVICE_CONF) ?
-                TDevices(RootContainer->Devices) :
-                Parent->EffectiveDevices();
+    auto base = DevicesExplicit && HasProp(EProperty::DEVICE_CONF) ? TDevices(RootContainer->Devices)
+                                                                   : Parent->EffectiveDevices();
 
     return base.Merge(FuseDevices).Merge(devices);
 }
@@ -2740,7 +2691,7 @@ TError TContainer::ApplyDeviceConf() {
         DevicesPath = newPaths;
     }
 
-    for (auto &child : Children) {
+    for (auto &child: Children) {
         if (!child->Task.Pid)
             continue;
 
@@ -2804,10 +2755,8 @@ TError TContainer::PrepareCgroups(bool onRestore) {
     if (Controllers & CGROUP_CPUSET)
         SetProp(EProperty::CPU_SET);
 
-    if (OsMode && Isolate && config().container().detect_systemd() &&
-            CgroupDriver.SystemdSubsystem->Supported &&
-            !(Controllers & CGROUP_SYSTEMD) &&
-            !RootPath.IsRoot()) {
+    if (OsMode && Isolate && config().container().detect_systemd() && CgroupDriver.SystemdSubsystem->Supported &&
+        !(Controllers & CGROUP_SYSTEMD) && !RootPath.IsRoot()) {
         TPath cmd = RootPath / Command;
         TPath dst;
         if (!cmd.ReadLink(dst) && dst.BaseName() == "systemd") {
@@ -2905,8 +2854,7 @@ TError TContainer::ResolvePlace(TPath &place, bool strict) const {
                     goto found;
             } else {
                 auto sep = policy.find('=');
-                if (sep != std::string::npos &&
-                        StringMatch(place.ToString(), policy.substr(sep + 1), strict))
+                if (sep != std::string::npos && StringMatch(place.ToString(), policy.substr(sep + 1), strict))
                     goto found;
             }
         }
@@ -2976,8 +2924,8 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
         return error;
 
     /* one more fork for creating nested pid-namespace */
-    TaskEnv.TripleFork = Isolate && TaskEnv.PidFd.GetFd() >= 0 &&
-        TaskEnv.PidFd.Inode() != TNamespaceFd::PidInode(getpid(), "ns/pid");
+    TaskEnv.TripleFork =
+        Isolate && TaskEnv.PidFd.GetFd() >= 0 && TaskEnv.PidFd.Inode() != TNamespaceFd::PidInode(getpid(), "ns/pid");
 
     TaskEnv.QuadroFork = !JobMode && !OsMode && !IsMeta();
 
@@ -3011,8 +2959,7 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
         bm.MntFlags |= MS_ALLOW_SUID;
 
         /* this allows to inject suid binaries into host */
-        if (Parent->RootPath.IsRoot() && !TaskEnv.Mnt.Root.IsRoot() &&
-                bm.Source.IsDirectoryFollow()) {
+        if (Parent->RootPath.IsRoot() && !TaskEnv.Mnt.Root.IsRoot() && bm.Source.IsDirectoryFollow()) {
             TStatFS stat;
             if (!bm.Source.StatFS(stat) && (stat.MntFlags & MS_ALLOW_SUID)) {
                 L("Bindmount source {} allows suid in host", bm.Source);
@@ -3047,17 +2994,9 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
     TaskEnv.Mnt.IsolateRun = TaskEnv.Mnt.Root.IsRoot() && OsMode && Isolate && !InUserNs();
 
     // Create new mount namespaces if we have to make any changes
-    TaskEnv.NewMountNs = Isolate ||
-                          TaskEnv.Mnt.IsolateRun ||
-                          (Level == 1 && !HostMode) ||
-                          TaskEnv.Mnt.BindMounts.size() ||
-                          Hostname.size() ||
-                          ResolvConf.size() ||
-                          EtcHosts.size() ||
-                          !TaskEnv.Mnt.Root.IsRoot() ||
-                          TaskEnv.Mnt.RootRo ||
-                          !TaskEnv.Mnt.Systemd.empty() ||
-                          Fuse;
+    TaskEnv.NewMountNs = Isolate || TaskEnv.Mnt.IsolateRun || (Level == 1 && !HostMode) ||
+                         TaskEnv.Mnt.BindMounts.size() || Hostname.size() || ResolvConf.size() || EtcHosts.size() ||
+                         !TaskEnv.Mnt.Root.IsRoot() || TaskEnv.Mnt.RootRo || !TaskEnv.Mnt.Systemd.empty() || Fuse;
 
     if (TaskEnv.NewMountNs && (HostMode || JobMode))
         return TError(EError::InvalidValue, "Cannot change mount-namespace in this virt_mode");
@@ -3361,7 +3300,7 @@ TError TContainer::PrepareStart() {
             return TError(EError::InvalidValue, "userns=true incompatible with virt_mode");
         else if (!UserNs && DockerMode)
             return TError(EError::InvalidValue, "userns=false incompatible with virt_mode");
-    // TODO: perhaps remove Fuse here later
+        // TODO: perhaps remove Fuse here later
     } else if (DockerMode || Fuse) {
         LockStateWrite();
         UserNs = true;
@@ -3397,21 +3336,19 @@ TError TContainer::PrepareStart() {
             const auto wildcardPos = policy.find("***");
             if (wildcardPos != std::string::npos && wildcardPos < policy.size() - 3) {
                 auto policyEndPart = policy.substr(wildcardPos, policy.size() - wildcardPos);
-                auto otherChar = find_if(policyEndPart.begin(), policyEndPart.end(), [](const char& c) {
-                    return c != '*' && c != '/';
-                });
+                auto otherChar = find_if(policyEndPart.begin(), policyEndPart.end(),
+                                         [](const char &c) { return c != '*' && c != '/'; });
                 if (otherChar != policyEndPart.end())
                     return TError(EError::Permission, "Wildcard allowed only at the end of the place");
             }
 
             if (!place.IsAbsolute()) {
                 if (policy == "***") {
-                    if (std::find(Parent->PlacePolicy.begin(),
-                            Parent->PlacePolicy.end(),
-                            policy) == Parent->PlacePolicy.end())
+                    if (std::find(Parent->PlacePolicy.begin(), Parent->PlacePolicy.end(), policy) ==
+                        Parent->PlacePolicy.end())
                         return TError(EError::Permission, "Place {} is not allowed by parent container", policy);
                     continue;
-               }
+                }
                 auto sep = policy.find('=');
                 if (sep != std::string::npos && policy[sep + 1] == '/')
                     place = policy.substr(sep + 1);
@@ -3434,13 +3371,15 @@ TError TContainer::Start() {
 
     if (DockerMode) {
         if (!Parent && !Parent->OsMode && Root.empty())
-            return TError(EError::Permission, "Container {} with virt_mode=docker must have parent with virt_mode=os and chroot", Name);
+            return TError(EError::Permission,
+                          "Container {} with virt_mode=docker must have parent with virt_mode=os and chroot", Name);
 
         if (!OwnerCred.IsRootUser())
             return TError(EError::Permission, "Container {} with virt_mode=docker must be started by root", Name);
 
         if (TaskCred.IsRootUser() || TaskCred.IsRootGroup())
-            return TError(EError::Permission, "Command in container {} with virt_mode=docker must not be run by root", Name);
+            return TError(EError::Permission, "Command in container {} with virt_mode=docker must not be run by root",
+                          Name);
     }
 
     if (State != EContainerState::Stopped)
@@ -3692,8 +3631,8 @@ TError TContainer::Terminate(uint64_t deadline) {
                 error = Task.Kill(sig);
             if (!error) {
                 L_ACT("Wait task {} after signal {} in CT{}:{}", Task.Pid, sig, Id, Name);
-                while (Task.Exists() && !Task.IsZombie() &&
-                        !WaitDeadline(deadline));
+                while (Task.Exists() && !Task.IsZombie() && !WaitDeadline(deadline))
+                    ;
             }
         }
     }
@@ -3738,7 +3677,7 @@ TError TContainer::Stop(uint64_t timeout) {
         if (Task.Pid)
             return TError(EError::NotSupported, "Cannot stop without freezer");
     } else if (CgroupDriver.FreezerSubsystem->IsParentFreezing(*freezer))
-            return TError(EError::InvalidState, "Parent container is paused");
+        return TError(EError::InvalidState, "Parent container is paused");
 
     auto subtree = Subtree();
 
@@ -3753,7 +3692,7 @@ TError TContainer::Stop(uint64_t timeout) {
                 (void)(*it)->WaitTask.Kill(SIGKILL);
     }
 
-    for (auto &ct : subtree) {
+    for (auto &ct: subtree) {
         if (ct->IsRoot() || ct->State == EContainerState::Stopped)
             continue;
 
@@ -3872,7 +3811,6 @@ void TContainer::Reap(bool oomKilled) {
 }
 
 void TContainer::Exit(int status, bool oomKilled) {
-
     if (State == EContainerState::Stopped)
         return;
 
@@ -3884,13 +3822,11 @@ void TContainer::Exit(int status, bool oomKilled) {
         oomKilled = true;
 
     /* Detect fatal signals: portoinit cannot kill itself */
-    if (WaitTask.Pid != Task.Pid && WIFEXITED(status) &&
-            WEXITSTATUS(status) > 128 &&
-            WEXITSTATUS(status) < 128 + SIGRTMIN * 2)
+    if (WaitTask.Pid != Task.Pid && WIFEXITED(status) && WEXITSTATUS(status) > 128 &&
+        WEXITSTATUS(status) < 128 + SIGRTMIN * 2)
         status = WEXITSTATUS(status) - ((WEXITSTATUS(status) > 128 + SIGRTMIN) ? SIGRTMIN : 128);
 
-    L_EVT("Exit CT{}:{} {} {}", Id, Name, FormatExitStatus(status),
-          (oomKilled ? "invoked by OOM" : ""));
+    L_EVT("Exit CT{}:{} {} {}", Id, Name, FormatExitStatus(status), (oomKilled ? "invoked by OOM" : ""));
 
     LockStateWrite();
     ExitStatus = status;
@@ -3902,8 +3838,7 @@ void TContainer::Exit(int status, bool oomKilled) {
     UnlockState();
 
     for (auto &ct: Subtree()) {
-        if (ct->State != EContainerState::Stopped &&
-                ct->State != EContainerState::Dead)
+        if (ct->State != EContainerState::Stopped && ct->State != EContainerState::Dead)
             ct->Reap(oomKilled);
     }
 }
@@ -3921,8 +3856,7 @@ TError TContainer::Pause() {
         return error;
 
     for (auto &ct: Subtree()) {
-        if (ct->State == EContainerState::Running ||
-                ct->State == EContainerState::Meta) {
+        if (ct->State == EContainerState::Running || ct->State == EContainerState::Meta) {
             ct->SetState(EContainerState::Paused);
             ct->PropagateCpuLimit();
             error = ct->Save();
@@ -3966,14 +3900,13 @@ TError TContainer::Resume() {
 }
 
 TError TContainer::MayRespawn() {
-    if (State != EContainerState::Dead &&
-            State != EContainerState::Respawning)
+    if (State != EContainerState::Dead && State != EContainerState::Respawning)
         return TError(EError::InvalidState, "Cannot respawn: container in state={}", TContainer::StateName(State));
 
-    if (Parent->State != EContainerState::Running &&
-            Parent->State != EContainerState::Meta &&
-            Parent->State != EContainerState::Respawning)
-        return TError(EError::InvalidState, "Cannot respawn: parent container in state={}", TContainer::StateName(Parent->State));
+    if (Parent->State != EContainerState::Running && Parent->State != EContainerState::Meta &&
+        Parent->State != EContainerState::Respawning)
+        return TError(EError::InvalidState, "Cannot respawn: parent container in state={}",
+                      TContainer::StateName(Parent->State));
 
     if (RespawnLimit >= 0 && RespawnCount >= RespawnLimit)
         return TError(EError::ResourceNotAvailable, "Cannot respawn: reached max_respawns={}", RespawnLimit);
@@ -4175,8 +4108,7 @@ TError TContainer::GetProperty(const std::string &origProperty, std::string &val
             }
 
             if (State == EContainerState::Stopped)
-                return TError(EError::InvalidState,
-                        "Not available in stopped state: " + property);
+                return TError(EError::InvalidState, "Not available in stopped state: " + property);
 
             return CgroupDriver.GetContainerCgroupsKnob(*this, property, value);
         }
@@ -4186,8 +4118,7 @@ TError TContainer::GetProperty(const std::string &origProperty, std::string &val
 
     auto it = ContainerProperties.find(property);
     if (it == ContainerProperties.end())
-        return TError(EError::InvalidProperty,
-                              "Unknown container property: " + property);
+        return TError(EError::InvalidProperty, "Unknown container property: " + property);
     auto prop = it->second;
 
     CT = std::const_pointer_cast<TContainer>(shared_from_this());
@@ -4203,8 +4134,7 @@ TError TContainer::GetProperty(const std::string &origProperty, std::string &val
     return error;
 }
 
-TError TContainer::SetProperty(const std::string &origProperty,
-                               const std::string &origValue) {
+TError TContainer::SetProperty(const std::string &origProperty, const std::string &origValue) {
     if (IsRoot())
         return TError(EError::Permission, "System containers are read only");
 
@@ -4284,7 +4214,7 @@ TError TContainer::SetProperty(const std::string &origProperty,
 
 bool TContainer::MatchLabels(const rpc::TStringMap &labels) const {
     bool matchLabels = true;
-    for (const auto &label : labels.map()) {
+    for (const auto &label: labels.map()) {
         bool matchLabel = false;
         for (const auto &it: Labels) {
             if (it.first == label.key() && it.second == label.val()) {
@@ -4308,7 +4238,7 @@ TError TContainer::Load(const rpc::TContainerSpec &spec, bool restoreOnError) {
     CT = std::const_pointer_cast<TContainer>(shared_from_this());
     LockStateWrite();
     ChangeTime = time(nullptr);
-    for (auto &it :ContainerProperties) {
+    for (auto &it: ContainerProperties) {
         auto prop = it.second;
         if (!prop->Has(spec))
             continue;
@@ -4339,12 +4269,13 @@ TError TContainer::Load(const rpc::TContainerSpec &spec, bool restoreOnError) {
     return error;
 }
 
-void TContainer::Dump(const std::vector<std::string> &props, std::unordered_map<std::string, std::string> &propsOps, rpc::TContainer &spec) {
+void TContainer::Dump(const std::vector<std::string> &props, std::unordered_map<std::string, std::string> &propsOps,
+                      rpc::TContainer &spec) {
     PORTO_ASSERT(!CT);
     CT = std::const_pointer_cast<TContainer>(shared_from_this());
     LockStateRead();
     if (props.empty()) {
-        for (auto &it :ContainerProperties) {
+        for (auto &it: ContainerProperties) {
             auto prop = it.second;
             if (!prop->CanGet()) {
                 if (prop->IsReadOnly)
@@ -4369,8 +4300,7 @@ void TContainer::Dump(const std::vector<std::string> &props, std::unordered_map<
                         prop->Dump(*spec.mutable_status());
                     else
                         prop->DumpIndexed(index->second, *spec.mutable_status());
-                }
-                else {
+                } else {
                     if (index == propsOps.end())
                         prop->Dump(*spec.mutable_spec());
                     else
@@ -4396,7 +4326,7 @@ TError TContainer::Save(void) {
     auto prev_ct = CT;
     CT = std::const_pointer_cast<TContainer>(shared_from_this());
 
-    for (auto knob : ContainerProperties) {
+    for (auto knob: ContainerProperties) {
         std::string value;
 
         /* Skip knobs without a value */
@@ -4408,8 +4338,7 @@ TError TContainer::Save(void) {
             break;
 
         /* Temporary hack for backward migration */
-        if (knob.second->Prop == EProperty::STATE &&
-                State == EContainerState::Respawning)
+        if (knob.second->Prop == EProperty::STATE && State == EContainerState::Respawning)
             value = "dead";
 
         node.Set(knob.first, value);
@@ -4516,20 +4445,15 @@ TError TContainer::Seize() {
             pid_t ppid = SeizeTask.GetPPid();
             if (ppid == getpid() || ppid == getppid())
                 return OK;
-            while(!kill(SeizeTask.Pid, SIGKILL))
+            while (!kill(SeizeTask.Pid, SIGKILL))
                 usleep(100000);
         }
         SeizeTask.Pid = 0;
     }
 
     auto pidStr = std::to_string(WaitTask.Pid);
-    const char * argv[] = {
-        "portoinit",
-        "--container",
-        Name.c_str(),
-        "--seize",
-        pidStr.c_str(),
-        NULL,
+    const char *argv[] = {
+        "portoinit", "--container", Name.c_str(), "--seize", pidStr.c_str(), NULL,
     };
 
     auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
@@ -4569,16 +4493,14 @@ void TContainer::SyncState() {
     L_ACT("Sync CT{}:{} state {}", Id, Name, StateName(State));
 
     if (!freezerCg->Exists()) {
-        if (State != EContainerState::Stopped &&
-                State != EContainerState::Stopping)
+        if (State != EContainerState::Stopped && State != EContainerState::Stopping)
             L("Freezer not found");
         ForgetPid();
         SetState(EContainerState::Stopped);
         return;
     }
 
-    if (State == EContainerState::Starting ||
-            State == EContainerState::Respawning)
+    if (State == EContainerState::Starting || State == EContainerState::Respawning)
         SetState(IsMeta() ? EContainerState::Meta : EContainerState::Running);
 
     if (CgroupDriver.FreezerSubsystem->IsFrozen(*freezerCg)) {
@@ -4624,28 +4546,28 @@ void TContainer::SyncState() {
     }
 
     switch (Parent ? Parent->State : EContainerState::Meta) {
-        case EContainerState::Stopped:
-            if (State != EContainerState::Stopped)
-                Stop(0); /* Also stop paused */
-            break;
-        case EContainerState::Dead:
-            if (State != EContainerState::Dead && State != EContainerState::Stopped)
-                Reap(false);
-            break;
-        case EContainerState::Running:
-        case EContainerState::Meta:
-        case EContainerState::Starting:
-        case EContainerState::Stopping:
-        case EContainerState::Respawning:
-            /* Any state is ok */
-            break;
-        case EContainerState::Paused:
-            if (State == EContainerState::Running || State == EContainerState::Meta)
-                SetState(EContainerState::Paused);
-            break;
-        case EContainerState::Destroyed:
-            L_ERR("Destroyed parent?");
-            break;
+    case EContainerState::Stopped:
+        if (State != EContainerState::Stopped)
+            Stop(0); /* Also stop paused */
+        break;
+    case EContainerState::Dead:
+        if (State != EContainerState::Dead && State != EContainerState::Stopped)
+            Reap(false);
+        break;
+    case EContainerState::Running:
+    case EContainerState::Meta:
+    case EContainerState::Starting:
+    case EContainerState::Stopping:
+    case EContainerState::Respawning:
+        /* Any state is ok */
+        break;
+    case EContainerState::Paused:
+        if (State == EContainerState::Running || State == EContainerState::Meta)
+            SetState(EContainerState::Paused);
+        break;
+    case EContainerState::Destroyed:
+        L_ERR("Destroyed parent?");
+        break;
     }
 
     if (State != EContainerState::Stopped && !HasProp(EProperty::START_TIME)) {
@@ -4806,7 +4728,7 @@ void TContainer::CollectOomKillsV1() {
     OomKills = kills;
     SetProp(EProperty::OOM_KILLS);
 
-    for (auto p = shared_from_this(); p ; p = p->Parent) {
+    for (auto p = shared_from_this(); p; p = p->Parent) {
         p->OomKillsTotal += delta;
         p->SetProp(EProperty::OOM_KILLS_TOTAL);
     }
@@ -4815,7 +4737,6 @@ void TContainer::CollectOomKillsV1() {
 
     for (auto p = shared_from_this(); p; p = p->Parent)
         p->Save();
-
 }
 
 void TContainer::Event(const TEvent &event) {
@@ -4824,37 +4745,31 @@ void TContainer::Event(const TEvent &event) {
     auto ct = event.Container.lock();
 
     switch (event.Type) {
-
-    case EEventType::OOM:
-    {
+    case EEventType::OOM: {
         if (ct && !CL->LockContainer(ct) && ct->OomIsFatal)
             ct->Exit(SIGKILL, true);
         break;
     }
 
-    case EEventType::CollectOOM:
-    {
+    case EEventType::CollectOOM: {
         if (ct)
             ct->CollectOomKills();
         break;
     }
 
-    case EEventType::Respawn:
-    {
+    case EEventType::Respawn: {
         if (ct && !CL->LockContainer(ct))
             ct->Respawn();
         break;
     }
 
     case EEventType::Exit:
-    case EEventType::ChildExit:
-    {
+    case EEventType::ChildExit: {
         bool delivered = false;
 
         auto lock = LockContainers();
         for (auto &it: Containers) {
-            if (it.second->WaitTask.Pid != event.Exit.Pid &&
-                    it.second->SeizeTask.Pid != event.Exit.Pid)
+            if (it.second->WaitTask.Pid != event.Exit.Pid && it.second->SeizeTask.Pid != event.Exit.Pid)
                 continue;
             ct = it.second;
             break;
@@ -4862,8 +4777,7 @@ void TContainer::Event(const TEvent &event) {
         lock.unlock();
 
         if (ct && !CL->LockContainer(ct)) {
-            if (ct->WaitTask.Pid == event.Exit.Pid ||
-                    ct->SeizeTask.Pid == event.Exit.Pid) {
+            if (ct->WaitTask.Pid == event.Exit.Pid || ct->SeizeTask.Pid == event.Exit.Pid) {
                 ct->Exit(event.Exit.Status, false);
                 delivered = true;
             }
@@ -4881,21 +4795,18 @@ void TContainer::Event(const TEvent &event) {
         break;
     }
 
-    case EEventType::WaitTimeout:
-    {
+    case EEventType::WaitTimeout: {
         auto waiter = event.WaitTimeout.Waiter.lock();
         if (waiter)
             waiter->Timeout();
         break;
     }
 
-    case EEventType::DestroyAgedContainer:
-    {
+    case EEventType::DestroyAgedContainer: {
         if (ct && !CL->LockContainer(ct)) {
             std::list<std::shared_ptr<TVolume>> unlinked;
 
-            if (ct->State == EContainerState::Dead &&
-                    GetCurrentTimeMs() >= ct->DeathTime + ct->AgingTime) {
+            if (ct->State == EContainerState::Dead && GetCurrentTimeMs() >= ct->DeathTime + ct->AgingTime) {
                 Statistics->RemoveDead++;
                 ct->Destroy(unlinked);
             }
@@ -4918,11 +4829,9 @@ void TContainer::Event(const TEvent &event) {
         }
         break;
 
-    case EEventType::RotateLogs:
-    {
+    case EEventType::RotateLogs: {
         for (auto &ct: RootContainer->Subtree()) {
-            if (ct->State == EContainerState::Dead &&
-                    GetCurrentTimeMs() >= ct->DeathTime + ct->AgingTime) {
+            if (ct->State == EContainerState::Dead && GetCurrentTimeMs() >= ct->DeathTime + ct->AgingTime) {
                 TEvent ev(EEventType::DestroyAgedContainer, ct);
                 EventQueue->Add(0, ev);
             }
@@ -4946,11 +4855,9 @@ void TContainer::Event(const TEvent &event) {
 
 std::string TContainer::GetPortoNamespace(bool write) const {
     std::string ns;
-    for (auto ct = this; ct && !ct->IsRoot() ; ct = ct->Parent.get()) {
-        if (ct->AccessLevel == EAccessLevel::Isolate ||
-                ct->AccessLevel == EAccessLevel::ReadIsolate ||
-                ct->AccessLevel == EAccessLevel::SelfIsolate ||
-                (write && ct->AccessLevel == EAccessLevel::ChildOnly))
+    for (auto ct = this; ct && !ct->IsRoot(); ct = ct->Parent.get()) {
+        if (ct->AccessLevel == EAccessLevel::Isolate || ct->AccessLevel == EAccessLevel::ReadIsolate ||
+            ct->AccessLevel == EAccessLevel::SelfIsolate || (write && ct->AccessLevel == EAccessLevel::ChildOnly))
             return ct->Name + "/" + ns;
         ns = ct->NsName + ns;
     }
@@ -4970,10 +4877,13 @@ TTuple TContainer::Taint() {
         taint.push_back("Property bind_dns is deprecated and will be removed soon.");
 
     if (!OomIsFatal)
-        taint.push_back("Containers with oom_is_fatal=false often stuck in broken state after OOM, you have been warned.");
+        taint.push_back(
+            "Containers with oom_is_fatal=false often stuck in broken state after OOM, you have been warned.");
 
     if (OsMode && Isolate && HasProp(EProperty::COMMAND) && Command != "/sbin/init")
-        taint.push_back("Containers virt_mode=os and custom command often infected with zombies, use virt_mode=app user=root group=root.");
+        taint.push_back(
+            "Containers virt_mode=os and custom command often infected with zombies, use virt_mode=app user=root "
+            "group=root.");
 
     if (CpuPolicy == "rt" && CpuLimit)
         taint.push_back("RT scheduler works really badly when usage hits cpu_limit, use cpu_policy=high");

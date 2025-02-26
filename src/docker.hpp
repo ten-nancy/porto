@@ -4,7 +4,8 @@
 
 Tags path has the following structure:
 
-    /<place>/porto_docker/<storage version>/images/<schema version>/<registry>/<repository>/<image name>/tags/<tag> -> <digest>
+    /<place>/porto_docker/<storage version>/images/<schema version>/<registry>/<repository>/<image name>/tags/<tag> ->
+<digest>
 
 Images path has the following structure:
 
@@ -24,14 +25,14 @@ Layers path has the following structure:
 
 */
 
-#include "util/path.hpp"
-#include "util/mutex.hpp"
-#include "storage.hpp"
-#include "client.hpp"
-
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
-#include <algorithm>
+
+#include "client.hpp"
+#include "storage.hpp"
+#include "util/mutex.hpp"
+#include "util/path.hpp"
 
 constexpr const char *DOCKER_REGISTRY_HOST = "mirror.gcr.io";
 constexpr const char *DOCKER_AUTH_PATH = "https://auth.docker.io/token";
@@ -41,7 +42,7 @@ struct THttpClient;
 
 struct TDockerImage {
     std::string Digest;
-    std::unordered_map<std::string, std::unordered_set<std::string>> Images; // image:tags
+    std::unordered_map<std::string, std::unordered_set<std::string>> Images;  // image:tags
 
     std::string Registry;
     std::string Repository;
@@ -52,7 +53,10 @@ struct TDockerImage {
         std::string Digest;
         size_t Size;
 
-        TLayer(std::string digest, size_t size = 0) : Digest(digest), Size(size) {}
+        TLayer(std::string digest, size_t size = 0)
+            : Digest(digest),
+              Size(size)
+        {}
 
         TPath LayerPath(const TPath &place) const;
         TPath ArchivePath(const TPath &place) const;
@@ -75,9 +79,9 @@ struct TDockerImage {
     std::vector<std::string> Env;
 
     TDockerImage(const std::string &name)
-        : Registry(DOCKER_REGISTRY_HOST)
-        , Repository("library")
-        , Tag("latest")
+        : Registry(DOCKER_REGISTRY_HOST),
+          Repository("library"),
+          Tag("latest")
     {
         ParseName(name);
         // in case registry is docker.io request will be redirected to docker.com
@@ -121,8 +125,7 @@ private:
         // <image> ::= [<registry>/][<repository>/]<name>[:<tag>][@<digest>]
         auto regiPos = image.find('/');
         std::string registry = image.substr(0, regiPos);
-        if ((regiPos != std::string::npos) &&
-            (StringContainsAny(registry, ".:") || registry == "localhost")) {
+        if ((regiPos != std::string::npos) && (StringContainsAny(registry, ".:") || registry == "localhost")) {
             Registry = image.substr(0, regiPos);
             image = image.substr(regiPos + 1);
         }
@@ -167,7 +170,8 @@ private:
     TError ParseConfig();
 
     // thread function
-    static void DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url, const std::string &token);
+    static void DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url,
+                              const std::string &token);
     TError DownloadLayers(const TPath &place) const;
     void RemoveLayers(const TPath &place) const;
 
@@ -183,5 +187,4 @@ private:
 
     TError Save(const TPath &place) const;
     TError Load(const TPath &place);
-
 };

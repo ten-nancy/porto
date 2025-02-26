@@ -1,16 +1,15 @@
 #pragma once
 
 #include <condition_variable>
-#include <thread>
 #include <queue>
+#include <thread>
 
+#include "util/locks.hpp"
 #include "util/log.hpp"
 #include "util/unix.hpp"
-#include "util/locks.hpp"
 
-template<typename T,
-         typename Q = std::queue<T>>
-class TWorker : public TLockable {
+template <typename T, typename Q = std::queue<T>>
+class TWorker: public TLockable {
 protected:
     volatile bool Valid = true;
     std::condition_variable Cv;
@@ -58,18 +57,21 @@ protected:
     }
 
     void Join() {
-        for (auto &thread : Threads)
+        for (auto &thread: Threads)
             thread.join();
         Threads.clear();
     }
 
-    virtual T Pop() =0;
-    virtual bool Handle(T &elem) =0;
+    virtual T Pop() = 0;
+    virtual bool Handle(T &elem) = 0;
 
 public:
     Q Queue;
 
-    TWorker(const std::string &name, size_t nr) : Name(name), Nr(nr) {}
+    TWorker(const std::string &name, size_t nr)
+        : Name(name),
+          Nr(nr)
+    {}
 
     void Start() {
         for (size_t i = 0; i < Nr; i++)

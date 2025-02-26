@@ -1,26 +1,15 @@
+#include "proc.hpp"
+
 #include <sstream>
 
-#include "proc.hpp"
-#include "path.hpp"
 #include "log.hpp"
+#include "path.hpp"
 
 const static TStringMap VmStatMap = {
-    {"VmSize", "size"},
-    {"VmPeak", "max_size"},
-    {"VmRSS", "used"},
-    {"VmHWM", "max_used"},
-    {"RssAnon", "anon"},
-    {"RssFile", "file"},
-    {"RssShmem", "shmem"},
-    {"HugetlbPages", "huge"},
-    {"VmSwap", "swap"},
-    {"VmData", "data"},
-    {"VmStk", "stack"},
-    {"VmExe", "code"},
-    {"VmLib", "code"},
-    {"VmLck", "locked"},
-    {"VmPTE", "table"},
-    {"VmPMD", "table"},
+    {"VmSize", "size"},  {"VmPeak", "max_size"}, {"VmRSS", "used"},     {"VmHWM", "max_used"},
+    {"RssAnon", "anon"}, {"RssFile", "file"},    {"RssShmem", "shmem"}, {"HugetlbPages", "huge"},
+    {"VmSwap", "swap"},  {"VmData", "data"},     {"VmStk", "stack"},    {"VmExe", "code"},
+    {"VmLib", "code"},   {"VmLck", "locked"},    {"VmPTE", "table"},    {"VmPMD", "table"},
 };
 
 TVmStat::TVmStat() {
@@ -38,7 +27,7 @@ void TVmStat::Add(const TVmStat &other) {
 }
 
 void TVmStat::Dump(rpc::TVmStat &s) {
-    #define DUMP_STAT_FIELD(f) s.set_##f(Stat[#f])
+#define DUMP_STAT_FIELD(f) s.set_##f(Stat[#f])
     DUMP_STAT_FIELD(count);
     DUMP_STAT_FIELD(size);
     DUMP_STAT_FIELD(max_size);
@@ -54,7 +43,7 @@ void TVmStat::Dump(rpc::TVmStat &s) {
     DUMP_STAT_FIELD(code);
     DUMP_STAT_FIELD(locked);
     DUMP_STAT_FIELD(table);
-    #undef DUMP_STAT_FIELD
+#undef DUMP_STAT_FIELD
 }
 
 TError TVmStat::Parse(pid_t pid) {
@@ -128,7 +117,8 @@ TError GetProcNetStats(pid_t pid, TUintMap &stats, const std::string &basename) 
     }
 
     if (headerList.size() != valuesList.size())
-        return TError("Invalid net stat structure: /proc/{}/net/{}, {} headers != {} values", pid, basename, headerList.size(), valuesList.size());
+        return TError("Invalid net stat structure: /proc/{}/net/{}, {} headers != {} values", pid, basename,
+                      headerList.size(), valuesList.size());
 
     for (size_t i = 0; i < headerList.size(); ++i) {
         uint64_t value;

@@ -5,7 +5,6 @@
 
 #include "common.hpp"
 
-
 class TNetLimitSoftOfNet;
 
 struct TNetLimitSoftStat {
@@ -19,7 +18,7 @@ struct TNetLimitSoftStat {
     uint64_t pass_bytes = 0;
 };
 
-class TNetLimitSoft : public TNonCopyable {
+class TNetLimitSoft: public TNonCopyable {
 public:
     TNetLimitSoft();
     ~TNetLimitSoft();
@@ -34,8 +33,7 @@ private:
     std::unique_ptr<TImpl> Impl;
 };
 
-
-class TNetLimitSoftOfNet : public TNonCopyable {
+class TNetLimitSoftOfNet: public TNonCopyable {
 public:
     TNetLimitSoftOfNet();
     ~TNetLimitSoftOfNet();
@@ -43,7 +41,9 @@ public:
     bool IsDisabled();
     TError Setup(const std::string &bpf_program_elf_code);
 
-    int Prio() { return 61357; } // hardcoded value so we can reliably delete/replace it
+    int Prio() {
+        return 61357;
+    }  // hardcoded value so we can reliably delete/replace it
 
     TError BakeBpfProgCode(uint64_t key, std::vector<uint8_t> &prog_code);
 
@@ -51,4 +51,3 @@ private:
     class TImpl;
     std::unique_ptr<TImpl> Impl;
 };
-

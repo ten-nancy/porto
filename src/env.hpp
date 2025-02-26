@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+
 #include "util/error.hpp"
 
 struct TEnv {
@@ -19,8 +20,7 @@ struct TEnv {
 
     void ClearEnv();
     TError GetEnv(const std::string &name, std::string &value) const;
-    TError SetEnv(const std::string &name, const std::string &value,
-                  bool overwrite = true, bool lock = false,
+    TError SetEnv(const std::string &name, const std::string &value, bool overwrite = true, bool lock = false,
                   bool secret = false);
     TError UnsetEnv(const std::string &name, bool overwrite = true);
     char **Envp();
@@ -49,8 +49,11 @@ struct TUlimit {
     std::string Format() const;
     TError Load(pid_t pid = 0);
     TError Apply(pid_t pid = 0) const;
-    void Clear() { Resources.clear(); }
-    TError Get(int type, uint64_t &soft, uint64_t &hard); // returns EError::NotFound if RLIMIT_type is not set in TUlimit
+    void Clear() {
+        Resources.clear();
+    }
+    TError Get(int type, uint64_t &soft,
+               uint64_t &hard);  // returns EError::NotFound if RLIMIT_type is not set in TUlimit
     void Set(int type, uint64_t soft, uint64_t hard, bool overwrite = true);
     void Merge(const TUlimit &ulimit, bool owerwrite = true);
 };

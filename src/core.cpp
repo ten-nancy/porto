@@ -1,14 +1,15 @@
 #include "core.hpp"
+
 #include "config.hpp"
 #include "container.hpp"
 #include "property.hpp"
-#include "util/unix.hpp"
 #include "util/log.hpp"
+#include "util/unix.hpp"
 
 extern "C" {
-#include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 }
 
 TError TCore::Register(const TPath &portod) {
@@ -90,16 +91,15 @@ TError TCore::Handle(const TTuple &args) {
         CoreCommand = "";
 
     if (!Ulimit || (Dumpable == 0 && CoreCommand == "")) {
-        L_CORE("Ignore core from CT:{} {} {}:{} thread {}:{} signal {}, ulimit {} dumpable {}",
-                Container, ExeName, Pid, ProcessName, Tid, ThreadName, Signal,
-                Ulimit, Dumpable);
+        L_CORE("Ignore core from CT:{} {} {}:{} thread {}:{} signal {}, ulimit {} dumpable {}", Container, ExeName, Pid,
+               ProcessName, Tid, ThreadName, Signal, Ulimit, Dumpable);
         return OK;
     }
 
-    if (CoreCommand != "" &&
-        (State == TContainer::StateName(EContainerState::Running) || State == TContainer::StateName(EContainerState::Meta))) {
-        L_CORE("Forward core from CT:{} {} {}:{} thread {}:{} signal {} dumpable {}",
-                Container, ExeName, Pid, ProcessName, Tid, ThreadName, Signal, Dumpable);
+    if (CoreCommand != "" && (State == TContainer::StateName(EContainerState::Running) ||
+                              State == TContainer::StateName(EContainerState::Meta))) {
+        L_CORE("Forward core from CT:{} {} {}:{} thread {}:{} signal {} dumpable {}", Container, ExeName, Pid,
+               ProcessName, Tid, ThreadName, Signal, Dumpable);
 
         error = Forward();
         if (error) {
@@ -109,8 +109,8 @@ TError TCore::Handle(const TTuple &args) {
     }
 
     if (CoreCommand == "" && DefaultPattern) {
-        L_CORE("Save core from CT:{} {} {}:{} thread {}:{} signal {} dumpable {}",
-                Container, ExeName, Pid, ProcessName, Tid, ThreadName, Signal, Dumpable);
+        L_CORE("Save core from CT:{} {} {}:{} thread {}:{} signal {} dumpable {}", Container, ExeName, Pid, ProcessName,
+               Tid, ThreadName, Signal, Dumpable);
 
         error = Save();
         if (error)
@@ -167,14 +167,11 @@ TError TCore::Identify() {
 
     Prefix = StringReplaceAll(Container, "/", "%") + "%";
 
-    //FIXME ugly
-    if (Conn.GetProperty(Container, P_USER, User) ||
-            Conn.GetProperty(Container, P_GROUP, Group) ||
-            Conn.GetProperty(Container, P_OWNER_USER, OwnerUser) ||
-            Conn.GetProperty(Container, P_OWNER_GROUP, OwnerGroup) ||
-            Conn.GetProperty(Container, P_CWD, Cwd) ||
-            Conn.GetProperty(Container, P_STATE, State) ||
-            Conn.GetProperty(Container, P_ROOT_PATH, RootPath)) {
+    // FIXME ugly
+    if (Conn.GetProperty(Container, P_USER, User) || Conn.GetProperty(Container, P_GROUP, Group) ||
+        Conn.GetProperty(Container, P_OWNER_USER, OwnerUser) ||
+        Conn.GetProperty(Container, P_OWNER_GROUP, OwnerGroup) || Conn.GetProperty(Container, P_CWD, Cwd) ||
+        Conn.GetProperty(Container, P_STATE, State) || Conn.GetProperty(Container, P_ROOT_PATH, RootPath)) {
         Conn.GetLastError(err, msg);
         error = TError((EError)err, msg);
         L_ERR("Cannot get CT:{} properties: {}", Container, error);
@@ -225,7 +222,7 @@ TError TCore::Forward() {
     spec.set_owner_group(OwnerGroup);
     spec.set_cwd(Cwd);
     auto env = spec.mutable_env();
-    for (const auto &envValue : envValues) {
+    for (const auto &envValue: envValues) {
         auto val = env->add_var();
         val->set_name(envValue[0]);
         val->set_value(envValue[1]);
@@ -276,14 +273,13 @@ TError TCore::Save() {
         }
 
         if ((TotalSize >> 20) >= config().core().space_limit_mb())
-            return TError(EError::ResourceNotAvailable,
-                    fmt::format("Total core size reached limit: {}M of {}M",
-                        TotalSize >> 20, config().core().space_limit_mb()));
+            return TError(EError::ResourceNotAvailable, fmt::format("Total core size reached limit: {}M of {}M",
+                                                                    TotalSize >> 20, config().core().space_limit_mb()));
 
         if ((SlotSize >> 20) >= config().core().slot_space_limit_mb())
             return TError(EError::ResourceNotAvailable,
-                    fmt::format("Slot {} core size reached limit: {}M of {}M",
-                        Slot, SlotSize >> 20, config().core().slot_space_limit_mb()));
+                          fmt::format("Slot {} core size reached limit: {}M of {}M", Slot, SlotSize >> 20,
+                                      config().core().slot_space_limit_mb()));
     }
 
     std::string filter = "";
@@ -303,9 +299,8 @@ TError TCore::Save() {
         format = ".core.zst";
     }
 
-    Pattern = dir / ( Prefix + ExeName + "." + std::to_string(Pid) +
-              ".S" + std::to_string(Signal) + "." +
-              FormatTime(time(nullptr), "%Y%m%dT%H%M%S") + format);
+    Pattern = dir / (Prefix + ExeName + "." + std::to_string(Pid) + ".S" + std::to_string(Signal) + "." +
+                     FormatTime(time(nullptr), "%Y%m%dT%H%M%S") + format);
 
     TFile file;
     error = file.Create(Pattern, O_RDWR | O_CREAT | O_EXCL, 0440);
@@ -331,8 +326,7 @@ TError TCore::Save() {
     uint64_t time_ms = GetCurrentTimeMs();
 
     if (filter.size()) {
-        if (file.Fd != STDOUT_FILENO &&
-                dup2(file.Fd, STDOUT_FILENO) != STDOUT_FILENO)
+        if (file.Fd != STDOUT_FILENO && dup2(file.Fd, STDOUT_FILENO) != STDOUT_FILENO)
             return TError::System("dup2");
         execlp(filter.c_str(), filter.c_str(), nullptr);
         error = TError::System("cannot execute filter " + filter);
@@ -346,7 +340,7 @@ TError TCore::Save() {
             size_t len = 0;
 
             do {
-                ssize_t ret = read(STDIN_FILENO, (uint8_t*)buf + len, sizeof(buf) - len);
+                ssize_t ret = read(STDIN_FILENO, (uint8_t *)buf + len, sizeof(buf) - len);
                 if (ret <= 0) {
                     if (ret < 0)
                         error = TError::System("read");
@@ -366,7 +360,7 @@ TError TCore::Save() {
 
             size_t off = 0;
             while (off < len) {
-                ssize_t ret = pwrite(file.Fd, (uint8_t*)buf + off, len - off, size + off);
+                ssize_t ret = pwrite(file.Fd, (uint8_t *)buf + off, len - off, size + off);
                 if (ret <= 0) {
                     if (ret < 0)
                         error = TError::System("write");
@@ -379,7 +373,7 @@ TError TCore::Save() {
 
             if (sync_block && size > sync_start + sync_block * 2) {
                 (void)sync_file_range(file.Fd, sync_start, size - sync_start,
-                        SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE);
+                                      SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE);
                 sync_start = size - sync_block;
             }
 
@@ -397,10 +391,9 @@ TError TCore::Save() {
     if (!error) {
         time_ms = GetCurrentTimeMs() - time_ms;
         time_ms = time_ms ?: 1;
-        L_CORE("Core dump {} ({}) written: {} data, {} holes, {} total, {}B/s",
-                Pattern, DefaultPattern.BaseName(), StringFormatSize(data),
-                StringFormatSize(size - data), StringFormatSize(size),
-                StringFormatSize(data * 1000ull / time_ms));
+        L_CORE("Core dump {} ({}) written: {} data, {} holes, {} total, {}B/s", Pattern, DefaultPattern.BaseName(),
+               StringFormatSize(data), StringFormatSize(size - data), StringFormatSize(size),
+               StringFormatSize(data * 1000ull / time_ms));
     } else if (!data) {
         Pattern.Unlink();
         if (DefaultPattern)

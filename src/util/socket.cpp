@@ -1,9 +1,9 @@
 #include "util/socket.hpp"
 
 extern "C" {
-#include <unistd.h>
-#include <sys/un.h>
 #include <netdb.h>
+#include <sys/un.h>
+#include <unistd.h>
 }
 
 TError TSocket::Connect(const sockaddr *addr, size_t len) {
@@ -33,7 +33,7 @@ TError TSocket::Connect(const std::string &path) {
 
     strncpy(un_addr.sun_path, path.c_str(), path.size());
 
-    return Connect((const sockaddr*)&un_addr, sizeof(un_addr));
+    return Connect((const sockaddr *)&un_addr, sizeof(un_addr));
 }
 
 TError TSocket::Connect(const std::string &name, int port) {
@@ -72,14 +72,14 @@ TError TSocket::Connect(const std::string &name, const std::string &port) {
 }
 
 void TSocket::Close() {
-    if (Fd >= 0)  {
+    if (Fd >= 0) {
         close(Fd);
         SetFd = -1;
     }
 }
 
 TError TSocket::Read(void *buf, size_t len) const {
-    char *p = (char*)buf;
+    char *p = (char *)buf;
 
     while (len > 0) {
         int64_t timeout = Timeout();
@@ -106,7 +106,7 @@ TError TSocket::Read(void *buf, size_t len) const {
 }
 
 TError TSocket::Write(const void *buf, size_t len) const {
-    const char *p = (const char*)buf;
+    const char *p = (const char *)buf;
 
     while (len > 0) {
         int64_t timeout = Timeout();
@@ -141,7 +141,6 @@ TError TSocket::SetReadTimeout(int64_t timeout_ms) const {
         return TError::System("setsockopt(SO_RCVTIMEO)");
 
     return OK;
-
 }
 
 TError TSocket::SetWriteTimeout(int64_t timeout_ms) const {

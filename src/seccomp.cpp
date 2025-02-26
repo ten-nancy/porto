@@ -1,44 +1,40 @@
-#include <unordered_map>
-#include <string>
 #include <cstdint>
+#include <string>
+#include <unordered_map>
 
 extern "C" {
 #include <seccomp.h>
 }
 
-#include "util/error.hpp"
 #include "seccomp.hpp"
+#include "util/error.hpp"
 
-template<typename K, typename V, typename K1 = K>
-static std::unordered_map<V, K1> reverseMap(const std::unordered_map<K, V>& m) {
+template <typename K, typename V, typename K1 = K>
+static std::unordered_map<V, K1> reverseMap(const std::unordered_map<K, V> &m) {
     std::unordered_map<V, K1> r;
-    for (const auto& kv : m)
+    for (const auto &kv: m)
         r[kv.second] = K1(kv.first);
     return r;
 }
 
 // xenail gcc cant handle enums as map keys
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=60970
-static std::unordered_map<int, uint32_t> ActionTable{
-    {seccomp::EAction::Allow,        SCMP_ACT_ALLOW},
-    {seccomp::EAction::Notify,       SCMP_ACT_NOTIFY},
-    {seccomp::EAction::Log,          SCMP_ACT_LOG},
-    {seccomp::EAction::Trap,         SCMP_ACT_TRAP},
-    {seccomp::EAction::KillProcess,  SCMP_ACT_KILL_PROCESS},
-    {seccomp::EAction::Kill,         SCMP_ACT_KILL}
-};
+static std::unordered_map<int, uint32_t> ActionTable{{seccomp::EAction::Allow, SCMP_ACT_ALLOW},
+                                                     {seccomp::EAction::Notify, SCMP_ACT_NOTIFY},
+                                                     {seccomp::EAction::Log, SCMP_ACT_LOG},
+                                                     {seccomp::EAction::Trap, SCMP_ACT_TRAP},
+                                                     {seccomp::EAction::KillProcess, SCMP_ACT_KILL_PROCESS},
+                                                     {seccomp::EAction::Kill, SCMP_ACT_KILL}};
 
-static std::unordered_map<uint32_t, seccomp::EAction> ActionRTable = reverseMap<int, uint32_t, seccomp::EAction>(ActionTable);
+static std::unordered_map<uint32_t, seccomp::EAction> ActionRTable =
+    reverseMap<int, uint32_t, seccomp::EAction>(ActionTable);
 
 static std::unordered_map<int, int> CompareTable{
-    {seccomp::ECompare::Ne,        SCMP_CMP_NE},
-    {seccomp::ECompare::Lt,        SCMP_CMP_LT},
-    {seccomp::ECompare::Le,        SCMP_CMP_LE},
-    {seccomp::ECompare::Eq,        SCMP_CMP_EQ},
-    {seccomp::ECompare::Ge,        SCMP_CMP_GE},
-    {seccomp::ECompare::Gt,        SCMP_CMP_GT},
-    {seccomp::ECompare::MaskedEq,  SCMP_CMP_MASKED_EQ}
-};
+    {seccomp::ECompare::Ne, SCMP_CMP_NE}, {seccomp::ECompare::Lt, SCMP_CMP_LT}, {seccomp::ECompare::Le, SCMP_CMP_LE},
+    {seccomp::ECompare::Eq, SCMP_CMP_EQ},
+    {seccomp::ECompare::Ge, SCMP_CMP_GE},
+    {seccomp::ECompare::Gt, SCMP_CMP_GT},
+    {seccomp::ECompare::MaskedEq, SCMP_CMP_MASKED_EQ}};
 
 // xenail gcc cant handle enums as map keys
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=60970
@@ -75,14 +71,14 @@ static void dumpAction(uint32_t action, seccomp::TAction &output) {
     }
 }
 
-void TSeccompProfile::Dump(seccomp::TProfile& profile) const {
+void TSeccompProfile::Dump(seccomp::TProfile &profile) const {
     dumpAction(DefaultAction, *profile.mutable_default_action());
 
-    for (auto &rule : Rules) {
+    for (auto &rule: Rules) {
         auto &orule = *profile.add_rules();
 
         orule.set_syscall(rule.SyscallName);
-        for (auto &arg : rule.Args) {
+        for (auto &arg: rule.Args) {
             auto &oarg = *orule.add_args();
             oarg.set_index(arg.arg);
             oarg.set_compare(CompareRTable[arg.op]);
@@ -98,7 +94,7 @@ TError TSeccompProfile::Parse(const seccomp::TProfile &profile) {
     if (error)
         return error;
 
-    for (const auto &irule : profile.rules()) {
+    for (const auto &irule: profile.rules()) {
         TSeccompRule rule;
 
         rule.Syscall = seccomp_syscall_resolve_name(irule.syscall().data());
@@ -110,7 +106,7 @@ TError TSeccompProfile::Parse(const seccomp::TProfile &profile) {
         if (error)
             return error;
 
-        for (const auto &iarg : irule.args()) {
+        for (const auto &iarg: irule.args()) {
             auto it = CompareTable.find(iarg.compare());
             if (it == CompareTable.end())
                 return TError(EError::InvalidValue, "unkonwn op {}", iarg.compare());
@@ -140,7 +136,7 @@ TError TSeccompContext::Apply(const TSeccompProfile &p) {
     if (!Ctx)
         return TError::System("seccomp_init failed");
 
-    for (auto &rule : p.Rules) {
+    for (auto &rule: p.Rules) {
         ret = seccomp_rule_add_array(Ctx, rule.Action, rule.Syscall, rule.Args.size(), rule.Args.data());
         if (ret < 0) {
             error = TError::System("seccomp_rule_add_array");
@@ -149,7 +145,7 @@ TError TSeccompContext::Apply(const TSeccompProfile &p) {
     }
 
     ret = seccomp_load(Ctx);
-    if (ret < 0){
+    if (ret < 0) {
         error = TError::System("seccomp_load failed");
         goto err;
     }

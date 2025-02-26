@@ -1,22 +1,23 @@
+#include "storage.hpp"
+
 #include <algorithm>
 #include <condition_variable>
 
-#include "storage.hpp"
-#include "volume.hpp"
-#include "helpers.hpp"
-#include "config.hpp"
-#include "filesystem.hpp"
 #include "client.hpp"
+#include "config.hpp"
 #include "docker.hpp"
-#include "util/unix.hpp"
+#include "filesystem.hpp"
+#include "helpers.hpp"
 #include "util/log.hpp"
-#include "util/string.hpp"
 #include "util/md5.hpp"
 #include "util/quota.hpp"
+#include "util/string.hpp"
+#include "util/unix.hpp"
+#include "volume.hpp"
 
 extern "C" {
-#include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 }
 
@@ -89,7 +90,6 @@ static inline std::unique_lock<std::mutex> LockPlaces() {
     return std::unique_lock<std::mutex>(PlacesMutex);
 }
 
-
 static TPath getStorageBase(const TPath &place, EStorageType type) {
     switch (type) {
     case EStorageType::Volume:
@@ -134,14 +134,14 @@ void AsyncRemoveWatchDog() {
         const auto places = Places;
         placesLock.unlock();
 
-        for (const auto &place : places) {
+        for (const auto &place: places) {
             bool dropped = false;
             if (!place.Exists()) {
                 dropPlace(place);
                 continue;
             }
 
-            for (auto type : {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
+            for (auto type: {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
                 error = TStorage::Cleanup(place, type);
                 if (error) {
                     if (error.Errno != ENOENT)
@@ -197,7 +197,8 @@ void TStorage::Open(EStorageType type, const TPath &place, const std::string &na
         if (sep == std::string::npos)
             Path = Place / PORTO_LAYERS / Name;
         else
-            Path = Place / PORTO_STORAGE / fmt::format("{}{}/{}{}", META_PREFIX, Meta, META_LAYER, name.substr(sep + 1));
+            Path =
+                Place / PORTO_STORAGE / fmt::format("{}{}/{}{}", META_PREFIX, Meta, META_LAYER, name.substr(sep + 1));
         break;
     case EStorageType::DockerLayer:
         Path = TDockerImage::TLayer(Name).LayerPath(Place) / "content";
@@ -238,7 +239,7 @@ void TStorage::IncPlaceLoad(const TPath &place) {
     if (!PlaceLoadLimit.count(id))
         id = "default";
     L_ACT("Start waiting for place load slot, id={} limit={}", id, PlaceLoadLimit[id]);
-    StorageCv.wait(lock, [&]{return PlaceLoad[id] < PlaceLoadLimit[id];});
+    StorageCv.wait(lock, [&] { return PlaceLoad[id] < PlaceLoadLimit[id]; });
     PlaceLoad[id]++;
     L_ACT("Finish waiting for place load slot, id={}", id);
 }
@@ -321,8 +322,7 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type) {
     for (auto &name: list) {
         TPath path = base / name;
 
-        if (type == EStorageType::Storage && path.IsDirectoryStrict() &&
-                StringStartsWith(name, META_PREFIX)) {
+        if (type == EStorageType::Storage && path.IsDirectoryStrict() && StringStartsWith(name, META_PREFIX)) {
             error = Cleanup(path, EStorageType::Meta);
             if (error)
                 L_WRN("Cannot cleanup metastorage {} {}", path, error);
@@ -352,7 +352,7 @@ TError TStorage::Cleanup(const TPath &place, EStorageType type) {
             if (type != EStorageType::Volume && StringStartsWith(name, PRIVATE_PREFIX)) {
                 std::string tail = name.substr(std::string(PRIVATE_PREFIX).size());
                 if ((base / tail).IsDirectoryStrict() ||
-                        (base / (std::string(IMPORT_PREFIX) + tail)).IsDirectoryStrict())
+                    (base / (std::string(IMPORT_PREFIX) + tail)).IsDirectoryStrict())
                     continue;
             }
 
@@ -396,7 +396,7 @@ TError TStorage::CheckPlace(const TPath &place) {
             return OK;
     }
 
-    for (auto type : {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
+    for (auto type: {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
         error = CheckBaseDirectory(place, type, getPermission(type));
         if (error)
             return error;
@@ -429,15 +429,11 @@ TError TStorage::CheckName(const std::string &name, bool meta) {
     }
     auto pos = name.find_first_not_of(PORTO_NAME_CHARS);
     if (pos != std::string::npos)
-        return TError(EError::InvalidValue, "forbidden character " +
-                      StringFormat("%#x", (unsigned char)name[pos]));
-    if (name == "" || name == "." || name == ".."||
-            StringStartsWith(name, LAYER_TMP) ||
-            StringStartsWith(name, IMPORT_PREFIX) ||
-            StringStartsWith(name, REMOVE_PREFIX) ||
-            StringStartsWith(name, PRIVATE_PREFIX) ||
-            StringStartsWith(name, META_PREFIX) ||
-            StringStartsWith(name, META_LAYER))
+        return TError(EError::InvalidValue, "forbidden character " + StringFormat("%#x", (unsigned char)name[pos]));
+    if (name == "" || name == "." || name == ".." || StringStartsWith(name, LAYER_TMP) ||
+        StringStartsWith(name, IMPORT_PREFIX) || StringStartsWith(name, REMOVE_PREFIX) ||
+        StringStartsWith(name, PRIVATE_PREFIX) || StringStartsWith(name, META_PREFIX) ||
+        StringStartsWith(name, META_LAYER))
         return TError(EError::InvalidValue, "invalid layer name '" + name + "'");
     return OK;
 }
@@ -585,8 +581,7 @@ TError TStorage::Load() {
     if (error)
         return error;
 
-    error = priv.Open(TempPath(PRIVATE_PREFIX),
-                      O_RDONLY | O_CLOEXEC | O_NOCTTY | O_NOFOLLOW);
+    error = priv.Open(TempPath(PRIVATE_PREFIX), O_RDONLY | O_CLOEXEC | O_NOCTTY | O_NOFOLLOW);
     if (error || priv.Stat(st)) {
         if (error.Errno != ENOENT)
             return error;
@@ -661,17 +656,16 @@ static bool TarSupportsCompressArgs() {
     if (!tested) {
         TFile null;
         result = !null.OpenReadWrite("/dev/null") &&
-                 !RunCommand({ "tar", "--create", "--use-compress-program=gzip --best",
-                               "--files-from", "/dev/null"}, TFile(), null, null);
+                 !RunCommand({"tar", "--create", "--use-compress-program=gzip --best", "--files-from", "/dev/null"},
+                             TFile(), null, null);
         L_SYS("tar {}supports compress program arguments", result ? "" : "not ");
         tested = true;
     }
     return result;
 }
 
-static TError Compression(const TPath &archive, const TFile &arc,
-                             const std::string &compress,
-                             std::string &format, std::string &option) {
+static TError Compression(const TPath &archive, const TFile &arc, const std::string &compress, std::string &format,
+                          std::string &option) {
     std::string name = archive.BaseName();
 
     format = "tar";
@@ -696,7 +690,9 @@ static TError Compression(const TPath &archive, const TFile &arc,
         char magic[8];
 
         if (pread(arc.Fd, magic, sizeof(magic), 0) == sizeof(magic)) {
-            if (!strncmp(magic, "\xFD" "7zXZ\x00", 6))
+            if (!strncmp(magic,
+                         "\xFD"
+                         "7zXZ\x00", 6))
                 goto xz;
             if (!strncmp(magic, "\x1F\x8B\x08", 3))
                 goto gz;
@@ -770,7 +766,7 @@ zst:
             option = "--use-compress-program=zstd";
         return OK;
     }
-    return TError(EError::NotSupported, "Compression: Can not find /usr/bin/zstd binary" );
+    return TError(EError::NotSupported, "Compression: Can not find /usr/bin/zstd binary");
 bz2:
     option = "--bzip2";
     return OK;
@@ -788,9 +784,8 @@ static bool TarSupportsXattrs() {
     static bool tested = false, result = false;
     if (!tested) {
         TFile null;
-        result = !null.OpenReadWrite("/dev/null") &&
-                 !RunCommand({ config().daemon().tar_path(), "--create", "--xattrs",
-                               "--files-from", "/dev/null"}, TFile(), null, null);
+        result = !null.OpenReadWrite("/dev/null") && !RunCommand({config().daemon().tar_path(), "--create", "--xattrs",
+                                                                  "--files-from", "/dev/null"}, TFile(), null, null);
         L_SYS("tar {}supports extended attributes", result ? "" : "not ");
         tested = true;
     }
@@ -833,7 +828,8 @@ TError TStorage::SaveChecksums() {
     return OK;
 }
 
-TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgroup, const std::string &compress, bool merge, bool verboseError) {
+TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgroup, const std::string &compress,
+                               bool merge, bool verboseError) {
     TPath temp = TempPath(IMPORT_PREFIX);
     TError error;
     TFile arc;
@@ -921,27 +917,17 @@ TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgrou
     Statistics->LayerImport++;
 
     if (compress_format == "tar") {
-        TTuple args = { config().daemon().tar_path(),
-                        "--numeric-owner",
-                        "--preserve-permissions",
-                        compress_option,
-                        "--extract" };
+        TTuple args = {config().daemon().tar_path(), "--numeric-owner", "--preserve-permissions", compress_option,
+                       "--extract"};
 
         if (TarSupportsXattrs())
-            args.insert(args.begin() + 3, {
-                        "--xattrs",
-                        "--xattrs-include=security.capability",
-                        "--xattrs-include=trusted.overlay.*",
-                        "--xattrs-include=user.*"});
+            args.insert(args.begin() + 3, {"--xattrs", "--xattrs-include=security.capability",
+                                           "--xattrs-include=trusted.overlay.*", "--xattrs-include=user.*"});
 
         error = RunCommand(args, {}, import_dir, arc, TFile(), HelperCapabilities, memCgroup, verboseError, true);
     } else if (compress_format == "squashfs") {
-        TTuple args = { "unsquashfs",
-                        "-force",
-                        "-no-progress",
-                        "-processors", "1",
-                        "-dest", temp.ToString(),
-                        archive.ToString() };
+        TTuple args = {"unsquashfs", "-force", "-no-progress",  "-processors",
+                       "1",          "-dest",  temp.ToString(), archive.ToString()};
 
         TFile parent_dir;
         error = parent_dir.OpenDirStrictAt(import_dir, "..");
@@ -1060,25 +1046,22 @@ TError TStorage::ExportArchive(const TPath &archive, const std::string &compress
     }
 
     if (compress_format == "tar") {
-        TTuple args = { config().daemon().tar_path(),
-                        "--one-file-system",
-                        "--numeric-owner",
-                        "--preserve-permissions",
-                        "--sparse",
-                        "--transform", "s:^./::",
-                        compress_option,
-                        "--create",
-                        "-C", Path.ToString(), "." };
+        TTuple args = {config().daemon().tar_path(), "--one-file-system", "--numeric-owner", "--preserve-permissions",
+                       "--sparse",
+                       "--transform",
+                       "s:^./::",
+                       compress_option,
+                       "--create",
+                       "-C",
+                       Path.ToString(),
+                       "."};
 
         if (TarSupportsXattrs())
             args.insert(args.begin() + 4, "--xattrs");
 
         error = RunCommand(args, dir, TFile(), arc);
     } else if (compress_format == "squashfs") {
-        TTuple args = { "mksquashfs", Path.ToString(),
-                        archive.BaseName(),
-                        "-noappend",
-                        "-comp", compress_option };
+        TTuple args = {"mksquashfs", Path.ToString(), archive.BaseName(), "-noappend", "-comp", compress_option};
 
         error = RunCommand(args, dir, TFile());
     } else
@@ -1189,7 +1172,6 @@ TError TStorage::SanitizeLayer(const TPath &layer) {
 
         /* Handle aufs whiteouts and metadata */
         if (StringStartsWith(walk.Name(), ".wh.")) {
-
             /* Remove it completely */
             error = walk.Path.RemoveAll();
             if (error)

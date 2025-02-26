@@ -9,6 +9,7 @@ public:
     TScopedLock ScopedLock() {
         return TScopedLock(Mutex);
     }
+
 private:
     std::mutex Mutex;
 };

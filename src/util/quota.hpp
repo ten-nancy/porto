@@ -1,14 +1,15 @@
 #pragma once
 
+#include <sys/quota.h>
+
+#include <unordered_map>
+#include <unordered_set>
+
 #include "util/error.hpp"
 #include "util/path.hpp"
 
-#include <sys/quota.h>
-#include <unordered_set>
-#include <unordered_map>
-
 class TProjectQuota {
-    static constexpr const char * PROJECT_QUOTA_FILE = "quota.project";
+    static constexpr const char *PROJECT_QUOTA_FILE = "quota.project";
     static const uint32_t PROJECT_QUOTA_MAGIC = 0xd9c03f14;
 
     TPath Device;
@@ -30,8 +31,8 @@ class TProjectQuota {
     static TError InventProjectId(const TPath &path, uint32_t &id);
 
     bool SeenInode(const struct stat *st);
-    dqblk* FindQuota(uint32_t id);
-    dqblk* SearchQuota(uint32_t id);
+    dqblk *FindQuota(uint32_t id);
+    dqblk *SearchQuota(uint32_t id);
     TError WalkQuotaFile(int fd, unsigned id, int index, int depth);
     TError ScanQuotaFile(const TPath &quotaPath);
     TError WalkInodes(const TPathWalk &walk);
@@ -48,7 +49,9 @@ public:
     uint64_t InodeLimit = 0;
     uint64_t InodeUsage = 0;
 
-    TProjectQuota(const TPath &path) { Path = path; }
+    TProjectQuota(const TPath &path) {
+        Path = path;
+    }
     TError Enable();
 
     bool Exists();

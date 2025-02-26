@@ -1,19 +1,20 @@
+#include "quota.hpp"
+
 #include <fstream>
+#include <mutex>
 #include <string>
 
-#include "util/proc.hpp"
-#include "quota.hpp"
-#include "log.hpp"
 #include "config.hpp"
-#include <mutex>
+#include "log.hpp"
+#include "util/proc.hpp"
 
 extern "C" {
-#include <linux/quota.h>
-#include <linux/dqblk_xfs.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <ftw.h>
+#include <linux/dqblk_xfs.h>
+#include <linux/quota.h>
+#include <unistd.h>
 }
 
 #ifndef PRJQUOTA
@@ -21,7 +22,7 @@ extern "C" {
 #endif
 
 #ifndef DQF_SYS_FILE
-#define DQF_SYS_FILE    0x10000
+#define DQF_SYS_FILE 0x10000
 #endif
 
 struct fsxattr {
@@ -33,31 +34,31 @@ struct fsxattr {
 };
 
 #ifndef FS_IOC_FSGETXATTR
-#define FS_IOC_FSGETXATTR   _IOR('X', 31, struct fsxattr)
+#define FS_IOC_FSGETXATTR _IOR('X', 31, struct fsxattr)
 #endif
 
 #ifndef FS_IOC_FSSETXATTR
-#define FS_IOC_FSSETXATTR   _IOW('X', 32, struct fsxattr)
+#define FS_IOC_FSSETXATTR _IOW('X', 32, struct fsxattr)
 #endif
 
 #ifndef FS_XFLAG_PROJINHERIT
-#define FS_XFLAG_PROJINHERIT    0x00000200
+#define FS_XFLAG_PROJINHERIT 0x00000200
 #endif
 
 /* First generic header */
 struct v2_disk_dqheader {
-    __le32 dqh_magic;    /* Magic number identifying file */
-    __le32 dqh_version;  /* File version */
+    __le32 dqh_magic;   /* Magic number identifying file */
+    __le32 dqh_version; /* File version */
 };
 
 /* Header with type and version specific information */
 struct v2_disk_dqinfo {
-    __le32 dqi_bgrace;   /* Time before block soft limit becomes hard limit */
-    __le32 dqi_igrace;   /* Time before inode soft limit becomes hard limit */
-    __le32 dqi_flags;    /* Flags for quotafile (DQF_*) */
-    __le32 dqi_blocks;   /* Number of blocks in file */
-    __le32 dqi_free_blk; /* Number of first free block in the list */
-    __le32 dqi_free_entry;    /* Number of block with at least one free entry */
+    __le32 dqi_bgrace;     /* Time before block soft limit becomes hard limit */
+    __le32 dqi_igrace;     /* Time before inode soft limit becomes hard limit */
+    __le32 dqi_flags;      /* Flags for quotafile (DQF_*) */
+    __le32 dqi_blocks;     /* Number of blocks in file */
+    __le32 dqi_free_blk;   /* Number of first free block in the list */
+    __le32 dqi_free_entry; /* Number of block with at least one free entry */
 };
 
 static std::mutex QuotaMutex;
@@ -72,19 +73,23 @@ TError TProjectQuota::InitProjectQuotaFile(const TPath &path) {
         struct v2_disk_dqinfo info;
         char zero[1024 * 2 - 8 * 4];
     } quota_init = {
-        .header = {
-            .dqh_magic = PROJECT_QUOTA_MAGIC,
-            .dqh_version = 1,
+        .header =
+            {
+                .dqh_magic = PROJECT_QUOTA_MAGIC,
+                .dqh_version = 1,
+            },
+        .info =
+            {
+                .dqi_bgrace = 7 * 24 * 60 * 60,
+                .dqi_igrace = 7 * 24 * 60 * 60,
+                .dqi_flags = 0,
+                .dqi_blocks = 2, /* header and root */
+                .dqi_free_blk = 0,
+                .dqi_free_entry = 0,
+            },
+        .zero = {
+            0,
         },
-        .info = {
-            .dqi_bgrace = 7 * 24 * 60 * 60,
-            .dqi_igrace = 7 * 24 * 60 * 60,
-            .dqi_flags = 0,
-            .dqi_blocks = 2, /* header and root */
-            .dqi_free_blk = 0,
-            .dqi_free_entry = 0,
-        },
-        .zero = {0, },
     };
     int fd, ret, saved_errno;
 
@@ -113,20 +118,16 @@ TError TProjectQuota::Enable() {
         return error;
 
     statv.qs_version = FS_QSTATV_VERSION1;
-    if (!quotactl(QCMD(Q_XGETQSTATV, PRJQUOTA), Device.c_str(),
-                  0, (caddr_t)&statv)) {
-        if ((statv.qs_flags & FS_QUOTA_PDQ_ACCT) &&
-                (statv.qs_flags & FS_QUOTA_PDQ_ENFD))
+    if (!quotactl(QCMD(Q_XGETQSTATV, PRJQUOTA), Device.c_str(), 0, (caddr_t)&statv)) {
+        if ((statv.qs_flags & FS_QUOTA_PDQ_ACCT) && (statv.qs_flags & FS_QUOTA_PDQ_ENFD))
             return OK;
     }
 
     auto lock = LockQuota();
 
-    if (!quotactl(QCMD(Q_GETINFO, PRJQUOTA), Device.c_str(),
-                  0, (caddr_t)&info)) {
-        if (!(info.dqi_flags & DQF_SYS_FILE) ||
-            !quotactl(QCMD(Q_QUOTAON, PRJQUOTA), Device.c_str(),
-                      0, NULL) || errno == EEXIST)
+    if (!quotactl(QCMD(Q_GETINFO, PRJQUOTA), Device.c_str(), 0, (caddr_t)&info)) {
+        if (!(info.dqi_flags & DQF_SYS_FILE) || !quotactl(QCMD(Q_QUOTAON, PRJQUOTA), Device.c_str(), 0, NULL) ||
+            errno == EEXIST)
             return OK;
         return TError(EError::NotSupported, errno, "Cannot enable project quota");
     }
@@ -142,8 +143,7 @@ TError TProjectQuota::Enable() {
             return error;
     }
 
-    ret = quotactl(QCMD(Q_QUOTAON, PRJQUOTA), Device.c_str(),
-                   QFMT_VFS_V1, (caddr_t)quota.c_str());
+    ret = quotactl(QCMD(Q_QUOTAON, PRJQUOTA), Device.c_str(), QFMT_VFS_V1, (caddr_t)quota.c_str());
     if (ret)
         error = TError(EError::NotSupported, errno, "Cannot enable project quota");
 
@@ -154,14 +154,11 @@ TError TProjectQuota::GetProjectId(const TPath &path, uint32_t &id) {
     struct fsxattr attr;
     int fd, ret, saved_errno;
 
-    fd = open(path.c_str(), O_CLOEXEC | O_RDONLY | O_NOCTTY |
-                            O_NOFOLLOW | O_NOATIME | O_NONBLOCK);
+    fd = open(path.c_str(), O_CLOEXEC | O_RDONLY | O_NOCTTY | O_NOFOLLOW | O_NOATIME | O_NONBLOCK);
     if (fd < 0 && errno == EPERM)
-        fd = open(path.c_str(), O_CLOEXEC | O_RDONLY | O_NOCTTY |
-                                O_NOFOLLOW | O_NONBLOCK);
+        fd = open(path.c_str(), O_CLOEXEC | O_RDONLY | O_NOCTTY | O_NOFOLLOW | O_NONBLOCK);
     if (fd < 0)
-        fd = open(path.DirName().c_str(), O_RDONLY | O_CLOEXEC |
-                          O_DIRECTORY);
+        fd = open(path.DirName().c_str(), O_RDONLY | O_CLOEXEC | O_DIRECTORY);
     if (fd < 0)
         return TError::System("Cannot open: " + path.ToString());
     ret = ioctl(fd, FS_IOC_FSGETXATTR, &attr);
@@ -257,7 +254,7 @@ bool TProjectQuota::SeenInode(const struct stat *st) {
     return !Inodes.insert(static_cast<uint32_t>(st->st_ino)).second;
 }
 
-dqblk* TProjectQuota::FindQuota(uint32_t id) {
+dqblk *TProjectQuota::FindQuota(uint32_t id) {
     auto quota = Quotas.find(id);
     if (quota != Quotas.end())
         return quota->second.get();
@@ -265,7 +262,7 @@ dqblk* TProjectQuota::FindQuota(uint32_t id) {
         return nullptr;
 }
 
-dqblk* TProjectQuota::SearchQuota(uint32_t id) {
+dqblk *TProjectQuota::SearchQuota(uint32_t id) {
     dqblk *quota;
     quota = FindQuota(id);
     if (!quota) {
@@ -279,8 +276,7 @@ TError TProjectQuota::WalkQuotaFile(int fd, unsigned id, int index, int depth) {
     __u32 block[256];
     int i;
 
-    if (pread(fd, &block, sizeof(block),
-              index * sizeof(block)) != sizeof(block))
+    if (pread(fd, &block, sizeof(block), index * sizeof(block)) != sizeof(block))
         return TError::System("Cannot read quota block {}", index);
 
     id <<= 8;
@@ -348,7 +344,7 @@ TError TProjectQuota::WalkUnlinked() {
 
     proc = opendir("/proc");
     if (!proc)
-        return TError::System( "Cannot open \"/proc\"");
+        return TError::System("Cannot open \"/proc\"");
 
     while ((ent = readdir(proc))) {
         uint64_t fdSize;
@@ -405,8 +401,7 @@ TError TProjectQuota::WalkUnlinked() {
                 unlinkedInodes++;
                 unlinkedSpace += st.st_blocks << 9;
 
-                L_WRN("Found unlinked inode for {}: \"{}/{}\" {} bytes",
-                      id, path, curPath, st.st_blocks << 9);
+                L_WRN("Found unlinked inode for {}: \"{}/{}\" {} bytes", id, path, curPath, st.st_blocks << 9);
 
                 quota->dqb_curinodes++;
                 quota->dqb_curspace += st.st_blocks << 9;
@@ -417,8 +412,7 @@ TError TProjectQuota::WalkUnlinked() {
     closedir(proc);
 
     if (unlinkedInodes)
-        L_WRN("Found {} unlinked inodes, total {} bytes",
-              unlinkedInodes, unlinkedSpace);
+        L_WRN("Found {} unlinked inodes, total {} bytes", unlinkedInodes, unlinkedSpace);
 
     return OK;
 }
@@ -461,18 +455,16 @@ TError TProjectQuota::UpdateQuota(uint32_t id, const dqblk *realQuota, std::stri
     };
 
     if (quota.dqb_curinodes != realQuota->dqb_curinodes) {
-        addToMessage(fmt::format("Update inode count for {}: {} -> {} ({})",
-          id, quota.dqb_curinodes, realQuota->dqb_curinodes,
-          (int64_t)(realQuota->dqb_curinodes - quota.dqb_curinodes)));
+        addToMessage(fmt::format("Update inode count for {}: {} -> {} ({})", id, quota.dqb_curinodes,
+                                 realQuota->dqb_curinodes, (int64_t)(realQuota->dqb_curinodes - quota.dqb_curinodes)));
 
         quota.dqb_curinodes = realQuota->dqb_curinodes;
         quota.dqb_valid |= QIF_INODES;
     }
 
     if (quota.dqb_curspace != realQuota->dqb_curspace) {
-        addToMessage(fmt::format("Update space usage for {}: {} -> {} ({})",
-          id, quota.dqb_curspace, realQuota->dqb_curspace,
-          (int64_t)(realQuota->dqb_curspace - quota.dqb_curspace)));
+        addToMessage(fmt::format("Update space usage for {}: {} -> {} ({})", id, quota.dqb_curspace,
+                                 realQuota->dqb_curspace, (int64_t)(realQuota->dqb_curspace - quota.dqb_curspace)));
 
         quota.dqb_curspace = realQuota->dqb_curspace;
         quota.dqb_valid |= QIF_SPACE;
@@ -489,8 +481,7 @@ TError TProjectQuota::UpdateQuota(uint32_t id, const dqblk *realQuota, std::stri
     }
 
     if (quota.dqb_valid) {
-        if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA),
-                     Device.c_str(), id, (caddr_t)&quota))
+        if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(), id, (caddr_t)&quota))
             return TError::System("Cannot set project quota \"{}\" at \"{}\"", id, Device.c_str());
 
         quotactl(QCMD(Q_SYNC, PRJQUOTA), Device.c_str(), 0, NULL);
@@ -515,23 +506,20 @@ TError TProjectQuota::FindProject() {
         return error;
 
     if (ProjectId != ExpectedId)
-        return TError(EError::InvalidValue, "Unexpected project quota: {} in {} expected {}",
-                      Path, ProjectId, ExpectedId);
+        return TError(EError::InvalidValue, "Unexpected project quota: {} in {} expected {}", Path, ProjectId,
+                      ExpectedId);
 
     return OK;
 }
 
 /* find any writable non-bind mountpoint */
-static TError LookupDeviceRoot(dev_t dev, TMount& mnt) {
-    //FIXME check overmounted mountpoints, for example via GetMountId
+static TError LookupDeviceRoot(dev_t dev, TMount &mnt) {
+    // FIXME check overmounted mountpoints, for example via GetMountId
     std::ifstream istrm("/proc/self/mountinfo", std::ios::in);
     std::string line;
 
     while (std::getline(istrm, line)) {
-        if (!mnt.ParseMountinfo(line) &&
-                dev == mnt.Device &&
-                mnt.BindPath.IsRoot() &&
-                !(mnt.MntFlags & MS_RDONLY)) {
+        if (!mnt.ParseMountinfo(line) && dev == mnt.Device && mnt.BindPath.IsRoot() && !(mnt.MntFlags & MS_RDONLY)) {
             if (mnt.Type != "ext4" && mnt.Type != "xfs")
                 return TError(EError::NotSupported, "Unsupported filesystem {}", mnt.Type);
             return OK;
@@ -581,8 +569,7 @@ TError TProjectQuota::Load() {
     if (error)
         return error;
 
-    if (quotactl(QCMD(Q_GETQUOTA, PRJQUOTA), Device.c_str(),
-                 ProjectId, (caddr_t)&quota))
+    if (quotactl(QCMD(Q_GETQUOTA, PRJQUOTA), Device.c_str(), ProjectId, (caddr_t)&quota))
         return TError::System("Cannot get quota state");
 
     SpaceLimit = quota.dqb_bhardlimit * QIF_DQBLKSIZE;
@@ -620,32 +607,26 @@ TError TProjectQuota::Create() {
         return TError(EError::Busy, "Path {} already in project quota {}", Path, CurrentId);
 
     if (!quotactl(QCMD(Q_GETQUOTA, PRJQUOTA), Device.c_str(), ProjectId, (caddr_t)&quota)) {
-
         if ((quota.dqb_curinodes || quota.dqb_curspace) &&
-                (!config().volumes().keep_project_quota_id() ||
-                 CurrentId != ProjectId)) {
-
-            L_WRN("Project quota {} for {} already in use: {} inodes {} bytes",
-                    ProjectId, Path, quota.dqb_curinodes, quota.dqb_curspace);
+            (!config().volumes().keep_project_quota_id() || CurrentId != ProjectId)) {
+            L_WRN("Project quota {} for {} already in use: {} inodes {} bytes", ProjectId, Path, quota.dqb_curinodes,
+                  quota.dqb_curspace);
 
             /* Reset quota counters */
             memset(&quota, 0, sizeof(quota));
             quota.dqb_valid = QIF_ALL;
-            if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(),
-                         ProjectId, (caddr_t)&quota))
+            if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(), ProjectId, (caddr_t)&quota))
                 L_WRN("Cannot reset project quota {}: {}", ProjectId, TError::System(""));
         }
     } else if (errno != ENOENT)
         return TError::System("Cannot get quota state");
 
     memset(&quota, 0, sizeof(quota));
-    quota.dqb_bhardlimit = SpaceLimit / QIF_DQBLKSIZE +
-                !!(SpaceLimit % QIF_DQBLKSIZE);
+    quota.dqb_bhardlimit = SpaceLimit / QIF_DQBLKSIZE + !!(SpaceLimit % QIF_DQBLKSIZE);
     quota.dqb_ihardlimit = InodeLimit;
     quota.dqb_valid = QIF_LIMITS;
 
-    if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(),
-                 ProjectId, (caddr_t)&quota))
+    if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(), ProjectId, (caddr_t)&quota))
         return TError::System("Cannot set project quota {} limits", ProjectId);
 
     quotactl(QCMD(Q_SYNC, PRJQUOTA), Device.c_str(), 0, NULL);
@@ -675,13 +656,11 @@ TError TProjectQuota::Resize() {
         return error;
 
     memset(&quota, 0, sizeof(quota));
-    quota.dqb_bhardlimit = SpaceLimit / QIF_DQBLKSIZE +
-                           !!(SpaceLimit % QIF_DQBLKSIZE);
+    quota.dqb_bhardlimit = SpaceLimit / QIF_DQBLKSIZE + !!(SpaceLimit % QIF_DQBLKSIZE);
     quota.dqb_ihardlimit = InodeLimit;
     quota.dqb_valid = QIF_LIMITS;
 
-    if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(),
-                 ProjectId, (caddr_t)&quota))
+    if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(), ProjectId, (caddr_t)&quota))
         return TError::System("Cannot set project quota {} limits", ProjectId);
 
     quotactl(QCMD(Q_SYNC, PRJQUOTA), Device.c_str(), 0, NULL);
@@ -709,10 +688,8 @@ TError TProjectQuota::Destroy() {
             quota.dqb_valid = QIF_ALL;
     }
 
-    if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(),
-                 ProjectId, (caddr_t)&quota))
-        L_WRN("Cannot set project quota {}: {}",
-                ProjectId, TError::System(""));
+    if (quotactl(QCMD(Q_SETQUOTA, PRJQUOTA), Device.c_str(), ProjectId, (caddr_t)&quota))
+        L_WRN("Cannot set project quota {}: {}", ProjectId, TError::System(""));
 
     quotactl(QCMD(Q_SYNC, PRJQUOTA), Device.c_str(), 0, NULL);
 

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "util/path.hpp"
-
 #include <mutex>
+
+#include "util/path.hpp"
 
 class LockTimer {
     static __thread uint64_t LockTime;
@@ -38,7 +38,6 @@ public:
     void lock();
     std::unique_lock<std::mutex> UniqueLock();
 };
-
 
 class TFileMutex {
     TFile File;

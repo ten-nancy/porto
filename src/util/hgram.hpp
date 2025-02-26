@@ -12,8 +12,8 @@ class THistogram {
 
 public:
     THistogram(const std::vector<unsigned> &buckets)
-    : Buckets(buckets)
-    , Values(buckets.size())
+        : Buckets(buckets),
+          Values(buckets.size())
     {}
 
     inline int GetBucket(unsigned value) const {

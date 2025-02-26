@@ -1,12 +1,13 @@
-#include "config.hpp"
 #include "event.hpp"
+
+#include "client.hpp"
+#include "config.hpp"
+#include "container.hpp"
 #include "util/log.hpp"
 #include "util/unix.hpp"
 #include "util/worker.hpp"
-#include "container.hpp"
-#include "client.hpp"
 
-class TEventWorker : public TWorker<TEvent, std::priority_queue<TEvent>> {
+class TEventWorker: public TWorker<TEvent, std::priority_queue<TEvent>> {
 protected:
     TClient client;
 
@@ -46,35 +47,36 @@ protected:
     }
 
 public:
-    TEventWorker(const size_t nr) : TWorker("portod-EV", nr), client("<event>") {}
+    TEventWorker(const size_t nr)
+        : TWorker("portod-EV", nr),
+          client("<event>")
+    {}
 };
 
 std::string TEvent::GetMsg() const {
     switch (Type) {
-        case EEventType::ChildExit:
-            return "exit status " + std::to_string(Exit.Status)
-                + " for child pid " + std::to_string(Exit.Pid);
-        case EEventType::Exit:
-            return "exit status " + std::to_string(Exit.Status)
-                + " for pid " + std::to_string(Exit.Pid);
-        case EEventType::RotateLogs:
-            return "rotate logs";
-        case EEventType::Respawn:
-            return "respawn";
-        case EEventType::OOM:
-            return "OOM";
-        case EEventType::WaitTimeout:
-            return "wait timeout";
-        case EEventType::DestroyAgedContainer:
-            return "destroy aged container";
-        case EEventType::DestroyWeakContainer:
-            return "destroy weak container";
-        default:
-            return "unknown event";
+    case EEventType::ChildExit:
+        return "exit status " + std::to_string(Exit.Status) + " for child pid " + std::to_string(Exit.Pid);
+    case EEventType::Exit:
+        return "exit status " + std::to_string(Exit.Status) + " for pid " + std::to_string(Exit.Pid);
+    case EEventType::RotateLogs:
+        return "rotate logs";
+    case EEventType::Respawn:
+        return "respawn";
+    case EEventType::OOM:
+        return "OOM";
+    case EEventType::WaitTimeout:
+        return "wait timeout";
+    case EEventType::DestroyAgedContainer:
+        return "destroy aged container";
+    case EEventType::DestroyWeakContainer:
+        return "destroy weak container";
+    default:
+        return "unknown event";
     }
 }
 
-bool TEvent::operator<(const TEvent& rhs) const {
+bool TEvent::operator<(const TEvent &rhs) const {
     return DueMs >= rhs.DueMs;
 }
 

@@ -1,19 +1,19 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <list>
 #include <atomic>
 #include <functional>
+#include <list>
+#include <string>
+#include <vector>
 
-#include "util/error.hpp"
 #include "util/cred.hpp"
+#include "util/error.hpp"
 #include "util/string.hpp"
 
 extern "C" {
+#include <fts.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
-#include <fts.h>
 }
 
 struct TStatFS {
@@ -31,14 +31,14 @@ struct TStatFS {
 struct TMount;
 
 #ifndef MS_LAZYTIME
-# define MS_LAZYTIME    (1<<25)
+#define MS_LAZYTIME (1 << 25)
 #endif
 
 /* inverted flags with lower priority */
-#define MS_ALLOW_WRITE  (1ull << 60)
-#define MS_ALLOW_EXEC   (1ull << 61)
-#define MS_ALLOW_SUID   (1ull << 62)
-#define MS_ALLOW_DEV    (1ull << 63)
+#define MS_ALLOW_WRITE (1ull << 60)
+#define MS_ALLOW_EXEC  (1ull << 61)
+#define MS_ALLOW_SUID  (1ull << 62)
+#define MS_ALLOW_DEV   (1ull << 63)
 
 class TPath {
 private:
@@ -47,7 +47,7 @@ private:
 
     TPath AddComponent(const TPath &component) const;
 
-    static void RootFilesChownFilter(const struct stat& st, uid_t &uid, gid_t &gid) {
+    static void RootFilesChownFilter(const struct stat &st, uid_t &uid, gid_t &gid) {
         if (st.st_uid != 0)
             uid = (uid_t)-1;
         if (st.st_gid != 0)
@@ -55,62 +55,81 @@ private:
     }
 
 public:
-    TPath(const std::string &path) : Path(path) {}
-    TPath(const char *path) : Path(path) {}
-    TPath() : Path("") {}
+    TPath(const std::string &path)
+        : Path(path)
+    {}
+    TPath(const char *path)
+        : Path(path)
+    {}
+    TPath()
+        : Path("")
+    {}
 
-    bool IsAbsolute() const { return Path[0] == '/'; }
+    bool IsAbsolute() const {
+        return Path[0] == '/';
+    }
 
-    bool IsSimple() const { return Path.find('/') == std::string::npos; }
+    bool IsSimple() const {
+        return Path.find('/') == std::string::npos;
+    }
 
-    bool IsRoot() const { return Path == "/"; }
+    bool IsRoot() const {
+        return Path == "/";
+    }
 
-    bool IsEmpty() const { return Path.empty(); }
+    bool IsEmpty() const {
+        return Path.empty();
+    }
 
-    explicit operator bool() const { return !Path.empty(); }
+    explicit operator bool() const {
+        return !Path.empty();
+    }
 
-    bool IsNormal() const { return Path == NormalPath().Path; }
+    bool IsNormal() const {
+        return Path == NormalPath().Path;
+    }
 
     bool IsInside(const TPath &base) const;
 
     bool StartsWithDotDot() const {
-        return Path[0] == '.' && Path[1] == '.' &&
-              (Path[2] == '/' || Path[2] == '\0');
+        return Path[0] == '.' && Path[1] == '.' && (Path[2] == '/' || Path[2] == '\0');
     }
 
     std::vector<std::string> Components() const;
 
-    const char *c_str() const noexcept { return Path.c_str(); }
+    const char *c_str() const noexcept {
+        return Path.c_str();
+    }
 
     TPath operator+(const TPath &p) const {
         return TPath(Path + p.ToString());
     }
 
-    friend bool operator==(const TPath& a, const TPath& b) {
+    friend bool operator==(const TPath &a, const TPath &b) {
         return a.ToString() == b.ToString();
     }
 
-    friend bool operator!=(const TPath& a, const TPath& b) {
+    friend bool operator!=(const TPath &a, const TPath &b) {
         return a.ToString() != b.ToString();
     }
 
-    friend bool operator<(const TPath& a, const TPath& b) {
+    friend bool operator<(const TPath &a, const TPath &b) {
         return a.ToString() < b.ToString();
     }
 
-    friend bool operator>(const TPath& a, const TPath& b) {
+    friend bool operator>(const TPath &a, const TPath &b) {
         return a.ToString() > b.ToString();
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const TPath& path) {
+    friend std::ostream &operator<<(std::ostream &os, const TPath &path) {
         return os << path.ToString();
     }
 
-    friend TPath operator/(const TPath& a, const TPath &b) {
+    friend TPath operator/(const TPath &a, const TPath &b) {
         return a.AddComponent(b);
     }
 
-    TPath& operator/=(const TPath &b) {
+    TPath &operator/=(const TPath &b) {
         *this = AddComponent(b);
         return *this;
     }
@@ -167,7 +186,7 @@ public:
         return Lchown(cred.GetUid(), cred.GetGid());
     }
 
-    typedef void (*TChownFilter)(const struct stat&, uid_t &uid, gid_t &gid);
+    typedef void (*TChownFilter)(const struct stat &, uid_t &uid, gid_t &gid);
     TError ChownRecursive(uid_t uid, gid_t gid, TChownFilter filter = nullptr) const;
     TError ChownRecursive(const TCred &cred, TChownFilter filter = nullptr) const {
         return ChownRecursive(cred.GetUid(), cred.GetGid(), filter);
@@ -209,7 +228,8 @@ public:
     static std::string UmountFlagsToString(uint64_t flags);
 
     TError FindMount(TMount &mount, bool exact = false) const;
-    static TError ListMountsByFilter(std::vector<TMount> &list, pid_t pid, std::function<bool(const TMount&)> filter = [](const TMount &) { return true; });
+    static TError ListMountsByFilter(std::vector<TMount> &list, pid_t pid,
+                                     std::function<bool(const TMount &)> filter = [](const TMount &) { return true; });
     static TError ListFuseMounts(std::vector<TMount> &list, pid_t pid = 0);
     static TError ListAllMounts(std::vector<TMount> &list, pid_t pid = 0);
 
@@ -258,9 +278,8 @@ struct TMount {
     TError ParseMountinfo(const std::string &line);
     bool HasOption(const std::string &option) const;
 
-    friend std::ostream& operator<<(std::ostream& stream, const TMount& mount) {
-        stream << mount.Source << " " << mount.Target
-               << " -t " << mount.Type << " -o " << mount.Options;
+    friend std::ostream &operator<<(std::ostream &stream, const TMount &mount) {
+        stream << mount.Source << " " << mount.Target << " -t " << mount.Type << " -o " << mount.Options;
         return stream;
     }
 
@@ -270,22 +289,34 @@ struct TMount {
 
 class TFile {
 private:
-    TFile(const TFile&) = delete;
-    TFile& operator=(const TFile&) = delete;
+    TFile(const TFile &) = delete;
+    TFile &operator=(const TFile &) = delete;
 
-    TError Access(const TPath &root, const TCred &cred,
-                  std::function<TError(const TCred&)> check) const;
+    TError Access(const TPath &root, const TCred &cred, std::function<TError(const TCred &)> check) const;
     bool IsMountPointFallback(const TError &error) const;
+
 public:
     union {
         const int Fd;
         int SetFd;
     };
-    TFile() : Fd(-1) { }
-    TFile(int fd) : Fd(fd) { }
-    TFile(TFile &&other) : Fd(other.Fd) { other.SetFd = -1; }
-    ~TFile() { Close(); }
-    explicit operator bool() const { return Fd >= 0; }
+    TFile()
+        : Fd(-1)
+    {}
+    TFile(int fd)
+        : Fd(fd)
+    {}
+    TFile(TFile &&other)
+        : Fd(other.Fd)
+    {
+        other.SetFd = -1;
+    }
+    ~TFile() {
+        Close();
+    }
+    explicit operator bool() const {
+        return Fd >= 0;
+    }
     TError Open(const TPath &path, int flags);
     TError OpenRead(const TPath &path);
     TError OpenWrite(const TPath &path);
@@ -362,10 +393,10 @@ public:
     TError PivotRoot() const;
 
     enum AccessMode {
-        E   = 000, /* Exists */
-        X   = 001,
-        W   = 002,
-        R   = 004,
+        E = 000, /* Exists */
+        X = 001,
+        W = 002,
+        R = 004,
     };
 
     static bool Access(const struct stat &st, const TCred &cred, enum AccessMode mode);
@@ -385,10 +416,11 @@ class TPathWalk {
 private:
     FTS *Fts = nullptr;
 
-    TPathWalk(const TPathWalk&) = delete;
-    TPathWalk& operator=(const TPathWalk&) = delete;
+    TPathWalk(const TPathWalk &) = delete;
+    TPathWalk &operator=(const TPathWalk &) = delete;
     static int CompareNames(const FTSENT **a, const FTSENT **b);
     static int CompareInodes(const FTSENT **a, const FTSENT **b);
+
 public:
     FTSENT *Ent = nullptr;
 
@@ -398,13 +430,20 @@ public:
     struct stat *Stat;
 
     TPathWalk() {}
-    ~TPathWalk() { Close(); }
-    TError Open(const TPath &path, int fts_flags = FTS_COMFOLLOW | FTS_NOCHDIR | FTS_PHYSICAL | FTS_XDEV, int (*compar)(const FTSENT **, const FTSENT **) = nullptr);
+    ~TPathWalk() {
+        Close();
+    }
+    TError Open(const TPath &path, int fts_flags = FTS_COMFOLLOW | FTS_NOCHDIR | FTS_PHYSICAL | FTS_XDEV,
+                int (*compar)(const FTSENT **, const FTSENT **) = nullptr);
     TError OpenScan(const TPath &path);
     TError OpenList(const TPath &path);
     TError OpenNoStat(const TPath &path);
     TError Next();
-    std::string Name() { return Ent ? Ent->fts_name : ""; }
-    int Level() { return Ent ? Ent->fts_level : -2; }
+    std::string Name() {
+        return Ent ? Ent->fts_name : "";
+    }
+    int Level() {
+        return Ent ? Ent->fts_level : -2;
+    }
     void Close();
 };

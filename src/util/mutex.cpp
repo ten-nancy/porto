@@ -1,14 +1,17 @@
-#include "log.hpp"
 #include "mutex.hpp"
-#include "unix.hpp"
 
 #include <sys/file.h>
 
-__thread uint64_t LockTimer::LockTime  = 0;
+#include "log.hpp"
+#include "unix.hpp"
+
+__thread uint64_t LockTimer::LockTime = 0;
 __thread uint64_t LockTimer::LockLevel = 0;
 __thread uint64_t LockTimer::LockStart = 0;
 
-LockTimer::LockTimer(const std::string &name) : Name(name) {
+LockTimer::LockTimer(const std::string &name)
+    : Name(name)
+{
     auto level = LockLevel++;
 
     StartTime = GetCurrentTimeMs();
@@ -38,7 +41,9 @@ LockTimer::~LockTimer() {
         LockTime += endTime - LockStart;
 }
 
-MeasuredMutex::MeasuredMutex(const std::string &name) : Name(name) {}
+MeasuredMutex::MeasuredMutex(const std::string &name)
+    : Name(name)
+{}
 
 void MeasuredMutex::lock() {
     LockTimer timer(Name);

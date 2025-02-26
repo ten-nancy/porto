@@ -1,25 +1,26 @@
-#include <algorithm>
-#include <sstream>
-#include <iomanip>
-
-#include "rpc.hpp"
 #include "client.hpp"
-#include "container.hpp"
-#include "volume.hpp"
-#include "property.hpp"
-#include "config.hpp"
-#include "util/log.hpp"
-#include "util/proc.hpp"
-#include "util/string.hpp"
-#include "portod.hpp"
-#include "event.hpp"
 
 #include <google/protobuf/io/coded_stream.h>
 
+#include <algorithm>
+#include <iomanip>
+#include <sstream>
+
+#include "config.hpp"
+#include "container.hpp"
+#include "event.hpp"
+#include "portod.hpp"
+#include "property.hpp"
+#include "rpc.hpp"
+#include "util/log.hpp"
+#include "util/proc.hpp"
+#include "util/string.hpp"
+#include "volume.hpp"
+
 extern "C" {
 #include <sys/epoll.h>
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 }
@@ -30,7 +31,9 @@ __thread TClient *CL = nullptr;
 
 extern bool SupportCgroupNs;
 
-TClient::TClient(int fd) : TEpollSource(fd) {
+TClient::TClient(int fd)
+    : TEpollSource(fd)
+{
     ConnectionTime = GetCurrentTimeMs();
     ActivityTimeMs = ConnectionTime;
     if (fd >= 0)
@@ -104,7 +107,7 @@ TError TClient::IdentifyClient() {
     Pid = cr.pid;
 
     error = GetProcStartTime(Pid, StartTime);
-    if(error)
+    if (error)
         return TError(EError::Unknown, "Can not get client process start time: {}", error);
 
     Cred = TaskCred;
@@ -168,20 +171,16 @@ TError TClient::IdentifyClient() {
     Id = fmt::format("CL{}:{}({}) CT{}:{}", Fd, Comm, Pid, ct->Id, ct->Name);
 
     if (AccessLevel <= EAccessLevel::ReadOnly || Verbose) {
-        L("Connected {} cred={} tcred={} access={} ns={} wns={}",
-                    Id, Cred.ToString(), TaskCred.ToString(),
-                    AccessLevel <= EAccessLevel::ReadOnly ? "ro" : "rw",
-                    PortoNamespace, WriteNamespace);
+        L("Connected {} cred={} tcred={} access={} ns={} wns={}", Id, Cred.ToString(), TaskCred.ToString(),
+          AccessLevel <= EAccessLevel::ReadOnly ? "ro" : "rw", PortoNamespace, WriteNamespace);
     }
 
     return OK;
 }
 
 TError TClient::CheckContainerState(EContainerState state) {
-    if (state != EContainerState::Running &&
-            state != EContainerState::Starting &&
-            state != EContainerState::Stopping &&
-            state != EContainerState::Meta)
+    if (state != EContainerState::Running && state != EContainerState::Starting && state != EContainerState::Stopping &&
+        state != EContainerState::Meta)
         return TError(EError::Permission, "Client from containers in state " + TContainer::StateName(state));
 
     return OK;
@@ -209,8 +208,7 @@ TError TClient::ComposeName(const std::string &name, std::string &relative_name)
     }
 
     if (!StringStartsWith(name, PortoNamespace))
-        return TError(EError::Permission,
-                "Cannot access container " + name + " from namespace " + PortoNamespace);
+        return TError(EError::Permission, "Cannot access container " + name + " from namespace " + PortoNamespace);
 
     relative_name = name.substr(PortoNamespace.length());
     return OK;
@@ -236,17 +234,14 @@ TError TClient::ResolveName(const std::string &relative_name, std::string &name)
     if (name == ".")
         name = ROOT_CONTAINER;
 
-    if (StringStartsWith(name, PortoNamespace) ||
-            StringStartsWith(name, ClientContainer->Name + "/") ||
-            StringStartsWith(ClientContainer->Name + "/", name + "/") ||
-            name == ROOT_CONTAINER)
+    if (StringStartsWith(name, PortoNamespace) || StringStartsWith(name, ClientContainer->Name + "/") ||
+        StringStartsWith(ClientContainer->Name + "/", name + "/") || name == ROOT_CONTAINER)
         return OK;
 
     return TError(EError::Permission, "container name out of namespace: " + relative_name);
 }
 
-TError TClient::ResolveContainer(const std::string &relative_name,
-                                 std::shared_ptr<TContainer> &ct) const {
+TError TClient::ResolveContainer(const std::string &relative_name, std::shared_ptr<TContainer> &ct) const {
     std::string name;
     TError error = ResolveName(relative_name, name);
     if (error)
@@ -268,8 +263,7 @@ TError TClient::ControlVolume(const TPath &path, std::shared_ptr<TVolume> &volum
     return OK;
 }
 
-TError TClient::ReadContainer(const std::string &relative_name,
-                              std::shared_ptr<TContainer> &ct) {
+TError TClient::ReadContainer(const std::string &relative_name, std::shared_ptr<TContainer> &ct) {
     auto lock = LockContainers();
     TError error = ResolveContainer(relative_name, ct);
     if (error)
@@ -281,8 +275,7 @@ TError TClient::ReadContainer(const std::string &relative_name,
     return OK;
 }
 
-TError TClient::WriteContainer(const std::string &relative_name,
-                               std::shared_ptr<TContainer> &ct, bool child) {
+TError TClient::WriteContainer(const std::string &relative_name, std::shared_ptr<TContainer> &ct, bool child) {
     if (AccessLevel <= EAccessLevel::ReadOnly)
         return TError(EError::Permission, "Write access denied");
     auto lock = LockContainers();
@@ -346,7 +339,6 @@ bool TClient::CanSetUidGid() const {
 }
 
 TError TClient::CanControl(const TCred &other) {
-
     if (AccessLevel <= EAccessLevel::ReadOnly)
         return TError(EError::Permission, "Write access denied");
 
@@ -357,7 +349,6 @@ TError TClient::CanControl(const TCred &other) {
 }
 
 TError TClient::CanControl(const TContainer &ct, bool child) {
-
     if (AccessLevel <= EAccessLevel::ReadOnly)
         return TError(EError::Permission, "Write access denied");
 
@@ -369,12 +360,9 @@ TError TClient::CanControl(const TContainer &ct, bool child) {
      * Also allow write access to client subcontainers for self/... notation.
      * Self-isolate allows write access to self.
      */
-    if (StringStartsWith(ct.Name, WriteNamespace) ||
-        (child && ct.Name == TContainer::ParentName(WriteNamespace)) ||
+    if (StringStartsWith(ct.Name, WriteNamespace) || (child && ct.Name == TContainer::ParentName(WriteNamespace)) ||
         ct.IsChildOf(*ClientContainer) ||
-        (&ct == &*ClientContainer &&
-         (child || ct.AccessLevel == EAccessLevel::SelfIsolate))) {
-
+        (&ct == &*ClientContainer && (child || ct.AccessLevel == EAccessLevel::SelfIsolate))) {
         /* Everybody can create first level containers */
         if (!(child && ct.IsRoot())) {
             TError error = CanControl(ct.OwnerCred);
@@ -384,14 +372,15 @@ TError TClient::CanControl(const TContainer &ct, bool child) {
 
         const auto &clientName = ClientContainer->Name;
         if (clientName != "/" && !ct.OwnerContainers.empty()) {
-            for (const auto &allowedClient : ct.OwnerContainers) {
+            for (const auto &allowedClient: ct.OwnerContainers) {
                 // allow write access from parent containers too
                 // for example: if container has owner_containers=a/b
                 // then container a also will have access
                 if (StringSubpath(clientName, allowedClient))
                     return OK;
             }
-            return TError(EError::Permission, "Write access denied: client {} is not allowed by owner_containers property", clientName);
+            return TError(EError::Permission,
+                          "Write access denied: client {} is not allowed by owner_containers property", clientName);
         }
 
         return OK;
@@ -500,7 +489,6 @@ TError TClient::ReadRequest(rpc::TContainerRequest &request) {
 }
 
 TError TClient::SendResponse(bool first) {
-
     if (Fd < 0)
         return OK; /* Connection closed */
 
@@ -554,7 +542,6 @@ next:
 }
 
 TError TClient::QueueResponse(rpc::TContainerResponse &response) {
-
     if (Receiving)
         return TError(EError::Busy, "QueueResponse while Receiving");
 
@@ -590,14 +577,14 @@ TError TClient::QueueReport(const TContainerReport &report, bool async) {
     }
 
     if (Verbose)
-        L_RSP("{}Wait name={} state={} {}={} to {}", async ? "Async" : "", report.Name,
-                report.State, report.Label, report.Value, Id);
+        L_RSP("{}Wait name={} state={} {}={} to {}", async ? "Async" : "", report.Name, report.State, report.Label,
+              report.Value, Id);
 
     return QueueResponse(rsp);
 }
 
-TError TClient::MakeReport(const std::string &name, const std::string &state, bool async,
-                           const std::string &label, const std::string &value) {
+TError TClient::MakeReport(const std::string &name, const std::string &state, bool async, const std::string &label,
+                           const std::string &value) {
     auto lock = Lock();
     TError error;
 

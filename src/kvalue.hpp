@@ -1,8 +1,9 @@
 #pragma once
 
-#include <string>
-#include <map>
 #include <list>
+#include <map>
+#include <string>
+
 #include "common.hpp"
 #include "util/path.hpp"
 
@@ -13,7 +14,9 @@ public:
     std::string Name;
     std::map<std::string, std::string> Data;
 
-    TKeyValue(const TPath &path) : Path(path) { }
+    TKeyValue(const TPath &path)
+        : Path(path)
+    {}
 
     friend bool operator<(const TKeyValue &lhs, const TKeyValue &rhs) {
         return lhs.Name < rhs.Name;

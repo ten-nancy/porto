@@ -1,23 +1,25 @@
 #include "property.hpp"
-#include "task.hpp"
-#include "config.hpp"
-#include "cgroup.hpp"
-#include "client.hpp"
-#include "rpc.hpp"
-#include "container.hpp"
-#include "util/error.hpp"
-#include "volume.hpp"
-#include "network.hpp"
-#include "util/log.hpp"
-#include "util/string.hpp"
-#include "util/unix.hpp"
-#include "util/proc.hpp"
-#include "util/cred.hpp"
-#include "util/md5.hpp"
+
+#include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/text_format.h>
+
 #include <memory>
 
-#include <google/protobuf/text_format.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
+#include "cgroup.hpp"
+#include "client.hpp"
+#include "config.hpp"
+#include "container.hpp"
+#include "network.hpp"
+#include "rpc.hpp"
+#include "task.hpp"
+#include "util/cred.hpp"
+#include "util/error.hpp"
+#include "util/log.hpp"
+#include "util/md5.hpp"
+#include "util/proc.hpp"
+#include "util/string.hpp"
+#include "util/unix.hpp"
+#include "volume.hpp"
 
 extern "C" {
 #include <sys/sysinfo.h>
@@ -30,17 +32,17 @@ extern bool EnableRwCgroupFs;
 extern bool EnableDockerMode;
 
 thread_local std::shared_ptr<TContainer> CT = nullptr;
-std::map<std::string, TProperty*> ContainerProperties;
+std::map<std::string, TProperty *> ContainerProperties;
 
-void LoadMap(const rpc::TUintMap &value, const TUintMap& current, TUintMap &result) {
+void LoadMap(const rpc::TUintMap &value, const TUintMap &current, TUintMap &result) {
     if (value.merge())
         result = current;
-    for (const auto &kv : value.map())
+    for (const auto &kv: value.map())
         result[kv.key()] = kv.val();
 }
 
 void DumpMap(const TUintMap &value, rpc::TUintMap &result) {
-    for (const auto &it : value) {
+    for (const auto &it: value) {
         auto kv = result.add_map();
         kv->set_key(it.first);
         kv->set_val(it.second);
@@ -78,11 +80,9 @@ TError TProperty::Load(const rpc::TContainerSpec &) {
     return OK;
 }
 
-void TProperty::Dump(rpc::TContainerSpec &) const {
-}
+void TProperty::Dump(rpc::TContainerSpec &) const {}
 
-void TProperty::Dump(rpc::TContainerStatus &) const {
-}
+void TProperty::Dump(rpc::TContainerStatus &) const {}
 
 TError TProperty::Save(std::string &value) {
     return Get(value);
@@ -92,11 +92,9 @@ TError TProperty::Load(const std::string &value) {
     return Set(value);
 }
 
-void TProperty::DumpIndexed(const std::string &, rpc::TContainerSpec &) {
-}
+void TProperty::DumpIndexed(const std::string &, rpc::TContainerSpec &) {}
 
-void TProperty::DumpIndexed(const std::string &, rpc::TContainerStatus &) {
-}
+void TProperty::DumpIndexed(const std::string &, rpc::TContainerStatus &) {}
 
 TError TProperty::SetIndexed(const std::string &, const std::string &) {
     return TError(EError::InvalidValue, "Invalid subscript for property");
@@ -117,8 +115,7 @@ TError TProperty::CanGet() const {
     if (!IsSupported)
         return TError(EError::NotSupported, "{} is not supported", Name);
 
-    if (IsRuntimeOnly && (CT->State == EContainerState::Stopped ||
-                          CT->State == EContainerState::Starting))
+    if (IsRuntimeOnly && (CT->State == EContainerState::Stopped || CT->State == EContainerState::Starting))
         return TError(EError::InvalidState, "{} is not available in {} state", Name, TContainer::StateName(CT->State));
 
     if (IsDeadOnly && CT->State != EContainerState::Dead)
@@ -149,10 +146,12 @@ TError TProperty::Start(void) {
     return OK;
 }
 
-class TCapLimit : public TProperty {
+class TCapLimit: public TProperty {
 public:
-    TCapLimit() : TProperty(P_CAPABILITIES, EProperty::CAPABILITIES,
-            "Limit capabilities in container: SYS_ADMIN;NET_ADMIN;... see man capabilities") {}
+    TCapLimit()
+        : TProperty(P_CAPABILITIES, EProperty::CAPABILITIES,
+                    "Limit capabilities in container: SYS_ADMIN;NET_ADMIN;... see man capabilities")
+    {}
 
     TError Reset() override {
         CT->CapLimit &= ~CT->CapExtra;
@@ -162,8 +161,7 @@ public:
     TError CommitLimit(TCapabilities &limit) {
         if (limit & ~AllCapabilities) {
             limit &= ~AllCapabilities;
-            return TError(EError::InvalidValue,
-                          "Unsupported capability: " + limit.Format());
+            return TError(EError::InvalidValue, "Unsupported capability: " + limit.Format());
         }
 
         CT->CapLimit = limit;
@@ -248,10 +246,12 @@ public:
     }
 } static Capabilities;
 
-class TCapAmbient : public TProperty {
+class TCapAmbient: public TProperty {
 public:
-    TCapAmbient() : TProperty(P_CAPABILITIES_AMBIENT, EProperty::CAPABILITIES_AMBIENT,
-            "Raise capabilities in container: NET_BIND_SERVICE;SYS_PTRACE;...") {}
+    TCapAmbient()
+        : TProperty(P_CAPABILITIES_AMBIENT, EProperty::CAPABILITIES_AMBIENT,
+                    "Raise capabilities in container: NET_BIND_SERVICE;SYS_PTRACE;...")
+    {}
 
     void Init(void) override {
         IsSupported = HasAmbientCapabilities;
@@ -260,8 +260,7 @@ public:
     TError CommitAmbient(TCapabilities &ambient) {
         if (ambient & ~AllCapabilities) {
             ambient &= ~AllCapabilities;
-            return TError(EError::InvalidValue,
-                          "Unsupported capability: " + ambient.Format());
+            return TError(EError::InvalidValue, "Unsupported capability: " + ambient.Format());
         }
         // rewrite ambient
         CT->CapAmbient = ambient;
@@ -344,10 +343,10 @@ public:
     }
 } static CapabilitiesAmbient;
 
-class TCapAllowed : public TProperty {
+class TCapAllowed: public TProperty {
 public:
-    TCapAllowed() : TProperty(P_CAPABILITIES_ALLOWED, EProperty::NONE,
-            "Allowed capabilities in container")
+    TCapAllowed()
+        : TProperty(P_CAPABILITIES_ALLOWED, EProperty::NONE, "Allowed capabilities in container")
     {
         IsReadOnly = true;
     }
@@ -374,10 +373,11 @@ public:
     }
 } static CapAllowed;
 
-class TCapAmbientAllowed : public TProperty {
+class TCapAmbientAllowed: public TProperty {
 public:
-    TCapAmbientAllowed() : TProperty(P_CAPABILITIES_AMBIENT_ALLOWED, EProperty::NONE,
-            "Allowed ambient capabilities in container (deprecated)")
+    TCapAmbientAllowed()
+        : TProperty(P_CAPABILITIES_AMBIENT_ALLOWED, EProperty::NONE,
+                    "Allowed ambient capabilities in container (deprecated)")
     {
         IsReadOnly = true;
     }
@@ -408,9 +408,11 @@ public:
     }
 } static CapAmbientAllowed;
 
-class TCwd : public TProperty {
+class TCwd: public TProperty {
 public:
-    TCwd() : TProperty(P_CWD, EProperty::CWD, "Container working directory") {}
+    TCwd()
+        : TProperty(P_CWD, EProperty::CWD, "Container working directory")
+    {}
     TError Get(std::string &value) const override {
         value = CT->GetCwd().ToString();
         return OK;
@@ -439,10 +441,12 @@ public:
     }
 } static Cwd;
 
-class TUlimitProperty : public TProperty {
+class TUlimitProperty: public TProperty {
 public:
-    TUlimitProperty() : TProperty(P_ULIMIT, EProperty::ULIMIT,
-            "Process limits: as|core|data|locks|memlock|nofile|nproc|stack: [soft]|unlimited [hard];... (see man prlimit)")
+    TUlimitProperty()
+        : TProperty(P_ULIMIT, EProperty::ULIMIT,
+                    "Process limits: as|core|data|locks|memlock|nofile|nproc|stack: [soft]|unlimited [hard];... (see "
+                    "man prlimit)")
     {
         IsDynamic = true;
     }
@@ -510,8 +514,7 @@ public:
             auto type = TUlimit::GetType(u.type());
             if (type < 0)
                 return TError(EError::InvalidValue, "Invalid ulimit: {}", u.type());
-            ulimit.Set(type, u.has_soft() ? u.soft() : RLIM_INFINITY,
-                       u.has_hard() ? u.hard() : RLIM_INFINITY, true);
+            ulimit.Set(type, u.has_soft() ? u.soft() : RLIM_INFINITY, u.has_hard() ? u.hard() : RLIM_INFINITY, true);
         }
         CT->Ulimit = ulimit;
         CT->SetProp(EProperty::ULIMIT);
@@ -519,10 +522,10 @@ public:
     }
 } static Ulimit;
 
-class TCpuPolicy : public TProperty {
+class TCpuPolicy: public TProperty {
 public:
-    TCpuPolicy() : TProperty(P_CPU_POLICY, EProperty::CPU_POLICY,
-            "CPU policy: rt, high, normal, batch, idle")
+    TCpuPolicy()
+        : TProperty(P_CPU_POLICY, EProperty::CPU_POLICY, "CPU policy: rt, high, normal, batch, idle")
     {
         IsDynamic = true;
     }
@@ -531,8 +534,8 @@ public:
         return OK;
     }
     TError Set(const std::string &value) override {
-        if (value != "rt" && value != "high" && value != "normal" &&
-                value != "batch"  && value != "idle" && value != "iso" && value != "nosmt")
+        if (value != "rt" && value != "high" && value != "normal" && value != "batch" && value != "idle" &&
+            value != "iso" && value != "nosmt")
             return TError(EError::InvalidValue, "Unknown cpu policy: " + value);
         if (CT->CpuPolicy != value) {
             CT->CpuPolicy = value;
@@ -555,10 +558,10 @@ public:
     }
 } static CpuPolicy;
 
-class TIoPolicy : public TProperty {
+class TIoPolicy: public TProperty {
 public:
-    TIoPolicy() : TProperty(P_IO_POLICY, EProperty::IO_POLICY,
-            "IO policy: none | rt | high | normal | batch | idle")
+    TIoPolicy()
+        : TProperty(P_IO_POLICY, EProperty::IO_POLICY, "IO policy: none | rt | high | normal | batch | idle")
     {
         IsDynamic = true;
     }
@@ -606,10 +609,10 @@ public:
     }
 } static IoPolicy;
 
-class TIoWeight : public TProperty {
+class TIoWeight: public TProperty {
 public:
-    TIoWeight() : TProperty(P_IO_WEIGHT, EProperty::IO_WEIGHT,
-            "IO weight: 0.01..100, default is 1")
+    TIoWeight()
+        : TProperty(P_IO_WEIGHT, EProperty::IO_WEIGHT, "IO weight: 0.01..100, default is 1")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_BLKIO;
@@ -642,23 +645,24 @@ public:
         return Set(val);
     }
 
-     void Dump(rpc::TContainerSpec &spec) const override {
-         spec.set_io_weight(CT->IoWeight);
-     }
+    void Dump(rpc::TContainerSpec &spec) const override {
+        spec.set_io_weight(CT->IoWeight);
+    }
 
-     bool Has(const rpc::TContainerSpec &spec) const override {
-         return spec.has_io_weight();
-     }
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_io_weight();
+    }
 
-     TError Load(const rpc::TContainerSpec &spec) override {
-         return Set(spec.io_weight());
-     }
+    TError Load(const rpc::TContainerSpec &spec) override {
+        return Set(spec.io_weight());
+    }
 } static IoWeight;
 
-class TTaskCred : public TProperty {
+class TTaskCred: public TProperty {
 public:
-    TTaskCred() : TProperty(P_TASK_CRED, EProperty::NONE,
-            "Credentials: uid gid groups...") {}
+    TTaskCred()
+        : TProperty(P_TASK_CRED, EProperty::NONE, "Credentials: uid gid groups...")
+    {}
     TError Get(std::string &value) const override {
         value = fmt::format("{} {}", CT->TaskCred.GetUid(), CT->TaskCred.GetGid());
         for (auto gid: CT->TaskCred.Groups)
@@ -690,10 +694,11 @@ public:
     }
 } static TaskCred;
 
-class TUser : public TProperty {
+class TUser: public TProperty {
 public:
-    TUser() : TProperty(P_USER, EProperty::USER,
-            "Start command with given user") {}
+    TUser()
+        : TProperty(P_USER, EProperty::USER, "Start command with given user")
+    {}
     TError Get(std::string &value) const override {
         value = CT->TaskCred.User();
         return OK;
@@ -737,9 +742,11 @@ public:
     }
 } static User;
 
-class TGroup : public TProperty {
+class TGroup: public TProperty {
 public:
-    TGroup() : TProperty(P_GROUP, EProperty::GROUP, "Start command with given group") {}
+    TGroup()
+        : TProperty(P_GROUP, EProperty::GROUP, "Start command with given group")
+    {}
     TError Get(std::string &value) const override {
         value = CT->TaskCred.Group();
         return OK;
@@ -776,10 +783,11 @@ public:
     }
 } static Group;
 
-class TOwnerCred : public TProperty {
+class TOwnerCred: public TProperty {
 public:
-    TOwnerCred() : TProperty(P_OWNER_CRED, EProperty::NONE,
-            "Owner credentials: uid gid groups...") {}
+    TOwnerCred()
+        : TProperty(P_OWNER_CRED, EProperty::NONE, "Owner credentials: uid gid groups...")
+    {}
     TError Get(std::string &value) const override {
         value = fmt::format("{} {}", CT->OwnerCred.GetUid(), CT->OwnerCred.GetGid());
         for (auto gid: CT->OwnerCred.Groups)
@@ -822,10 +830,11 @@ public:
     }
 } static OwnerCred;
 
-class TOwnerUser : public TProperty {
+class TOwnerUser: public TProperty {
 public:
-    TOwnerUser() : TProperty(P_OWNER_USER, EProperty::OWNER_USER,
-            "Container owner user") {}
+    TOwnerUser()
+        : TProperty(P_OWNER_USER, EProperty::OWNER_USER, "Container owner user")
+    {}
 
     TError Get(std::string &value) const override {
         value = CT->OwnerCred.User();
@@ -840,9 +849,7 @@ public:
             return error;
 
         /* try to preserve current group if possible */
-        if (newCred.IsMemberOf(oldGid) ||
-                CL->Cred.IsMemberOf(oldGid) ||
-                CL->IsSuperUser())
+        if (newCred.IsMemberOf(oldGid) || CL->Cred.IsMemberOf(oldGid) || CL->IsSuperUser())
             newCred.SetGid(oldGid);
 
         error = CL->CanControl(newCred);
@@ -868,10 +875,11 @@ public:
     }
 } static OwnerUser;
 
-class TOwnerGroup : public TProperty {
+class TOwnerGroup: public TProperty {
 public:
-    TOwnerGroup() : TProperty(P_OWNER_GROUP, EProperty::OWNER_GROUP,
-            "Container owner group") {}
+    TOwnerGroup()
+        : TProperty(P_OWNER_GROUP, EProperty::OWNER_GROUP, "Container owner group")
+    {}
 
     TError Get(std::string &value) const override {
         value = CT->OwnerCred.Group();
@@ -884,11 +892,9 @@ public:
         if (error)
             return error;
 
-        if (!CT->OwnerCred.IsMemberOf(newGid) &&
-                !CL->Cred.IsMemberOf(newGid) &&
-                !CL->IsSuperUser())
-            return TError(EError::Permission, "Desired group : " + value +
-                    " isn't in current user supplementary group list");
+        if (!CT->OwnerCred.IsMemberOf(newGid) && !CL->Cred.IsMemberOf(newGid) && !CL->IsSuperUser())
+            return TError(EError::Permission,
+                          "Desired group : " + value + " isn't in current user supplementary group list");
 
         CT->OwnerCred.SetGid(newGid);
         CT->SetProp(EProperty::OWNER_GROUP);
@@ -908,9 +914,11 @@ public:
     }
 } static OwnerGroup;
 
-class TOwnerContainers : public TProperty {
+class TOwnerContainers: public TProperty {
 public:
-    TOwnerContainers() : TProperty(P_OWNER_CONTAINERS, EProperty::OWNER_CONTAINERS, "Containers that have write access to container") {
+    TOwnerContainers()
+        : TProperty(P_OWNER_CONTAINERS, EProperty::OWNER_CONTAINERS, "Containers that have write access to container")
+    {
         IsDynamic = true;
     }
 
@@ -922,7 +930,7 @@ public:
     TError Set(const std::string &value) override {
         std::vector<std::string> values;
 
-        for (const auto &name : SplitEscapedString(value, ';')) {
+        for (const auto &name: SplitEscapedString(value, ';')) {
             std::string realName;
             auto error = CL->ResolveName(name, realName);
             if (error)
@@ -948,10 +956,10 @@ public:
     }
 } static OwnerContainers;
 
-class TMemoryGuarantee : public TProperty {
+class TMemoryGuarantee: public TProperty {
 public:
-    TMemoryGuarantee() : TProperty(P_MEM_GUARANTEE, EProperty::MEM_GUARANTEE,
-            "Guaranteed amount of memory [bytes]")
+    TMemoryGuarantee()
+        : TProperty(P_MEM_GUARANTEE, EProperty::MEM_GUARANTEE, "Guaranteed amount of memory [bytes]")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_MEMORY;
@@ -1000,14 +1008,14 @@ public:
     }
 
     TError Load(const rpc::TContainerSpec &spec) override {
-      return Set(spec.memory_guarantee());
+        return Set(spec.memory_guarantee());
     }
 } static MemoryGuarantee;
 
-class TMemTotalGuarantee : public TProperty {
+class TMemTotalGuarantee: public TProperty {
 public:
-    TMemTotalGuarantee() : TProperty(P_MEM_GUARANTEE_TOTAL, EProperty::NONE,
-            "Total memory guarantee for container hierarchy")
+    TMemTotalGuarantee()
+        : TProperty(P_MEM_GUARANTEE_TOTAL, EProperty::NONE, "Total memory guarantee for container hierarchy")
     {
         IsReadOnly = true;
     }
@@ -1024,10 +1032,10 @@ public:
     }
 } static MemTotalGuarantee;
 
-class TExtraProps : public TProperty {
+class TExtraProps: public TProperty {
 public:
-    TExtraProps() : TProperty(P_EXTRA_PROPS, EProperty::EXTRA_PROPS,
-            "Container's extra properties")
+    TExtraProps()
+        : TProperty(P_EXTRA_PROPS, EProperty::EXTRA_PROPS, "Container's extra properties")
     {
         IsReadOnly = true;
         IsHidden = true;
@@ -1046,10 +1054,11 @@ public:
     }
 } static ExtraProps;
 
-class TCommand : public TProperty {
+class TCommand: public TProperty {
 public:
-    TCommand() : TProperty(P_COMMAND, EProperty::COMMAND,
-            "Command executed upon container start") {}
+    TCommand()
+        : TProperty(P_COMMAND, EProperty::COMMAND, "Command executed upon container start")
+    {}
     TError Reset() override {
         return Set("");
     }
@@ -1090,10 +1099,11 @@ public:
     }
 } static Command;
 
-class TSeccomp : public TProperty {
+class TSeccomp: public TProperty {
 public:
-    TSeccomp() : TProperty(P_SECCOMP, EProperty::SECCOMP,
-            "Seccomp profile rules") {}
+    TSeccomp()
+        : TProperty(P_SECCOMP, EProperty::SECCOMP, "Seccomp profile rules")
+    {}
 
     bool Has(const rpc::TContainerSpec &spec) const override {
         return spec.has_seccomp();
@@ -1136,10 +1146,11 @@ public:
     }
 } static Seccomp;
 
-class TSeccompName : public TProperty {
+class TSeccompName: public TProperty {
 public:
-    TSeccompName() : TProperty(P_SECCOMP_NAME, EProperty::SECCOMP_NAME,
-            "Seccomp profile") {}
+    TSeccompName()
+        : TProperty(P_SECCOMP_NAME, EProperty::SECCOMP_NAME, "Seccomp profile")
+    {}
 
     bool Has(const rpc::TContainerSpec &spec) const override {
         return spec.has_seccomp_name();
@@ -1171,10 +1182,11 @@ public:
     }
 } static SeccompName;
 
-class TSessionInfoProperty : public TProperty {
+class TSessionInfoProperty: public TProperty {
 public:
-    TSessionInfoProperty() : TProperty(P_SESSION_INFO, EProperty::SESSION_INFO,
-            "Session info, format: <kind> <id> <user>") {}
+    TSessionInfoProperty()
+        : TProperty(P_SESSION_INFO, EProperty::SESSION_INFO, "Session info, format: <kind> <id> <user>")
+    {}
 
     TError Set(const std::string &value) override {
         return CT->SessionInfo.Parse(value);
@@ -1201,10 +1213,11 @@ public:
 
 } static SessionInfoProperty;
 
-class TCommandArgv : public TProperty {
+class TCommandArgv: public TProperty {
 public:
-    TCommandArgv() : TProperty(P_COMMAND_ARGV, EProperty::COMMAND_ARGV,
-            "Verbatim command line, format: argv0\\targv1\\t...") {}
+    TCommandArgv()
+        : TProperty(P_COMMAND_ARGV, EProperty::COMMAND_ARGV, "Verbatim command line, format: argv0\\targv1\\t...")
+    {}
     TError Get(std::string &value) const override {
         value = MergeEscapeStrings(CT->CommandArgv, '\t');
         return OK;
@@ -1281,10 +1294,10 @@ public:
     }
 } static CommandArgv;
 
-class TCoreCommand : public TProperty {
+class TCoreCommand: public TProperty {
 public:
-    TCoreCommand() : TProperty(P_CORE_COMMAND, EProperty::CORE_COMMAND,
-            "Command for receiving core dump")
+    TCoreCommand()
+        : TProperty(P_CORE_COMMAND, EProperty::CORE_COMMAND, "Command for receiving core dump")
     {
         IsDynamic = true;
     }
@@ -1321,27 +1334,22 @@ public:
     }
 } static CoreCommand;
 
-class TVirtMode : public TProperty {
+class TVirtMode: public TProperty {
 public:
-    TVirtMode() : TProperty(P_VIRT_MODE, EProperty::VIRT_MODE,
-            "Virtualization mode: os|app|job|host") {}
+    TVirtMode()
+        : TProperty(P_VIRT_MODE, EProperty::VIRT_MODE, "Virtualization mode: os|app|job|host")
+    {}
 
     TError Get(std::string &value) const override {
-        value = CT->OsMode ? "os" :
-                CT->JobMode ? "job" :
-                CT->HostMode ? "host" :
-                CT->DockerMode ? "docker" : "app";
+        value = CT->OsMode ? "os" : CT->JobMode ? "job" : CT->HostMode ? "host" : CT->DockerMode ? "docker" : "app";
         return OK;
     }
 
     TError Set(const std::string &value) override {
-        if (value != "app" &&
-                value != "os" &&
-                value != "job" &&
-                (value != "docker" || !EnableDockerMode) &&
-                value != "host" &&
-                // TODO: remove this value later
-                value != "fuse")
+        if (value != "app" && value != "os" && value != "job" && (value != "docker" || !EnableDockerMode) &&
+            value != "host" &&
+            // TODO: remove this value later
+            value != "fuse")
             return TError(EError::InvalidValue, "Unknown: {}", value);
 
         CT->OsMode = false;
@@ -1390,9 +1398,11 @@ public:
     }
 } static VirtMode;
 
-class TUserNs : public TProperty {
+class TUserNs: public TProperty {
 public:
-    TUserNs() : TProperty(P_USERNS, EProperty::USERNS, "New user namespace") {}
+    TUserNs()
+        : TProperty(P_USERNS, EProperty::USERNS, "New user namespace")
+    {}
 
     TError Reset() override {
         return Set(false);
@@ -1434,9 +1444,11 @@ public:
     }
 } static UserNs;
 
-class TUnshareOnExec : public TProperty {
+class TUnshareOnExec: public TProperty {
 public:
-    TUnshareOnExec() : TProperty(P_UNSHARE_ON_EXEC, EProperty::UNSHARE_ON_EXEC, "Call unshare(CLONE_NEWNS) right before exec()") {}
+    TUnshareOnExec()
+        : TProperty(P_UNSHARE_ON_EXEC, EProperty::UNSHARE_ON_EXEC, "Call unshare(CLONE_NEWNS) right before exec()")
+    {}
 
     TError Reset() override {
         return Set(false);
@@ -1474,9 +1486,11 @@ public:
     }
 } static UnshareOnExec;
 
-class TEnableFuse : public TProperty {
+class TEnableFuse: public TProperty {
 public:
-    TEnableFuse() : TProperty(P_ENABLE_FUSE, EProperty::ENABLE_FUSE, "Aborts fuse connections and unmounts fuse filesystems") {}
+    TEnableFuse()
+        : TProperty(P_ENABLE_FUSE, EProperty::ENABLE_FUSE, "Aborts fuse connections and unmounts fuse filesystems")
+    {}
 
     TError Start() override {
         IsSupported = config().daemon().enable_fuse();
@@ -1514,10 +1528,11 @@ public:
 
 } static EnableFuse;
 
-class TCgroupFs : public TProperty {
+class TCgroupFs: public TProperty {
 public:
-    TCgroupFs() : TProperty(P_CGROUPFS, EProperty::CGROUPFS,
-            "Cgroup fs: none|ro|rw") {}
+    TCgroupFs()
+        : TProperty(P_CGROUPFS, EProperty::CGROUPFS, "Cgroup fs: none|ro|rw")
+    {}
 
     TError Reset() override {
         return Set("none");
@@ -1526,7 +1541,8 @@ public:
     TError Start(void) override {
         if (CT->CgroupFs == ECgroupFs::Rw) {
             if (!(EnableOsModeCgroupNs && CT->OsMode) && !EnableRwCgroupFs)
-                return TError(EError::Permission, "Cgroup namespaces disabled in portod.conf: rw access to cgroupfs denied");
+                return TError(EError::Permission,
+                              "Cgroup namespaces disabled in portod.conf: rw access to cgroupfs denied");
         }
 
         if (EnableOsModeCgroupNs && !CT->HasProp(EProperty::CGROUPFS) && CT->OsMode)
@@ -1536,15 +1552,15 @@ public:
 
     TError Get(std::string &value) const override {
         switch (CT->CgroupFs) {
-            case ECgroupFs::None:
-                value = "none";
-                break;
-            case ECgroupFs::Ro:
-                value = "ro";
-                break;
-            case ECgroupFs::Rw:
-                value = "rw";
-                break;
+        case ECgroupFs::None:
+            value = "none";
+            break;
+        case ECgroupFs::Ro:
+            value = "ro";
+            break;
+        case ECgroupFs::Rw:
+            value = "rw";
+            break;
         }
         return OK;
     }
@@ -1579,9 +1595,11 @@ public:
     }
 } static CgroupFs;
 
-class TStdStreamProperty : public TProperty {
+class TStdStreamProperty: public TProperty {
 public:
-    TStdStreamProperty(const std::string &name, EProperty prop, const std::string &desc) : TProperty(name, prop, desc) {}
+    TStdStreamProperty(const std::string &name, EProperty prop, const std::string &desc)
+        : TProperty(name, prop, desc)
+    {}
 
     TError SaveStream(std::string &value, const TStdStream &stream) {
         value = fmt::format("{};{};{}", stream.PathStat.st_ino, stream.PathStat.st_dev, stream.Path.ToString());
@@ -1613,10 +1631,11 @@ public:
     }
 };
 
-class TStdinPath : public TStdStreamProperty {
+class TStdinPath: public TStdStreamProperty {
 public:
-    TStdinPath() : TStdStreamProperty(P_STDIN_PATH, EProperty::STDIN,
-            "Container standard input path") {}
+    TStdinPath()
+        : TStdStreamProperty(P_STDIN_PATH, EProperty::STDIN, "Container standard input path")
+    {}
 
     TError Save(std::string &value) override {
         return TStdStreamProperty::SaveStream(value, CT->Stdin);
@@ -1652,10 +1671,11 @@ public:
     }
 } static StdinPath;
 
-class TStdoutPath : public TStdStreamProperty {
+class TStdoutPath: public TStdStreamProperty {
 public:
-    TStdoutPath() : TStdStreamProperty(P_STDOUT_PATH, EProperty::STDOUT,
-            "Container standard output path") {}
+    TStdoutPath()
+        : TStdStreamProperty(P_STDOUT_PATH, EProperty::STDOUT, "Container standard output path")
+    {}
 
     TError Save(std::string &value) override {
         return TStdStreamProperty::SaveStream(value, CT->Stdout);
@@ -1666,7 +1686,7 @@ public:
     }
 
     TError Get(std::string &value) const override {
-        value =  CT->Stdout.Path.ToString();
+        value = CT->Stdout.Path.ToString();
         return OK;
     }
 
@@ -1697,10 +1717,11 @@ public:
     }
 } static StdoutPath;
 
-class TStderrPath : public TStdStreamProperty {
+class TStderrPath: public TStdStreamProperty {
 public:
-    TStderrPath() : TStdStreamProperty(P_STDERR_PATH, EProperty::STDERR,
-            "Container standard error path") {}
+    TStderrPath()
+        : TStdStreamProperty(P_STDERR_PATH, EProperty::STDERR, "Container standard error path")
+    {}
 
     TError Save(std::string &value) override {
         return TStdStreamProperty::SaveStream(value, CT->Stderr);
@@ -1724,13 +1745,13 @@ public:
     }
 
     TError Start(void) override {
-         if (CT->OsMode && !CT->HasProp(EProperty::STDERR))
+        if (CT->OsMode && !CT->HasProp(EProperty::STDERR))
             CT->Stderr.SetOutside("/dev/null");
-         return OK;
+        return OK;
     }
 
     void Dump(rpc::TContainerSpec &spec) const override {
-       spec.set_stderr_path(CT->Stderr.Path.ToString());
+        spec.set_stderr_path(CT->Stderr.Path.ToString());
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
@@ -1742,10 +1763,10 @@ public:
     }
 } static StderrPath;
 
-class TStdoutLimit : public TProperty {
+class TStdoutLimit: public TProperty {
 public:
-    TStdoutLimit() : TProperty(P_STDOUT_LIMIT, EProperty::STDOUT_LIMIT,
-            "Limit for stored stdout and stderr size")
+    TStdoutLimit()
+        : TProperty(P_STDOUT_LIMIT, EProperty::STDOUT_LIMIT, "Limit for stored stdout and stderr size")
     {
         IsDynamic = true;
     }
@@ -1757,8 +1778,7 @@ public:
     TError Set(uint64_t limit) {
         uint64_t limit_max = config().container().stdout_limit_max();
         if (limit > limit_max && !CL->IsSuperUser())
-            return TError(EError::Permission,
-                          "Maximum limit is: " + std::to_string(limit_max));
+            return TError(EError::Permission, "Maximum limit is: " + std::to_string(limit_max));
 
         CT->Stdout.Limit = limit;
         CT->Stderr.Limit = limit;
@@ -1788,10 +1808,10 @@ public:
     }
 } static StdoutLimit;
 
-class TStdoutOffset : public TProperty {
+class TStdoutOffset: public TProperty {
 public:
-    TStdoutOffset() : TProperty(P_STDOUT_OFFSET, EProperty::NONE,
-            "Offset of stored stdout")
+    TStdoutOffset()
+        : TProperty(P_STDOUT_OFFSET, EProperty::NONE, "Offset of stored stdout")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -1806,10 +1826,10 @@ public:
     }
 } static StdoutOffset;
 
-class TStderrOffset : public TProperty {
+class TStderrOffset: public TProperty {
 public:
-    TStderrOffset() : TProperty(P_STDERR_OFFSET, EProperty::NONE,
-            "Offset of stored stderr")
+    TStderrOffset()
+        : TProperty(P_STDERR_OFFSET, EProperty::NONE, "Offset of stored stderr")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -1824,10 +1844,10 @@ public:
     }
 } static StderrOffset;
 
-class TStdout : public TProperty {
+class TStdout: public TProperty {
 public:
-    TStdout() : TProperty(P_STDOUT, EProperty::NONE,
-            "Read stdout [[offset][:length]]")
+    TStdout()
+        : TProperty(P_STDOUT, EProperty::NONE, "Read stdout [[offset][:length]]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -1847,10 +1867,10 @@ public:
     }
 } static Stdout;
 
-class TStderr : public TProperty {
+class TStderr: public TProperty {
 public:
-    TStderr() : TProperty(P_STDERR, EProperty::NONE,
-            "Read stderr [[offset][:length]])")
+    TStderr()
+        : TProperty(P_STDERR, EProperty::NONE, "Read stderr [[offset][:length]])")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -1870,10 +1890,10 @@ public:
     }
 } static Stderr;
 
-class TBindDns : public TProperty {
+class TBindDns: public TProperty {
 public:
-    TBindDns() : TProperty(P_BIND_DNS, EProperty::BIND_DNS,
-            "Bind /etc/hosts from parent, deprecated")
+    TBindDns()
+        : TProperty(P_BIND_DNS, EProperty::BIND_DNS, "Bind /etc/hosts from parent, deprecated")
     {
         IsHidden = true;
     }
@@ -1895,10 +1915,11 @@ public:
     }
 } static BindDns;
 
-class TIsolate : public TProperty {
+class TIsolate: public TProperty {
 public:
-    TIsolate() : TProperty(P_ISOLATE, EProperty::ISOLATE,
-            "New pid/ipc/utc/env namespace") {}
+    TIsolate()
+        : TProperty(P_ISOLATE, EProperty::ISOLATE, "New pid/ipc/utc/env namespace")
+    {}
     TError Get(std::string &value) const override {
         value = BoolToString(CT->Isolate);
         return OK;
@@ -1934,9 +1955,11 @@ public:
     }
 } static Isolate;
 
-class TRoot : public TProperty {
+class TRoot: public TProperty {
 public:
-    TRoot() : TProperty(P_ROOT, EProperty::ROOT, "Container root path in parent namespace") {}
+    TRoot()
+        : TProperty(P_ROOT, EProperty::ROOT, "Container root path in parent namespace")
+    {}
     TError Get(std::string &value) const override {
         value = CT->Root;
         return OK;
@@ -1985,9 +2008,11 @@ public:
     }
 } static Root;
 
-class TRootPath : public TProperty {
+class TRootPath: public TProperty {
 public:
-    TRootPath() : TProperty(P_ROOT_PATH, EProperty::NONE, "Container root path in client namespace") {
+    TRootPath()
+        : TProperty(P_ROOT_PATH, EProperty::NONE, "Container root path in client namespace")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -2004,26 +2029,28 @@ public:
     }
 } static RootPath;
 
-class TNet : public TProperty {
+class TNet: public TProperty {
 public:
-    TNet() : TProperty(P_NET, EProperty::NET,
-            "Container network settings: "
-            "none | "
-            "inherited (default) | "
-            "steal <name> | "
-            "container <name> | "
-            "macvlan <master> <name> [bridge|private|vepa|passthru] [mtu] [hw] | "
-            "ipvlan <master> <name> [l2|l3] [mtu] | "
-            "veth <name> <bridge> [mtu] [hw] | "
-            "L3 [extra_routes] <name> [master] | "
-            "NAT [name] | "
-            "ipip6 <name> <remote> <local> | "
-            "tap <name> | "
-            "MTU <name> <mtu> | "
-            "MAC <name> <mac> | "
-            "autoconf <name> (SLAAC) | "
-            "ip <cmd> <args>... | "
-            "netns <name>") {}
+    TNet()
+        : TProperty(P_NET, EProperty::NET,
+                    "Container network settings: "
+                    "none | "
+                    "inherited (default) | "
+                    "steal <name> | "
+                    "container <name> | "
+                    "macvlan <master> <name> [bridge|private|vepa|passthru] [mtu] [hw] | "
+                    "ipvlan <master> <name> [l2|l3] [mtu] | "
+                    "veth <name> <bridge> [mtu] [hw] | "
+                    "L3 [extra_routes] <name> [master] | "
+                    "NAT [name] | "
+                    "ipip6 <name> <remote> <local> | "
+                    "tap <name> | "
+                    "MTU <name> <mtu> | "
+                    "MAC <name> <mac> | "
+                    "autoconf <name> (SLAAC) | "
+                    "ip <cmd> <args>... | "
+                    "netns <name>")
+    {}
 
     TError Get(std::string &value) const override {
         value = MergeEscapeStrings(CT->NetProp, ' ', ';');
@@ -2055,7 +2082,7 @@ public:
     }
     TError Start(void) override {
         if (CT->OsMode && !CT->HasProp(EProperty::NET)) {
-            CT->NetProp = { { "none" } };
+            CT->NetProp = {{"none"}};
             CT->NetIsolate = true;
             CT->NetInherit = false;
         }
@@ -2092,10 +2119,11 @@ public:
     }
 } static Net;
 
-class TRootRo : public TProperty {
+class TRootRo: public TProperty {
 public:
-    TRootRo() : TProperty(P_ROOT_RDONLY, EProperty::ROOT_RDONLY,
-            "Make filesystem read-only") {}
+    TRootRo()
+        : TProperty(P_ROOT_RDONLY, EProperty::ROOT_RDONLY, "Make filesystem read-only")
+    {}
     TError Get(std::string &value) const override {
         value = BoolToString(CT->RootRo);
         return OK;
@@ -2128,10 +2156,11 @@ public:
     }
 } static RootRo;
 
-class TUmask : public TProperty {
+class TUmask: public TProperty {
 public:
-    TUmask() : TProperty(P_UMASK, EProperty::UMASK,
-            "Set file mode creation mask") { }
+    TUmask()
+        : TProperty(P_UMASK, EProperty::UMASK, "Set file mode creation mask")
+    {}
     TError Get(std::string &value) const override {
         value = StringFormat("%#o", CT->Umask);
         return OK;
@@ -2170,10 +2199,11 @@ public:
     }
 } static Umask;
 
-class TControllers : public TProperty {
+class TControllers: public TProperty {
 public:
-    TControllers() : TProperty(P_CONTROLLERS, EProperty::CONTROLLERS,
-            "Cgroup controllers") { }
+    TControllers()
+        : TProperty(P_CONTROLLERS, EProperty::CONTROLLERS, "Cgroup controllers")
+    {}
     TError Get(std::string &value) const override {
         uint64_t controllers = CT->Controllers;
         value = StringFormatFlags(controllers, ControllersName, ";");
@@ -2247,10 +2277,11 @@ public:
     }
 } static Controllers;
 
-class TLinkMemoryWritebackBlkio : public TProperty {
+class TLinkMemoryWritebackBlkio: public TProperty {
 public:
-    TLinkMemoryWritebackBlkio() : TProperty(P_LINK_MEMORY_WRITEBACK_BLKIO, EProperty::LINK_MEMORY_WRITEBACK_BLKIO,
-            "Link memory writeback with blkio cgroup")
+    TLinkMemoryWritebackBlkio()
+        : TProperty(P_LINK_MEMORY_WRITEBACK_BLKIO, EProperty::LINK_MEMORY_WRITEBACK_BLKIO,
+                    "Link memory writeback with blkio cgroup")
     {
         IsHidden = true;
     }
@@ -2287,9 +2318,11 @@ public:
     }
 } static LinkMemoryWritebackBlkio;
 
-class TCgroups : public TProperty {
+class TCgroups: public TProperty {
 public:
-    TCgroups() : TProperty(P_CGROUPS, EProperty::NONE, "Cgroups") {
+    TCgroups()
+        : TProperty(P_CGROUPS, EProperty::NONE, "Cgroups")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -2321,10 +2354,11 @@ public:
     }
 } static Cgroups;
 
-class THostname : public TProperty {
+class THostname: public TProperty {
 public:
-    THostname() : TProperty(P_HOSTNAME, EProperty::HOSTNAME,
-            "Container hostname") {}
+    THostname()
+        : TProperty(P_HOSTNAME, EProperty::HOSTNAME, "Container hostname")
+    {}
     TError Get(std::string &value) const override {
         value = CT->Hostname;
         return OK;
@@ -2348,10 +2382,11 @@ public:
     }
 } static Hostname;
 
-class TEnvProperty : public TProperty {
+class TEnvProperty: public TProperty {
 public:
-    TEnvProperty() : TProperty(P_ENV, EProperty::ENV,
-            "Container environment variables: <name>=<value>; ...") {}
+    TEnvProperty()
+        : TProperty(P_ENV, EProperty::ENV, "Container environment variables: <name>=<value>; ...")
+    {}
     TError Get(std::string &value) const override {
         value = CT->EnvCfg;
         return OK;
@@ -2365,7 +2400,7 @@ public:
     }
     TError Set(const std::string &value) override {
         TEnv env;
-        TError error =  env.Parse(value, true);
+        TError error = env.Parse(value, true);
         if (error)
             return error;
         env.Format(CT->EnvCfg);
@@ -2405,8 +2440,7 @@ public:
                     } else {
                         v->set_value(var.Value);
                     }
-                }
-                else
+                } else
                     v->set_unset(true);
             }
         }
@@ -2439,10 +2473,11 @@ public:
     }
 } static EnvProperty;
 
-class TEnvSecretProperty : public TProperty {
+class TEnvSecretProperty: public TProperty {
 public:
-    TEnvSecretProperty() : TProperty(P_ENV_SECRET, EProperty::ENV_SECRET,
-            "Container secret environment variables: <name>=<value>; ...") {}
+    TEnvSecretProperty()
+        : TProperty(P_ENV_SECRET, EProperty::ENV_SECRET, "Container secret environment variables: <name>=<value>; ...")
+    {}
     TError Save(std::string &val) override {
         val = CT->EnvSecret;
         return OK;
@@ -2498,8 +2533,7 @@ public:
                 v->set_value("<secret>");
                 v->set_salt(salt);
                 v->set_hash(hash);
-            }
-            else
+            } else
                 v->set_unset(true);
         }
     }
@@ -2529,10 +2563,11 @@ public:
     }
 } static EnvSecretProperty;
 
-class TBind : public TProperty {
+class TBind: public TProperty {
 public:
-    TBind() : TProperty(P_BIND, EProperty::BIND,
-            "Bind mounts: <source> <target> [ro|rw|<flag>],... ;...") {}
+    TBind()
+        : TProperty(P_BIND, EProperty::BIND, "Bind mounts: <source> <target> [ro|rw|<flag>],... ;...")
+    {}
     TError Get(std::string &value) const override {
         value = TBindMount::Format(CT->BindMounts);
         return OK;
@@ -2571,9 +2606,10 @@ public:
     }
 } static Bind;
 
-class TSymlink : public TProperty {
+class TSymlink: public TProperty {
 public:
-    TSymlink() : TProperty(P_SYMLINK, EProperty::SYMLINK, "Symlinks: <symlink>: <target>;...")
+    TSymlink()
+        : TProperty(P_SYMLINK, EProperty::SYMLINK, "Symlinks: <symlink>: <target>;...")
     {
         IsDynamic = true;
     }
@@ -2641,7 +2677,7 @@ public:
         if (!spec.symlink().merge())
             for (auto &sym: CT->Symlink)
                 if (!map.count(sym.first.ToString()))
-                        map[sym.first.ToString()] = "";
+                    map[sym.first.ToString()] = "";
 
         for (auto &sym: map) {
             error = CT->SetSymlink(sym.first, sym.second);
@@ -2653,10 +2689,11 @@ public:
     }
 } static Symlink;
 
-class TIp : public TProperty {
+class TIp: public TProperty {
 public:
-    TIp() : TProperty(P_IP, EProperty::IP,
-            "IP configuration: <interface> <ip>/<prefix>; ...") {}
+    TIp()
+        : TProperty(P_IP, EProperty::IP, "IP configuration: <interface> <ip>/<prefix>; ...")
+    {}
     TError Get(std::string &value) const override {
         value = MergeEscapeStrings(CT->IpList, ' ', ';');
         return OK;
@@ -2698,10 +2735,11 @@ public:
     }
 } static Ip;
 
-class TIpLimit : public TProperty {
+class TIpLimit: public TProperty {
 public:
-    TIpLimit() : TProperty(P_IP_LIMIT, EProperty::IP_LIMIT,
-            "IP allowed for sub-containers: none|any|<ip>[/<mask>]; ...") {}
+    TIpLimit()
+        : TProperty(P_IP_LIMIT, EProperty::IP_LIMIT, "IP allowed for sub-containers: none|any|<ip>[/<mask>]; ...")
+    {}
     TError Get(std::string &value) const override {
         value = MergeEscapeStrings(CT->IpLimit, ';', ' ');
         return OK;
@@ -2766,10 +2804,11 @@ public:
     }
 } static IpLimit;
 
-class TDefaultGw : public TProperty {
+class TDefaultGw: public TProperty {
 public:
-    TDefaultGw() : TProperty(P_DEFAULT_GW, EProperty::DEFAULT_GW,
-            "Default gateway: <interface> <ip>; ...") {}
+    TDefaultGw()
+        : TProperty(P_DEFAULT_GW, EProperty::DEFAULT_GW, "Default gateway: <interface> <ip>; ...")
+    {}
     TError Get(std::string &value) const override {
         value = MergeEscapeStrings(CT->DefaultGw, ' ', ';');
         return OK;
@@ -2810,10 +2849,11 @@ public:
     }
 } static DefaultGw;
 
-class TResolvConf : public TProperty {
+class TResolvConf: public TProperty {
 public:
-    TResolvConf() : TProperty(P_RESOLV_CONF, EProperty::RESOLV_CONF,
-            "DNS resolver configuration: default|keep|<resolv.conf option>;...")
+    TResolvConf()
+        : TProperty(P_RESOLV_CONF, EProperty::RESOLV_CONF,
+                    "DNS resolver configuration: default|keep|<resolv.conf option>;...")
     {
         IsDynamic = true;
     }
@@ -2869,11 +2909,11 @@ public:
     }
 } static ResolvConf;
 
-class TEtcHosts : public TProperty {
+class TEtcHosts: public TProperty {
 public:
-    TEtcHosts() : TProperty(P_ETC_HOSTS, EProperty::ETC_HOSTS, "Override /etc/hosts content")
-    {
-    }
+    TEtcHosts()
+        : TProperty(P_ETC_HOSTS, EProperty::ETC_HOSTS, "Override /etc/hosts content")
+    {}
     TError Get(std::string &value) const override {
         value = CT->EtcHosts;
         return OK;
@@ -2897,10 +2937,12 @@ public:
     }
 } static EtcHosts;
 
-class TDevicesProperty : public TProperty {
+class TDevicesProperty: public TProperty {
 public:
-    TDevicesProperty() : TProperty(P_DEVICES, EProperty::DEVICE_CONF,
-            "Devices that container can access: <device> [r][w][m][-][?] [path] [mode] [user] [group]|preset <preset>; ...")
+    TDevicesProperty()
+        : TProperty(P_DEVICES, EProperty::DEVICE_CONF,
+                    "Devices that container can access: <device> [r][w][m][-][?] [path] [mode] [user] [group]|preset "
+                    "<preset>; ...")
     {
         IsDynamic = true;
     }
@@ -2976,10 +3018,11 @@ public:
     }
 } static Devices;
 
-class TDevicesExplicitProperty : public TProperty {
+class TDevicesExplicitProperty: public TProperty {
 public:
-    TDevicesExplicitProperty() : TProperty(P_DEVICES_EXPLICIT, EProperty::DEVICE_CONF_EXPLICIT,
-                                           "Do not merge user-specified devices with effective devices of parent container: true|false")
+    TDevicesExplicitProperty()
+        : TProperty(P_DEVICES_EXPLICIT, EProperty::DEVICE_CONF_EXPLICIT,
+                    "Do not merge user-specified devices with effective devices of parent container: true|false")
     {
         IsDynamic = true;
     }
@@ -3016,16 +3059,16 @@ public:
     }
 } static DevicesExplicit;
 
-class TRawRootPid : public TProperty {
+class TRawRootPid: public TProperty {
 public:
-    TRawRootPid() : TProperty(P_RAW_ROOT_PID, EProperty::ROOT_PID, "") {
+    TRawRootPid()
+        : TProperty(P_RAW_ROOT_PID, EProperty::ROOT_PID, "")
+    {
         IsReadOnly = true;
         IsHidden = true;
     }
     TError Get(std::string &value) const override {
-        value = StringFormat("%d;%d;%d", CT->Task.Pid,
-                                         CT->TaskVPid,
-                                         CT->WaitTask.Pid);
+        value = StringFormat("%d;%d;%d", CT->Task.Pid, CT->TaskVPid, CT->WaitTask.Pid);
         return OK;
     }
     TError Set(const std::string &value) override {
@@ -3048,9 +3091,11 @@ public:
     }
 } static RawRootPid;
 
-class TSeizePid : public TProperty {
+class TSeizePid: public TProperty {
 public:
-    TSeizePid() : TProperty(P_SEIZE_PID, EProperty::SEIZE_PID, "") {
+    TSeizePid()
+        : TProperty(P_SEIZE_PID, EProperty::SEIZE_PID, "")
+    {
         IsReadOnly = true;
         IsHidden = true;
     }
@@ -3063,9 +3108,11 @@ public:
     }
 } static SeizePid;
 
-class TRawCreationTime : public TProperty {
+class TRawCreationTime: public TProperty {
 public:
-    TRawCreationTime() : TProperty(P_RAW_CREATION_TIME, EProperty::CREATION_TIME, "") {
+    TRawCreationTime()
+        : TProperty(P_RAW_CREATION_TIME, EProperty::CREATION_TIME, "")
+    {
         IsReadOnly = true;
         IsHidden = true;
     }
@@ -3080,9 +3127,11 @@ public:
     }
 } static RawCreationTime;
 
-class TRawStartTime : public TProperty {
+class TRawStartTime: public TProperty {
 public:
-    TRawStartTime() : TProperty(P_RAW_START_TIME, EProperty::START_TIME, "") {
+    TRawStartTime()
+        : TProperty(P_RAW_START_TIME, EProperty::START_TIME, "")
+    {
         IsReadOnly = true;
         IsHidden = true;
     }
@@ -3097,9 +3146,11 @@ public:
     }
 } static RawStartTime;
 
-class TRawDeathTime : public TProperty {
+class TRawDeathTime: public TProperty {
 public:
-    TRawDeathTime() : TProperty(P_RAW_DEATH_TIME, EProperty::DEATH_TIME, "") {
+    TRawDeathTime()
+        : TProperty(P_RAW_DEATH_TIME, EProperty::DEATH_TIME, "")
+    {
         IsReadOnly = true;
         IsHidden = true;
     }
@@ -3114,10 +3165,12 @@ public:
     }
 } static RawDeathTime;
 
-class TPortoNamespace : public TProperty {
+class TPortoNamespace: public TProperty {
 public:
-    TPortoNamespace() : TProperty(P_PORTO_NAMESPACE, EProperty::PORTO_NAMESPACE,
-            "Porto containers namespace (container name prefix) (deprecated, use enable_porto=isolate instead)") {}
+    TPortoNamespace()
+        : TProperty(P_PORTO_NAMESPACE, EProperty::PORTO_NAMESPACE,
+                    "Porto containers namespace (container name prefix) (deprecated, use enable_porto=isolate instead)")
+    {}
     TError Get(std::string &value) const override {
         value = CT->NsName;
         return OK;
@@ -3141,10 +3194,12 @@ public:
     }
 } static PortoNamespace;
 
-class TPlaceProperty : public TProperty {
+class TPlaceProperty: public TProperty {
 public:
-    TPlaceProperty() : TProperty(P_PLACE, EProperty::PLACE,
-            "Places for volumes and layers: [default][;/path...][;***][;alias=/path]") {}
+    TPlaceProperty()
+        : TProperty(P_PLACE, EProperty::PLACE,
+                    "Places for volumes and layers: [default][;/path...][;***][;alias=/path]")
+    {}
     TError Get(std::string &value) const override {
         value = MergeEscapeStrings(CT->PlacePolicy, ';');
         return OK;
@@ -3186,10 +3241,11 @@ public:
     }
 } static PlaceProperty;
 
-class TPlaceLimit : public TProperty {
+class TPlaceLimit: public TProperty {
 public:
-    TPlaceLimit() : TProperty(P_PLACE_LIMIT, EProperty::PLACE_LIMIT,
-            "Limits sum of volume space_limit: total|default|/place|tmpfs|lvm group|rbd: bytes;...")
+    TPlaceLimit()
+        : TProperty(P_PLACE_LIMIT, EProperty::PLACE_LIMIT,
+                    "Limits sum of volume space_limit: total|default|/place|tmpfs|lvm group|rbd: bytes;...")
     {
         IsDynamic = true;
     }
@@ -3205,7 +3261,7 @@ public:
         return OK;
     }
 
-    TError Set(TUintMap& value) {
+    TError Set(TUintMap &value) {
         auto lock = LockVolumes();
         CT->PlaceLimit = value;
         CT->SetProp(EProperty::PLACE_LIMIT);
@@ -3246,10 +3302,12 @@ public:
     }
 } static PlaceLimit;
 
-class TPlaceUsage : public TProperty {
+class TPlaceUsage: public TProperty {
 public:
-    TPlaceUsage() : TProperty(P_PLACE_USAGE, EProperty::NONE,
-            "Current sum of volume space_limit: total|/place|tmpfs|lvm group|rbd: bytes;...") {
+    TPlaceUsage()
+        : TProperty(P_PLACE_USAGE, EProperty::NONE,
+                    "Current sum of volume space_limit: total|/place|tmpfs|lvm group|rbd: bytes;...")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -3269,9 +3327,10 @@ public:
     }
 } static PlaceUsage;
 
-class TOwnedVolumes : public TProperty {
+class TOwnedVolumes: public TProperty {
 public:
-    TOwnedVolumes() : TProperty(P_OWNED_VOLUMES, EProperty::NONE, "Owned volumes: volume;...")
+    TOwnedVolumes()
+        : TProperty(P_OWNED_VOLUMES, EProperty::NONE, "Owned volumes: volume;...")
     {
         IsReadOnly = true;
     }
@@ -3300,9 +3359,10 @@ public:
     }
 } OwnedVolumes;
 
-class TLinkedVolumes : public TProperty {
+class TLinkedVolumes: public TProperty {
 public:
-    TLinkedVolumes() : TProperty(P_LINKED_VOLUMES, EProperty::NONE, "Linked volumes: volume [target] [ro] [!];...")
+    TLinkedVolumes()
+        : TProperty(P_LINKED_VOLUMES, EProperty::NONE, "Linked volumes: volume [target] [ro] [!];...")
     {
         IsReadOnly = true;
     }
@@ -3352,10 +3412,10 @@ public:
     }
 } LinkedVolumes;
 
-class TRequiredVolumes : public TProperty {
+class TRequiredVolumes: public TProperty {
 public:
-    TRequiredVolumes() : TProperty(P_REQUIRED_VOLUMES, EProperty::REQUIRED_VOLUMES,
-            "Volume links required by container: path;...")
+    TRequiredVolumes()
+        : TProperty(P_REQUIRED_VOLUMES, EProperty::REQUIRED_VOLUMES, "Volume links required by container: path;...")
     {
         IsDynamic = true;
     }
@@ -3368,7 +3428,8 @@ public:
         auto prev = CT->RequiredVolumes;
         CT->RequiredVolumes = SplitEscapedString(value, ';');
         if (CT->HasResources()) {
-            volumes_lock.unlock();;
+            volumes_lock.unlock();
+            ;
             TError error = TVolume::CheckRequired(*CT);
             if (error) {
                 volumes_lock.lock();
@@ -3387,10 +3448,10 @@ public:
     }
 } static RequiredVolumes;
 
-class TMemoryLimit : public TProperty {
+class TMemoryLimit: public TProperty {
 public:
-    TMemoryLimit() : TProperty(P_MEM_LIMIT, EProperty::MEM_LIMIT,
-            "Memory limit [bytes]")
+    TMemoryLimit()
+        : TProperty(P_MEM_LIMIT, EProperty::MEM_LIMIT, "Memory limit [bytes]")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_MEMORY;
@@ -3420,15 +3481,12 @@ public:
             CT->SetProp(EProperty::MEM_LIMIT);
             CT->SanitizeCapabilitiesAll();
         }
-        if (!CT->HasProp(EProperty::ANON_LIMIT) &&
-                CgroupDriver.MemorySubsystem->SupportAnonLimit() &&
-                config().container().anon_limit_margin()) {
+        if (!CT->HasProp(EProperty::ANON_LIMIT) && CgroupDriver.MemorySubsystem->SupportAnonLimit() &&
+            config().container().anon_limit_margin()) {
             uint64_t new_anon = 0;
             if (CT->MemLimit) {
-                new_anon = CT->MemLimit - std::min(CT->MemLimit / 4,
-                        config().container().anon_limit_margin());
-                new_anon = std::max(new_anon,
-                        config().container().min_memory_limit());
+                new_anon = CT->MemLimit - std::min(CT->MemLimit / 4, config().container().anon_limit_margin());
+                new_anon = std::max(new_anon, config().container().min_memory_limit());
             }
             if (CT->AnonMemLimit != new_anon) {
                 CT->AnonMemLimit = new_anon;
@@ -3461,10 +3519,10 @@ public:
     }
 } static MemoryLimit;
 
-class TMemoryLimitTotal : public TProperty {
+class TMemoryLimitTotal: public TProperty {
 public:
-    TMemoryLimitTotal() : TProperty(P_MEM_LIMIT_TOTAL, EProperty::NONE,
-            "Effective memory limit [bytes]")
+    TMemoryLimitTotal()
+        : TProperty(P_MEM_LIMIT_TOTAL, EProperty::NONE, "Effective memory limit [bytes]")
     {
         IsReadOnly = true;
     }
@@ -3478,10 +3536,11 @@ public:
     }
 } static MemoryLimitTotal;
 
-class TMemoryLockPolicy : public TProperty {
+class TMemoryLockPolicy: public TProperty {
 public:
-    TMemoryLockPolicy() : TProperty(P_MEM_LOCK_POLICY, EProperty::MEM_LOCK_POLICY,
-                                    "Memory lock policy to container memory cgroup") {}
+    TMemoryLockPolicy()
+        : TProperty(P_MEM_LOCK_POLICY, EProperty::MEM_LOCK_POLICY, "Memory lock policy to container memory cgroup")
+    {}
 
     void Init(void) override {
         IsDynamic = true;
@@ -3489,24 +3548,24 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
 
-    TError Get(std::string& value) const override {
+    TError Get(std::string &value) const override {
         switch (CT->MemLockPolicy) {
-            case EMemoryLockPolicy::Disabled:
-                value = "disabled";
-                break;
-            case EMemoryLockPolicy::Mlockall:
-                value = "mlockall";
-                break;
-            case EMemoryLockPolicy::Executable:
-                value = "executable";
-                break;
-            case EMemoryLockPolicy::Xattr:
-                value = "xattr";
+        case EMemoryLockPolicy::Disabled:
+            value = "disabled";
+            break;
+        case EMemoryLockPolicy::Mlockall:
+            value = "mlockall";
+            break;
+        case EMemoryLockPolicy::Executable:
+            value = "executable";
+            break;
+        case EMemoryLockPolicy::Xattr:
+            value = "xattr";
         }
         return OK;
     }
 
-    TError Set(const std::string& value) override {
+    TError Set(const std::string &value) override {
         EMemoryLockPolicy policy;
 
         if (value == "disabled")
@@ -3529,22 +3588,22 @@ public:
         return OK;
     }
 
-    void Dump(rpc::TContainerStatus& spec) const override {
+    void Dump(rpc::TContainerStatus &spec) const override {
         std::string policy;
         Get(policy);
         spec.set_memory_lock_policy(policy);
     }
 
-    TError Load(const rpc::TContainerSpec& spec) override {
+    TError Load(const rpc::TContainerSpec &spec) override {
         return Set(spec.memory_lock_policy());
     }
 
 } static MemoryLockPolicy;
 
-class TAnonLimit : public TProperty {
+class TAnonLimit: public TProperty {
 public:
-    TAnonLimit() : TProperty(P_ANON_LIMIT, EProperty::ANON_LIMIT,
-            "Anonymous memory limit [bytes]")
+    TAnonLimit()
+        : TProperty(P_ANON_LIMIT, EProperty::ANON_LIMIT, "Anonymous memory limit [bytes]")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_MEMORY;
@@ -3588,10 +3647,11 @@ public:
     }
 } static AnonLimit;
 
-class TAnonLimitTotal : public TProperty {
+class TAnonLimitTotal: public TProperty {
 public:
-    TAnonLimitTotal() : TProperty(P_ANON_LIMIT_TOTAL, EProperty::NONE,
-            "Effective anonymous memory limit [bytes]") {
+    TAnonLimitTotal()
+        : TProperty(P_ANON_LIMIT_TOTAL, EProperty::NONE, "Effective anonymous memory limit [bytes]")
+    {
         IsReadOnly = true;
     }
     void Init(void) override {
@@ -3607,10 +3667,10 @@ public:
     }
 } static AnonLimitTotal;
 
-class TAnonOnly : public TProperty {
+class TAnonOnly: public TProperty {
 public:
-    TAnonOnly() : TProperty(P_ANON_ONLY, EProperty::ANON_ONLY,
-            "Keep only anon pages, allocate cache in parent")
+    TAnonOnly()
+        : TProperty(P_ANON_ONLY, EProperty::ANON_ONLY, "Keep only anon pages, allocate cache in parent")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_MEMORY;
@@ -3652,10 +3712,10 @@ public:
     }
 } static AnonOnly;
 
-class TDirtyLimit : public TProperty {
+class TDirtyLimit: public TProperty {
 public:
-    TDirtyLimit() : TProperty(P_DIRTY_LIMIT, EProperty::DIRTY_LIMIT,
-            "Dirty file cache limit [bytes]")
+    TDirtyLimit()
+        : TProperty(P_DIRTY_LIMIT, EProperty::DIRTY_LIMIT, "Dirty file cache limit [bytes]")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_MEMORY;
@@ -3699,10 +3759,10 @@ public:
     }
 } static DirtyLimit;
 
-class TDirtyLimitBound : public TProperty {
+class TDirtyLimitBound: public TProperty {
 public:
-    TDirtyLimitBound() : TProperty(P_DIRTY_LIMIT_BOUND, EProperty::NONE,
-            "Dirty file cache limit bound [bytes]")
+    TDirtyLimitBound()
+        : TProperty(P_DIRTY_LIMIT_BOUND, EProperty::NONE, "Dirty file cache limit bound [bytes]")
     {
         IsReadOnly = true;
     }
@@ -3721,10 +3781,10 @@ public:
 
 } static DirtyLimitBound;
 
-class THugetlbLimit : public TProperty {
+class THugetlbLimit: public TProperty {
 public:
-    THugetlbLimit() : TProperty(P_HUGETLB_LIMIT, EProperty::HUGETLB_LIMIT,
-            "Hugetlb memory limit [bytes]")
+    THugetlbLimit()
+        : TProperty(P_HUGETLB_LIMIT, EProperty::HUGETLB_LIMIT, "Hugetlb memory limit [bytes]")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_HUGETLB;
@@ -3771,16 +3831,17 @@ public:
     }
 } static HugetlbLimit;
 
-class TRechargeOnPgfault : public TProperty {
+class TRechargeOnPgfault: public TProperty {
 public:
-    TRechargeOnPgfault() : TProperty(P_RECHARGE_ON_PGFAULT, EProperty::RECHARGE_ON_PGFAULT,
-            "Recharge memory on page fault")
+    TRechargeOnPgfault()
+        : TProperty(P_RECHARGE_ON_PGFAULT, EProperty::RECHARGE_ON_PGFAULT, "Recharge memory on page fault")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
-        IsSupported = CgroupDriver.MemorySubsystem->SupportRechargeOnPgfault() || CgroupDriver.MemorySubsystem->IsCgroup2();
+        IsSupported =
+            CgroupDriver.MemorySubsystem->SupportRechargeOnPgfault() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
         value = BoolToString(CT->RechargeOnPgfault);
@@ -3816,10 +3877,10 @@ public:
     }
 } static RechargeOnPgfault;
 
-class TPressurizeOnDeath : public TProperty {
+class TPressurizeOnDeath: public TProperty {
 public:
-    TPressurizeOnDeath() : TProperty(P_PRESSURIZE_ON_DEATH, EProperty::PRESSURIZE_ON_DEATH,
-            "After death set tiny soft memory limit")
+    TPressurizeOnDeath()
+        : TProperty(P_PRESSURIZE_ON_DEATH, EProperty::PRESSURIZE_ON_DEATH, "After death set tiny soft memory limit")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_MEMORY;
@@ -3858,10 +3919,10 @@ public:
     }
 } static PressurizeOnDeath;
 
-class TCpuLimit : public TProperty {
+class TCpuLimit: public TProperty {
 public:
-    TCpuLimit() : TProperty(P_CPU_LIMIT, EProperty::CPU_LIMIT,
-            "CPU limit: <CPUS>c [cores]")
+    TCpuLimit()
+        : TProperty(P_CPU_LIMIT, EProperty::CPU_LIMIT, "CPU limit: <CPUS>c [cores]")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_CPU;
@@ -3903,10 +3964,10 @@ public:
     }
 } static CpuLimit;
 
-class TCpuLimitTotal : public TProperty {
+class TCpuLimitTotal: public TProperty {
 public:
-    TCpuLimitTotal() : TProperty(P_CPU_LIMIT_TOTAL, EProperty::NONE,
-            "CPU total limit: <CPUS>c [cores]")
+    TCpuLimitTotal()
+        : TProperty(P_CPU_LIMIT_TOTAL, EProperty::NONE, "CPU total limit: <CPUS>c [cores]")
     {
         IsReadOnly = true;
     }
@@ -3921,10 +3982,10 @@ public:
     }
 } static CpuLimitTotal;
 
-class TCpuLimitBound : public TProperty {
+class TCpuLimitBound: public TProperty {
 public:
-    TCpuLimitBound() : TProperty(P_CPU_LIMIT_BOUND, EProperty::NONE,
-            "CPU bound limit: <CPUS>c [cores]")
+    TCpuLimitBound()
+        : TProperty(P_CPU_LIMIT_BOUND, EProperty::NONE, "CPU bound limit: <CPUS>c [cores]")
     {
         IsReadOnly = true;
     }
@@ -3939,10 +4000,10 @@ public:
     }
 } static CpuLimitBound;
 
-class TCpuGuarantee : public TProperty {
+class TCpuGuarantee: public TProperty {
 public:
-    TCpuGuarantee() : TProperty(P_CPU_GUARANTEE, EProperty::CPU_GUARANTEE,
-            "CPU guarantee: <CPUS>c [cores]")
+    TCpuGuarantee()
+        : TProperty(P_CPU_GUARANTEE, EProperty::CPU_GUARANTEE, "CPU guarantee: <CPUS>c [cores]")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_CPU;
@@ -3986,10 +4047,10 @@ public:
     }
 } static CpuGuarantee;
 
-class TCpuGuaranteeTotal : public TProperty {
+class TCpuGuaranteeTotal: public TProperty {
 public:
-    TCpuGuaranteeTotal() : TProperty(P_CPU_GUARANTEE_TOTAL, EProperty::NONE,
-            "CPU total guarantee: <CPUS>c [cores]")
+    TCpuGuaranteeTotal()
+        : TProperty(P_CPU_GUARANTEE_TOTAL, EProperty::NONE, "CPU total guarantee: <CPUS>c [cores]")
     {
         IsReadOnly = true;
     }
@@ -4000,14 +4061,14 @@ public:
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-         spec.set_cpu_guarantee_total((double)std::max(CT->CpuGuarantee, CT->CpuGuaranteeSum) / CPU_POWER_PER_SEC);
+        spec.set_cpu_guarantee_total((double)std::max(CT->CpuGuarantee, CT->CpuGuaranteeSum) / CPU_POWER_PER_SEC);
     }
 } static CpuGuaranteeTotal;
 
-class TCpuGuaranteeBound : public TProperty {
+class TCpuGuaranteeBound: public TProperty {
 public:
-    TCpuGuaranteeBound() : TProperty(P_CPU_GUARANTEE_BOUND, EProperty::NONE,
-            "CPU bound guarantee: <CPUS>c [cores]")
+    TCpuGuaranteeBound()
+        : TProperty(P_CPU_GUARANTEE_BOUND, EProperty::NONE, "CPU bound guarantee: <CPUS>c [cores]")
     {
         IsReadOnly = true;
     }
@@ -4018,14 +4079,14 @@ public:
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-         spec.set_cpu_guarantee_bound((double)CT->CpuGuaranteeBound / CPU_POWER_PER_SEC);
+        spec.set_cpu_guarantee_bound((double)CT->CpuGuaranteeBound / CPU_POWER_PER_SEC);
     }
 } static CpuGuaranteeBound;
 
-class TCpuPeriod : public TProperty {
+class TCpuPeriod: public TProperty {
 public:
-    TCpuPeriod() : TProperty(P_CPU_PERIOD, EProperty::CPU_PERIOD,
-            "CPU limit period: 1ms..1s, default: 100ms [nanoseconds]")
+    TCpuPeriod()
+        : TProperty(P_CPU_PERIOD, EProperty::CPU_PERIOD, "CPU limit period: 1ms..1s, default: 100ms [nanoseconds]")
     {
         /* We want to allow changing period
            for the sake of incremental inheritancy */
@@ -4067,10 +4128,10 @@ public:
     }
 } static CpuPeriod;
 
-class TCpuWeight : public TProperty {
+class TCpuWeight: public TProperty {
 public:
-    TCpuWeight() : TProperty(P_CPU_WEIGHT, EProperty::CPU_WEIGHT,
-            "CPU weight 0.01..100, default is 1")
+    TCpuWeight()
+        : TProperty(P_CPU_WEIGHT, EProperty::CPU_WEIGHT, "CPU weight 0.01..100, default is 1")
     {
         IsDynamic = true;
     }
@@ -4114,10 +4175,11 @@ public:
     }
 } static CpuWeight;
 
-class TCpuSet : public TProperty {
+class TCpuSet: public TProperty {
 public:
-    TCpuSet() : TProperty(P_CPU_SET, EProperty::CPU_SET,
-            "CPU set: [N|N-M,]... | jail N | [jail N;] node N | reserve N | threads N | cores N")
+    TCpuSet()
+        : TProperty(P_CPU_SET, EProperty::CPU_SET,
+                    "CPU set: [N|N-M,]... | jail N | [jail N;] node N | reserve N | threads N | cores N")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_CPUSET;
@@ -4149,7 +4211,7 @@ public:
         TError error;
         int jail = 0;
 
-        for (const auto& v : cfgs) {
+        for (const auto &v: cfgs) {
             if (v.size() != 0 && v[0] != "jail")
                 cfg = v;
             else if (v.size() == 2) {
@@ -4198,7 +4260,6 @@ public:
 
         } else
             return TError(EError::InvalidValue, "wrong format");
-
 
         if (jail && (type != ECpuSetType::Node && type != ECpuSetType::Inherit))
             return TError(EError::InvalidValue, "wrong format");
@@ -4292,10 +4353,11 @@ public:
     }
 } static CpuSet;
 
-class TCpuSetAffinity : public TProperty {
+class TCpuSetAffinity: public TProperty {
 public:
-    TCpuSetAffinity() : TProperty(P_CPU_SET_AFFINITY, EProperty::NONE,
-            "Resulting CPU affinity: [N,N-M,]...") {
+    TCpuSetAffinity()
+        : TProperty(P_CPU_SET_AFFINITY, EProperty::NONE, "Resulting CPU affinity: [N,N-M,]...")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -4315,14 +4377,14 @@ public:
     }
 } static CpuSetAffinity;
 
-class TIoProperty : public TProperty {
+class TIoProperty: public TProperty {
 public:
-    TIoProperty(std::string name, EProperty prop, std::string desc) :
-        TProperty(name, prop, desc) {}
+    TIoProperty(std::string name, EProperty prop, std::string desc)
+        : TProperty(name, prop, desc)
+    {}
     void Init(void) override {
-        IsSupported = CgroupDriver.MemorySubsystem->SupportIoLimit() ||
-            CgroupDriver.BlkioSubsystem->HasThrottler ||
-            CgroupDriver.BlkioSubsystem->IsCgroup2();
+        IsSupported = CgroupDriver.MemorySubsystem->SupportIoLimit() || CgroupDriver.BlkioSubsystem->HasThrottler ||
+                      CgroupDriver.BlkioSubsystem->IsCgroup2();
     }
     TError GetMap(const TUintMap &limit, std::string &value) const {
         if (limit.size() == 1 && limit.count("fs")) {
@@ -4373,10 +4435,10 @@ public:
     }
 };
 
-class TIoBpsLimit : public TIoProperty {
+class TIoBpsLimit: public TIoProperty {
 public:
-    TIoBpsLimit()  : TIoProperty(P_IO_LIMIT, EProperty::IO_LIMIT,
-            "IO bandwidth limit: fs|<path>|<disk> [r|w]: <bytes/s>;...")
+    TIoBpsLimit()
+        : TIoProperty(P_IO_LIMIT, EProperty::IO_LIMIT, "IO bandwidth limit: fs|<path>|<disk> [r|w]: <bytes/s>;...")
     {
         IsDynamic = true;
     }
@@ -4408,10 +4470,11 @@ public:
     }
 } static IoBpsLimit;
 
-class TIoBpsGuarantee : public TIoProperty {
+class TIoBpsGuarantee: public TIoProperty {
 public:
-    TIoBpsGuarantee()  : TIoProperty(P_IO_GUARANTEE, EProperty::IO_GUARANTEE,
-            "IO bandwidth guarantee: fs|<path>|<disk> [r|w]: <bytes/s>;...")
+    TIoBpsGuarantee()
+        : TIoProperty(P_IO_GUARANTEE, EProperty::IO_GUARANTEE,
+                      "IO bandwidth guarantee: fs|<path>|<disk> [r|w]: <bytes/s>;...")
     {
         IsDynamic = true;
     }
@@ -4448,10 +4511,10 @@ public:
     }
 } static IoBpsGuarantee;
 
-class TIoOpsLimit : public TIoProperty {
+class TIoOpsLimit: public TIoProperty {
 public:
-    TIoOpsLimit()  : TIoProperty(P_IO_OPS_LIMIT, EProperty::IO_OPS_LIMIT,
-            "IOPS limit: fs|<path>|<disk> [r|w]: <iops>;...")
+    TIoOpsLimit()
+        : TIoProperty(P_IO_OPS_LIMIT, EProperty::IO_OPS_LIMIT, "IOPS limit: fs|<path>|<disk> [r|w]: <iops>;...")
     {
         IsDynamic = true;
     }
@@ -4483,10 +4546,11 @@ public:
     }
 } static IoOpsLimit;
 
-class TIoOpsGuarantee : public TIoProperty {
+class TIoOpsGuarantee: public TIoProperty {
 public:
-    TIoOpsGuarantee()  : TIoProperty(P_IO_OPS_GUARANTEE, EProperty::IO_OPS_GUARANTEE,
-            "IOPS guarantee: fs|<path>|<disk> [r|w]: <iops>;...")
+    TIoOpsGuarantee()
+        : TIoProperty(P_IO_OPS_GUARANTEE, EProperty::IO_OPS_GUARANTEE,
+                      "IOPS guarantee: fs|<path>|<disk> [r|w]: <iops>;...")
     {
         IsDynamic = true;
     }
@@ -4523,10 +4587,10 @@ public:
     }
 } static IoOpsGuarantee;
 
-class TRespawn : public TProperty {
+class TRespawn: public TProperty {
 public:
-    TRespawn() : TProperty(P_RESPAWN, EProperty::RESPAWN,
-            "Automatically respawn dead container")
+    TRespawn()
+        : TProperty(P_RESPAWN, EProperty::RESPAWN, "Automatically respawn dead container")
     {
         IsDynamic = true;
         IsAnyState = true;
@@ -4563,10 +4627,10 @@ public:
     }
 } static Respawn;
 
-class TRespawnCount : public TProperty {
+class TRespawnCount: public TProperty {
 public:
-    TRespawnCount() : TProperty(P_RESPAWN_COUNT, EProperty::RESPAWN_COUNT,
-            "Container respawn count")
+    TRespawnCount()
+        : TProperty(P_RESPAWN_COUNT, EProperty::RESPAWN_COUNT, "Container respawn count")
     {
         IsDynamic = true;
         IsAnyState = true;
@@ -4603,10 +4667,10 @@ public:
     }
 } static RespawnCount;
 
-class TRespawnLimit : public TProperty {
+class TRespawnLimit: public TProperty {
 public:
-    TRespawnLimit() : TProperty(P_RESPAWN_LIMIT, EProperty::RESPAWN_LIMIT,
-            "Limit respawn count for specific container")
+    TRespawnLimit()
+        : TProperty(P_RESPAWN_LIMIT, EProperty::RESPAWN_LIMIT, "Limit respawn count for specific container")
     {
         IsDynamic = true;
         IsAnyState = true;
@@ -4653,10 +4717,10 @@ public:
     }
 } static RespawnLimit;
 
-class TRespawnDelay : public TProperty {
+class TRespawnDelay: public TProperty {
 public:
-    TRespawnDelay() : TProperty(P_RESPAWN_DELAY, EProperty::RESPAWN_DELAY,
-            "Delay before automatic respawn")
+    TRespawnDelay()
+        : TProperty(P_RESPAWN_DELAY, EProperty::RESPAWN_DELAY, "Delay before automatic respawn")
     {
         IsDynamic = true;
         IsAnyState = true;
@@ -4693,10 +4757,10 @@ public:
     }
 } static RespawnDelay;
 
-class TPrivate : public TProperty {
+class TPrivate: public TProperty {
 public:
-    TPrivate() : TProperty(P_PRIVATE, EProperty::PRIVATE,
-            "User-defined property")
+    TPrivate()
+        : TProperty(P_PRIVATE, EProperty::PRIVATE, "User-defined property")
     {
         IsDynamic = true;
         IsAnyState = true;
@@ -4723,9 +4787,10 @@ public:
     }
 } static Private;
 
-class TLabels : public TProperty {
+class TLabels: public TProperty {
 public:
-    TLabels() : TProperty(P_LABELS, EProperty::LABELS, "User-defined labels")
+    TLabels()
+        : TProperty(P_LABELS, EProperty::LABELS, "User-defined labels")
     {
         IsDynamic = true;
         IsAnyState = true;
@@ -4812,10 +4877,10 @@ public:
     }
 } static Labels;
 
-class TAgingTime : public TProperty {
+class TAgingTime: public TProperty {
 public:
-    TAgingTime() : TProperty(P_AGING_TIME, EProperty::AGING_TIME,
-            "Remove dead containrs after [seconds]")
+    TAgingTime()
+        : TProperty(P_AGING_TIME, EProperty::AGING_TIME, "Remove dead containrs after [seconds]")
     {
         IsDynamic = true;
         IsAnyState = true;
@@ -4852,49 +4917,50 @@ public:
     }
 } static AgingTime;
 
-class TEnablePorto : public TProperty {
+class TEnablePorto: public TProperty {
 public:
-    TEnablePorto() : TProperty(P_ENABLE_PORTO, EProperty::ENABLE_PORTO,
-            "Proto access level: false (none) | read-isolate | read-only | isolate | child-only | true (full)")
+    TEnablePorto()
+        : TProperty(P_ENABLE_PORTO, EProperty::ENABLE_PORTO,
+                    "Proto access level: false (none) | read-isolate | read-only | isolate | child-only | true (full)")
     {
         IsDynamic = true;
     }
 
     static bool Compatible(EAccessLevel parent, EAccessLevel child) {
         switch (parent) {
-            case EAccessLevel::None:
-                return child == EAccessLevel::None;
-            case EAccessLevel::ReadIsolate:
-            case EAccessLevel::ReadOnly:
-                return child <= EAccessLevel::ReadOnly;
-            default:
-                return true;
+        case EAccessLevel::None:
+            return child == EAccessLevel::None;
+        case EAccessLevel::ReadIsolate:
+        case EAccessLevel::ReadOnly:
+            return child <= EAccessLevel::ReadOnly;
+        default:
+            return true;
         }
     }
 
     TError Get(std::string &value) const override {
         switch (CT->AccessLevel) {
-            case EAccessLevel::None:
-                value = "false";
-                break;
-            case EAccessLevel::ReadIsolate:
-                value = "read-isolate";
-                break;
-            case EAccessLevel::ReadOnly:
-                value = "read-only";
-                break;
-            case EAccessLevel::Isolate:
-                value = "isolate";
-                break;
-            case EAccessLevel::SelfIsolate:
-                value = "self-isolate";
-                break;
-            case EAccessLevel::ChildOnly:
-                value = "child-only";
-                break;
-            default:
-                value = "true";
-                break;
+        case EAccessLevel::None:
+            value = "false";
+            break;
+        case EAccessLevel::ReadIsolate:
+            value = "read-isolate";
+            break;
+        case EAccessLevel::ReadOnly:
+            value = "read-only";
+            break;
+        case EAccessLevel::Isolate:
+            value = "isolate";
+            break;
+        case EAccessLevel::SelfIsolate:
+            value = "self-isolate";
+            break;
+        case EAccessLevel::ChildOnly:
+            value = "child-only";
+            break;
+        default:
+            value = "true";
+            break;
         }
         return OK;
     }
@@ -4951,10 +5017,10 @@ public:
     }
 } static EnablePorto;
 
-class TWeak : public TProperty {
+class TWeak: public TProperty {
 public:
-    TWeak() : TProperty(P_WEAK, EProperty::WEAK,
-            "Destroy container when client disconnects")
+    TWeak()
+        : TProperty(P_WEAK, EProperty::WEAK, "Destroy container when client disconnects")
     {
         IsDynamic = true;
         IsAnyState = true;
@@ -4993,10 +5059,10 @@ public:
 
 /* Read-only properties derived from data filelds follow below... */
 
-class TIdProperty : public TProperty {
+class TIdProperty: public TProperty {
 public:
-    TIdProperty() : TProperty(P_ID, EProperty::NONE,
-            "Container id")
+    TIdProperty()
+        : TProperty(P_ID, EProperty::NONE, "Container id")
     {
         IsReadOnly = true;
     }
@@ -5010,10 +5076,10 @@ public:
     }
 } static IdProperty;
 
-class TLevelProperty : public TProperty {
+class TLevelProperty: public TProperty {
 public:
-    TLevelProperty() : TProperty(P_LEVEL, EProperty::NONE,
-            "Container level")
+    TLevelProperty()
+        : TProperty(P_LEVEL, EProperty::NONE, "Container level")
     {
         IsReadOnly = true;
     }
@@ -5027,10 +5093,11 @@ public:
     }
 } static LevelProperty;
 
-class TAbsoluteName : public TProperty {
+class TAbsoluteName: public TProperty {
 public:
-    TAbsoluteName() : TProperty(P_ABSOLUTE_NAME, EProperty::NONE,
-            "Container name including porto namespaces") {
+    TAbsoluteName()
+        : TProperty(P_ABSOLUTE_NAME, EProperty::NONE, "Container name including porto namespaces")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -5048,10 +5115,11 @@ public:
     }
 } static AbsoluteName;
 
-class TAbsoluteNamespace : public TProperty {
+class TAbsoluteNamespace: public TProperty {
 public:
-    TAbsoluteNamespace() : TProperty(P_ABSOLUTE_NAMESPACE, EProperty::NONE,
-            "Container namespace including parent namespaces") {
+    TAbsoluteNamespace()
+        : TProperty(P_ABSOLUTE_NAMESPACE, EProperty::NONE, "Container namespace including parent namespaces")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -5066,9 +5134,10 @@ public:
     }
 } static AbsoluteNamespace;
 
-class TState : public TProperty {
+class TState: public TProperty {
 public:
-    TState() : TProperty(P_STATE, EProperty::STATE, "container state")
+    TState()
+        : TProperty(P_STATE, EProperty::STATE, "container state")
     {
         IsReadOnly = true;
     }
@@ -5081,10 +5150,11 @@ public:
     }
 } static State;
 
-class TOomKilled : public TProperty {
+class TOomKilled: public TProperty {
 public:
-    TOomKilled() : TProperty(P_OOM_KILLED, EProperty::OOM_KILLED,
-            "Container has been killed by OOM") {
+    TOomKilled()
+        : TProperty(P_OOM_KILLED, EProperty::OOM_KILLED, "Container has been killed by OOM")
+    {
         IsReadOnly = true;
         IsDeadOnly = true;
     }
@@ -5101,10 +5171,10 @@ public:
     }
 } static OomKilled;
 
-class TOomKills : public TProperty {
+class TOomKills: public TProperty {
 public:
-    TOomKills() : TProperty(P_OOM_KILLS, EProperty::OOM_KILLS,
-            "Count of tasks killed in container since start")
+    TOomKills()
+        : TProperty(P_OOM_KILLS, EProperty::OOM_KILLS, "Count of tasks killed in container since start")
     {
         IsReadOnly = true;
         RequireControllers = CGROUP_MEMORY;
@@ -5133,10 +5203,10 @@ public:
     }
 } static OomKills;
 
-class TOomKillsTotal : public TProperty {
-    public:
-    TOomKillsTotal() : TProperty(P_OOM_KILLS_TOTAL, EProperty::OOM_KILLS_TOTAL,
-            "Count of tasks killed in hierarchy since creation")
+class TOomKillsTotal: public TProperty {
+public:
+    TOomKillsTotal()
+        : TProperty(P_OOM_KILLS_TOTAL, EProperty::OOM_KILLS_TOTAL, "Count of tasks killed in hierarchy since creation")
     {
         IsReadOnly = true;
     }
@@ -5164,17 +5234,16 @@ class TOomKillsTotal : public TProperty {
     }
 } static OomKillsTotal;
 
-class TCoreDumped : public TProperty {
+class TCoreDumped: public TProperty {
 public:
-    TCoreDumped() : TProperty(P_CORE_DUMPED, EProperty::NONE,
-            "Main task dumped core at exit")
+    TCoreDumped()
+        : TProperty(P_CORE_DUMPED, EProperty::NONE, "Main task dumped core at exit")
     {
         IsReadOnly = true;
         IsDeadOnly = true;
     }
     TError Get(std::string &value) const override {
-        value = BoolToString(WIFSIGNALED(CT->ExitStatus) &&
-                             WCOREDUMP(CT->ExitStatus));
+        value = BoolToString(WIFSIGNALED(CT->ExitStatus) && WCOREDUMP(CT->ExitStatus));
         return OK;
     }
 
@@ -5183,10 +5252,11 @@ public:
     }
 } static CoreDumped;
 
-class TCoredumpFilter : public TProperty {
+class TCoredumpFilter: public TProperty {
 public:
-    TCoredumpFilter() : TProperty(P_COREDUMP_FILTER, EProperty::COREDUMP_FILTER,
-            "Coredump filter (hex)") {}
+    TCoredumpFilter()
+        : TProperty(P_COREDUMP_FILTER, EProperty::COREDUMP_FILTER, "Coredump filter (hex)")
+    {}
 
     void Init(void) override {
         IsSupported = config().core().enable() && TPath("/proc/self/coredump_filter").Exists();
@@ -5230,10 +5300,10 @@ public:
     }
 } static CoredumpFilter;
 
-class TOomIsFatal : public TProperty {
+class TOomIsFatal: public TProperty {
 public:
-    TOomIsFatal() : TProperty(P_OOM_IS_FATAL, EProperty::OOM_IS_FATAL,
-            "Kill all affected containers on OOM event")
+    TOomIsFatal()
+        : TProperty(P_OOM_IS_FATAL, EProperty::OOM_IS_FATAL, "Kill all affected containers on OOM event")
     {
         IsDynamic = true;
     }
@@ -5269,10 +5339,11 @@ public:
     }
 } static OomIsFatal;
 
-class TOomScoreAdj : public TProperty {
+class TOomScoreAdj: public TProperty {
 public:
-    TOomScoreAdj() : TProperty(P_OOM_SCORE_ADJ, EProperty::OOM_SCORE_ADJ,
-            "OOM score adjustment: -1000..1000") { }
+    TOomScoreAdj()
+        : TProperty(P_OOM_SCORE_ADJ, EProperty::OOM_SCORE_ADJ, "OOM score adjustment: -1000..1000")
+    {}
     TError Get(std::string &value) const override {
         value = StringFormat("%d", CT->OomScoreAdj);
         return OK;
@@ -5310,10 +5381,10 @@ public:
 
 } static OomScoreAdj;
 
-class TParent : public TProperty {
+class TParent: public TProperty {
 public:
-    TParent() : TProperty(P_PARENT, EProperty::NONE,
-            "Parent container absolute name")
+    TParent()
+        : TProperty(P_PARENT, EProperty::NONE, "Parent container absolute name")
     {
         IsReadOnly = true;
     }
@@ -5335,10 +5406,10 @@ public:
     }
 } static Parent;
 
-class TRootPid : public TProperty {
+class TRootPid: public TProperty {
 public:
-    TRootPid() : TProperty(P_ROOT_PID, EProperty::NONE,
-            "Main task pid")
+    TRootPid()
+        : TProperty(P_ROOT_PID, EProperty::NONE, "Main task pid")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5366,10 +5437,10 @@ public:
     }
 } static RootPid;
 
-class TExitStatusProperty : public TProperty {
+class TExitStatusProperty: public TProperty {
 public:
-    TExitStatusProperty() : TProperty(P_EXIT_STATUS, EProperty::EXIT_STATUS,
-            "Main task exit status")
+    TExitStatusProperty()
+        : TProperty(P_EXIT_STATUS, EProperty::EXIT_STATUS, "Main task exit status")
     {
         IsReadOnly = true;
         IsDeadOnly = true;
@@ -5387,10 +5458,10 @@ public:
     }
 } static ExitStatusProperty;
 
-class TExitCodeProperty : public TProperty {
+class TExitCodeProperty: public TProperty {
 public:
-    TExitCodeProperty() : TProperty(P_EXIT_CODE, EProperty::NONE,
-            "Main task exit code, negative: exit signal, OOM: -99")
+    TExitCodeProperty()
+        : TProperty(P_EXIT_CODE, EProperty::NONE, "Main task exit code, negative: exit signal, OOM: -99")
     {
         IsReadOnly = true;
         IsDeadOnly = true;
@@ -5405,9 +5476,10 @@ public:
     }
 } static ExitCodeProperty;
 
-class TStartErrorProperty : public TProperty {
+class TStartErrorProperty: public TProperty {
 public:
-    TStartErrorProperty() : TProperty(P_START_ERROR, EProperty::NONE, "Last start error")
+    TStartErrorProperty()
+        : TProperty(P_START_ERROR, EProperty::NONE, "Last start error")
     {
         IsReadOnly = true;
     }
@@ -5423,10 +5495,10 @@ public:
     }
 } static StartErrorProperty;
 
-class TMemUsage : public TProperty {
+class TMemUsage: public TProperty {
 public:
-    TMemUsage() : TProperty(P_MEMORY_USAGE, EProperty::NONE,
-            "Memory usage [bytes]")
+    TMemUsage()
+        : TProperty(P_MEMORY_USAGE, EProperty::NONE, "Memory usage [bytes]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5454,10 +5526,10 @@ public:
     }
 } static MemUsage;
 
-class TMemReclaimed : public TProperty {
+class TMemReclaimed: public TProperty {
 public:
-    TMemReclaimed() : TProperty(P_MEMORY_RECLAIMED, EProperty::NONE,
-            "Memory reclaimed from container [bytes]")
+    TMemReclaimed()
+        : TProperty(P_MEMORY_RECLAIMED, EProperty::NONE, "Memory reclaimed from container [bytes]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5485,10 +5557,10 @@ public:
     }
 } static MemReclaimed;
 
-class TAnonUsage : public TProperty {
+class TAnonUsage: public TProperty {
 public:
-    TAnonUsage() : TProperty(P_ANON_USAGE, EProperty::NONE,
-            "Anonymous memory usage [bytes]")
+    TAnonUsage()
+        : TProperty(P_ANON_USAGE, EProperty::NONE, "Anonymous memory usage [bytes]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5516,10 +5588,10 @@ public:
     }
 } static AnonUsage;
 
-class TAnonMaxUsage : public TProperty {
+class TAnonMaxUsage: public TProperty {
 public:
-    TAnonMaxUsage() : TProperty(P_ANON_MAX_USAGE, EProperty::NONE,
-            "Peak anonymous memory usage [bytes]")
+    TAnonMaxUsage()
+        : TProperty(P_ANON_MAX_USAGE, EProperty::NONE, "Peak anonymous memory usage [bytes]")
     {
         IsRuntimeOnly = true;
         IsDynamic = true;
@@ -5555,10 +5627,10 @@ public:
     }
 } static AnonMaxUsage;
 
-class TCacheUsage : public TProperty {
+class TCacheUsage: public TProperty {
 public:
-    TCacheUsage() : TProperty(P_CACHE_USAGE, EProperty::NONE,
-            "File cache usage [bytes]")
+    TCacheUsage()
+        : TProperty(P_CACHE_USAGE, EProperty::NONE, "File cache usage [bytes]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5588,8 +5660,8 @@ public:
 
 class TShmemUsage: public TProperty {
 public:
-    TShmemUsage() : TProperty(P_SHMEM_USAGE, EProperty::NONE,
-            "Shmem and tmpfs usage [bytes]")
+    TShmemUsage()
+        : TProperty(P_SHMEM_USAGE, EProperty::NONE, "Shmem and tmpfs usage [bytes]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5619,8 +5691,8 @@ public:
 
 class TMLockUsage: public TProperty {
 public:
-    TMLockUsage() : TProperty(P_MLOCK_USAGE, EProperty::NONE,
-            "Locked memory [bytes]")
+    TMLockUsage()
+        : TProperty(P_MLOCK_USAGE, EProperty::NONE, "Locked memory [bytes]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5648,10 +5720,10 @@ public:
     }
 } static MLockUsage;
 
-class THugetlbUsage : public TProperty {
+class THugetlbUsage: public TProperty {
 public:
-    THugetlbUsage() : TProperty(P_HUGETLB_USAGE, EProperty::NONE,
-            "HugeTLB memory usage [bytes]")
+    THugetlbUsage()
+        : TProperty(P_HUGETLB_USAGE, EProperty::NONE, "HugeTLB memory usage [bytes]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5682,10 +5754,10 @@ public:
     }
 } static HugetlbUsage;
 
-class TMinorFaults : public TProperty {
+class TMinorFaults: public TProperty {
 public:
-    TMinorFaults() : TProperty(P_MINOR_FAULTS, EProperty::NONE,
-            "Minor page faults")
+    TMinorFaults()
+        : TProperty(P_MINOR_FAULTS, EProperty::NONE, "Minor page faults")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5703,11 +5775,11 @@ public:
     }
 
     TError Get(std::string &value) const override {
-            uint64_t val = 0;
-            TError error = Get(val);
-            if (error)
-                return error;
-            value = std::to_string(val);
+        uint64_t val = 0;
+        TError error = Get(val);
+        if (error)
+            return error;
+        value = std::to_string(val);
         return OK;
     }
 
@@ -5719,10 +5791,10 @@ public:
     }
 } static MinorFaults;
 
-class TMajorFaults : public TProperty {
+class TMajorFaults: public TProperty {
 public:
-    TMajorFaults() : TProperty(P_MAJOR_FAULTS, EProperty::NONE,
-            "Major page faults")
+    TMajorFaults()
+        : TProperty(P_MAJOR_FAULTS, EProperty::NONE, "Major page faults")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5755,10 +5827,10 @@ public:
     }
 } static MajorFaults;
 
-class TVirtualMemory : public TProperty {
+class TVirtualMemory: public TProperty {
 public:
-    TVirtualMemory() : TProperty(P_VIRTUAL_MEMORY, EProperty::NONE,
-            "Virtual memory size: <type>: <bytes>;...")
+    TVirtualMemory()
+        : TProperty(P_VIRTUAL_MEMORY, EProperty::NONE, "Virtual memory size: <type>: <bytes>;...")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5795,10 +5867,10 @@ public:
     }
 } static VirtualMemory;
 
-class TMaxRss : public TProperty {
+class TMaxRss: public TProperty {
 public:
-    TMaxRss() : TProperty(P_MAX_RSS, EProperty::NONE,
-            "Peak anonymous memory usage [bytes] (legacy, use anon_max_usage)")
+    TMaxRss()
+        : TProperty(P_MAX_RSS, EProperty::NONE, "Peak anonymous memory usage [bytes] (legacy, use anon_max_usage)")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5808,7 +5880,7 @@ public:
         auto rootCg = CgroupDriver.MemorySubsystem->RootCgroup();
         TUintMap stat;
         IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit() ||
-            (!CgroupDriver.MemorySubsystem->Statistics(*rootCg, stat) && stat.count("total_max_rss"));
+                      (!CgroupDriver.MemorySubsystem->Statistics(*rootCg, stat) && stat.count("total_max_rss"));
     }
     TError Get(std::string &value) const override {
         auto cg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.MemorySubsystem.get());
@@ -5824,10 +5896,10 @@ public:
     }
 } static MaxRss;
 
-class TCpuUsage : public TProperty {
+class TCpuUsage: public TProperty {
 public:
-    TCpuUsage() : TProperty(P_CPU_USAGE, EProperty::NONE,
-            "Consumed CPU time [nanoseconds]")
+    TCpuUsage()
+        : TProperty(P_CPU_USAGE, EProperty::NONE, "Consumed CPU time [nanoseconds]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5855,10 +5927,10 @@ public:
     }
 } static CpuUsage;
 
-class TCpuSystem : public TProperty {
+class TCpuSystem: public TProperty {
 public:
-    TCpuSystem() : TProperty(P_CPU_SYSTEM, EProperty::NONE,
-            "Consumed system CPU time [nanoseconds]")
+    TCpuSystem()
+        : TProperty(P_CPU_SYSTEM, EProperty::NONE, "Consumed system CPU time [nanoseconds]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5886,10 +5958,10 @@ public:
     }
 } static CpuSystem;
 
-class TCpuWait : public TProperty {
+class TCpuWait: public TProperty {
 public:
-    TCpuWait() : TProperty(P_CPU_WAIT, EProperty::NONE,
-            "CPU time waited for execution [nanoseconds]")
+    TCpuWait()
+        : TProperty(P_CPU_WAIT, EProperty::NONE, "CPU time waited for execution [nanoseconds]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5920,10 +5992,10 @@ public:
     }
 } static CpuWait;
 
-class TCpuThrottled : public TProperty {
+class TCpuThrottled: public TProperty {
 public:
-    TCpuThrottled() : TProperty(P_CPU_THROTTLED, EProperty::NONE,
-            "CPU throttled time [nanoseconds]")
+    TCpuThrottled()
+        : TProperty(P_CPU_THROTTLED, EProperty::NONE, "CPU throttled time [nanoseconds]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5958,10 +6030,10 @@ public:
     }
 } static CpuThrottled;
 
-class TCpuBurstUsage : public TProperty {
+class TCpuBurstUsage: public TProperty {
 public:
-    TCpuBurstUsage() : TProperty(P_CPU_BURST_USAGE, EProperty::NONE,
-                                "CPU burst usage time [nanoseconds]")
+    TCpuBurstUsage()
+        : TProperty(P_CPU_BURST_USAGE, EProperty::NONE, "CPU burst usage time [nanoseconds]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -5992,10 +6064,10 @@ public:
     }
 } static CpuBurstUsage;
 
-class TCpuUnconstrainedWait : public TProperty {
+class TCpuUnconstrainedWait: public TProperty {
 public:
-    TCpuUnconstrainedWait() : TProperty(P_CPU_UNCONSTRAINED_WAIT, EProperty::NONE,
-                                 "CPU unconstrained wait time [nanoseconds]")
+    TCpuUnconstrainedWait()
+        : TProperty(P_CPU_UNCONSTRAINED_WAIT, EProperty::NONE, "CPU unconstrained wait time [nanoseconds]")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -6005,7 +6077,7 @@ public:
         IsSupported = CgroupDriver.CpuSubsystem->SupportUnconstrainedWait();
     }
 
-    TError Get(uint64_t& value) const {
+    TError Get(uint64_t &value) const {
         TError error;
 
         auto cg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.CpuSubsystem.get());
@@ -6032,13 +6104,14 @@ public:
     }
 } static CpuUnconstrainedWait;
 
-class TPressure : public TProperty {
+class TPressure: public TProperty {
 public:
     TPressure(std::string name, std::string desc, std::string knobName)
-        : TProperty(name, EProperty::NONE, desc) {
-            IsReadOnly = true;
-            IsRuntimeOnly = true;
-            KnobName = knobName;
+        : TProperty(name, EProperty::NONE, desc)
+    {
+        IsReadOnly = true;
+        IsRuntimeOnly = true;
+        KnobName = knobName;
     }
 
     void Init(void) override {
@@ -6090,11 +6163,12 @@ private:
     std::string KnobName;
 };
 
-class TCpuPressure : public TPressure {
+class TCpuPressure: public TPressure {
 public:
-    TCpuPressure() : TPressure(P_CPU_PRESSURE, "CPU pressure metrics", TCpuSubsystem::PRESSURE)
+    TCpuPressure()
+        : TPressure(P_CPU_PRESSURE, "CPU pressure metrics", TCpuSubsystem::PRESSURE)
     {
-            RequireControllers = CGROUP_CPU|CGROUP2;
+        RequireControllers = CGROUP_CPU | CGROUP2;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
@@ -6105,11 +6179,12 @@ public:
     }
 } static CpuPressure;
 
-class TMemPressure : public TPressure {
+class TMemPressure: public TPressure {
 public:
-    TMemPressure() : TPressure(P_MEM_PRESSURE, "memory pressure metrics", TMemorySubsystem::PRESSURE)
+    TMemPressure()
+        : TPressure(P_MEM_PRESSURE, "memory pressure metrics", TMemorySubsystem::PRESSURE)
     {
-            RequireControllers = CGROUP_MEMORY|CGROUP2;
+        RequireControllers = CGROUP_MEMORY | CGROUP2;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
@@ -6120,11 +6195,12 @@ public:
     }
 } static MemPressure;
 
-class TIoPressure : public TPressure {
+class TIoPressure: public TPressure {
 public:
-    TIoPressure() : TPressure(P_IO_PRESSURE, "io pressure metrics", TBlkioSubsystem::PRESSURE)
+    TIoPressure()
+        : TPressure(P_IO_PRESSURE, "io pressure metrics", TBlkioSubsystem::PRESSURE)
     {
-            RequireControllers = CGROUP_BLKIO|CGROUP2;
+        RequireControllers = CGROUP_BLKIO | CGROUP2;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
@@ -6135,10 +6211,10 @@ public:
     }
 } static IoPressure;
 
-class TNetClassId : public TProperty {
+class TNetClassId: public TProperty {
 public:
-    TNetClassId() : TProperty(P_NET_CLASS_ID, EProperty::NONE,
-            "Network class: major:minor (hex)")
+    TNetClassId()
+        : TProperty(P_NET_CLASS_ID, EProperty::NONE, "Network class: major:minor (hex)")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -6183,11 +6259,10 @@ public:
     }
 } NetClassId;
 
-
-class TNetLimitSoftProp : public TProperty {
+class TNetLimitSoftProp: public TProperty {
 public:
-    TNetLimitSoftProp() : TProperty(P_NET_LIMIT_SOFT, EProperty::NET_LIMIT_SOFT,
-            "Network soft limit: int (kb/s)")
+    TNetLimitSoftProp()
+        : TProperty(P_NET_LIMIT_SOFT, EProperty::NET_LIMIT_SOFT, "Network soft limit: int (kb/s)")
     {
         IsDynamic = true;
     }
@@ -6212,11 +6287,11 @@ public:
     }
 } static NetLimitSoftProp;
 
-
-class TNetTos : public TProperty {
+class TNetTos: public TProperty {
 public:
-    TNetTos() : TProperty(P_NET_TOS, EProperty::NET_TOS,
-                          "Default IP TOS, format: CS0|...|CS7, default CS0") {
+    TNetTos()
+        : TProperty(P_NET_TOS, EProperty::NET_TOS, "Default IP TOS, format: CS0|...|CS7, default CS0")
+    {
         IsDynamic = true;
         RequireControllers = CGROUP_NETCLS;
     }
@@ -6235,11 +6310,13 @@ public:
     }
 } static NetTos;
 
-class TNetProperty : public TProperty {
-    TUintMap TNetClass:: *Member;
+class TNetProperty: public TProperty {
+    TUintMap TNetClass::*Member;
+
 public:
-    TNetProperty(std::string name, TUintMap TNetClass:: *member, EProperty prop, std::string desc) :
-        TProperty(name, prop, desc), Member(member)
+    TNetProperty(std::string name, TUintMap TNetClass::*member, EProperty prop, std::string desc)
+        : TProperty(name, prop, desc),
+          Member(member)
     {
         IsDynamic = true;
     }
@@ -6294,8 +6371,7 @@ public:
     }
 
     TError Start(void) override {
-        if (Prop == EProperty::NET_RX_LIMIT &&
-                !CT->NetIsolate && CT->NetClass.RxLimit.size())
+        if (Prop == EProperty::NET_RX_LIMIT && !CT->NetIsolate && CT->NetClass.RxLimit.size())
             return TError(EError::InvalidValue, "Net rx limit requires isolated network");
         return OK;
     }
@@ -6313,7 +6389,7 @@ public:
             return;
 
         auto lock = TNetwork::LockNetState();
-        for (auto &it : CT->NetClass.*Member) {
+        for (auto &it: CT->NetClass.*Member) {
             auto kv = map->add_map();
             kv->set_key(it.first);
             kv->set_val(it.second);
@@ -6348,18 +6424,18 @@ public:
 };
 
 TNetProperty NetGuarantee(P_NET_GUARANTEE, &TNetClass::TxRate, EProperty::NET_GUARANTEE,
-        "Guaranteed network bandwidth: <interface>|default: <Bps>;...");
+                          "Guaranteed network bandwidth: <interface>|default: <Bps>;...");
 
 TNetProperty NetLimit(P_NET_LIMIT, &TNetClass::TxLimit, EProperty::NET_LIMIT,
-        "Maximum network bandwidth: <interface>|default: <Bps>;...");
+                      "Maximum network bandwidth: <interface>|default: <Bps>;...");
 
 TNetProperty NetRxLimit(P_NET_RX_LIMIT, &TNetClass::RxLimit, EProperty::NET_RX_LIMIT,
-        "Maximum ingress bandwidth: <interface>|default: <Bps>;...");
+                        "Maximum ingress bandwidth: <interface>|default: <Bps>;...");
 
-class TNetLimitBound : public TProperty {
+class TNetLimitBound: public TProperty {
 public:
-    TNetLimitBound() : TProperty(P_NET_LIMIT_BOUND, EProperty::NONE,
-                                 "Net limits for container netns")
+    TNetLimitBound()
+        : TProperty(P_NET_LIMIT_BOUND, EProperty::NONE, "Net limits for container netns")
     {
         IsReadOnly = true;
     }
@@ -6392,10 +6468,10 @@ public:
     }
 } static NetLimitBound;
 
-class TNetRxLimitBound : public TProperty {
+class TNetRxLimitBound: public TProperty {
 public:
-    TNetRxLimitBound() : TProperty(P_NET_RX_LIMIT_BOUND, EProperty::NONE,
-                                 "Net rx limits for container netns")
+    TNetRxLimitBound()
+        : TProperty(P_NET_RX_LIMIT_BOUND, EProperty::NONE, "Net rx limits for container netns")
     {
         IsReadOnly = true;
     }
@@ -6428,9 +6504,11 @@ public:
     }
 } static NetRxLimitBound;
 
-class TNetL3StatProperty : public TProperty {
+class TNetL3StatProperty: public TProperty {
 public:
-    TNetL3StatProperty(std::string name, std::string desc) : TProperty(name, EProperty::NONE, desc) {
+    TNetL3StatProperty(std::string name, std::string desc)
+        : TProperty(name, EProperty::NONE, desc)
+    {
         IsReadOnly = true;
         IsRuntimeOnly = true;
         IsHidden = true;
@@ -6476,9 +6554,11 @@ TNetL3StatProperty NetRxMaxSpeed(P_NET_RX_MAX_SPEED, "Maximum rx speed since net
 TNetL3StatProperty NetTxSpeedHgram(P_NET_TX_SPEED_HGRAM, "Network tx speed hgram since net namespace creation");
 TNetL3StatProperty NetRxSpeedHgram(P_NET_RX_SPEED_HGRAM, "Network rx speed hgram since net namespace creation");
 
-class TNetLimitSoftStatProperty : public TProperty {
+class TNetLimitSoftStatProperty: public TProperty {
 public:
-    TNetLimitSoftStatProperty(std::string name, std::string desc) : TProperty(name, EProperty::NONE, desc) {
+    TNetLimitSoftStatProperty(std::string name, std::string desc)
+        : TProperty(name, EProperty::NONE, desc)
+    {
         IsReadOnly = true;
         IsRuntimeOnly = true;
     }
@@ -6542,27 +6622,25 @@ public:
     }
 };
 
-TNetLimitSoftStatProperty NetLimitSoftStat(P_NET_LIMIT_SOFT_STAT,
-        "Net limit soft statistics: <key>: <value>;...");
+TNetLimitSoftStatProperty NetLimitSoftStat(P_NET_LIMIT_SOFT_STAT, "Net limit soft statistics: <key>: <value>;...");
 
-class TNetStatProperty : public TProperty {
+class TNetStatProperty: public TProperty {
 public:
-    uint64_t TNetStat:: *Member;
+    uint64_t TNetStat::*Member;
     bool ClassStat;
     bool SockStat;
     bool NetStat;
     bool NetSnmp;
     bool NetSnmp6;
 
-    TNetStatProperty(std::string name, uint64_t TNetStat:: *member,
-                     std::string desc) : TProperty(name, EProperty::NONE, desc) {
+    TNetStatProperty(std::string name, uint64_t TNetStat::*member, std::string desc)
+        : TProperty(name, EProperty::NONE, desc)
+    {
         Member = member;
         IsReadOnly = true;
         IsRuntimeOnly = true;
-        ClassStat = Name == P_NET_BYTES || Name == P_NET_PACKETS ||
-                    Name == P_NET_DROPS || Name == P_NET_OVERLIMITS;
-        SockStat = Name == P_NET_BYTES || Name == P_NET_PACKETS ||
-                   Name == P_NET_TX_BYTES || Name == P_NET_RX_BYTES ||
+        ClassStat = Name == P_NET_BYTES || Name == P_NET_PACKETS || Name == P_NET_DROPS || Name == P_NET_OVERLIMITS;
+        SockStat = Name == P_NET_BYTES || Name == P_NET_PACKETS || Name == P_NET_TX_BYTES || Name == P_NET_RX_BYTES ||
                    Name == P_NET_TX_PACKETS || Name == P_NET_RX_PACKETS;
         NetStat = Name == P_NET_NETSTAT;
         NetSnmp = Name == P_NET_SNMP;
@@ -6603,7 +6681,7 @@ public:
             else if (NetSnmp6)
                 stat = CT->Net->NetSnmp6;
         } else if (ClassStat && !TNetClass::IsDisabled()) {
-            for (auto &it : CT->NetClass.Fold->ClassStat)
+            for (auto &it: CT->NetClass.Fold->ClassStat)
                 stat[it.first] = &it.second->*Member;
         } else if (CT->Net && (!CT->Net->IsHost() || CT->IsRoot())) {
             for (auto &it: CT->Net->DeviceStat)
@@ -6721,42 +6799,32 @@ public:
     }
 };
 
-TNetStatProperty NetBytes(P_NET_BYTES, &TNetStat::TxBytes,
-        "Class TX bytes: <interface>: <bytes>;...");
-TNetStatProperty NetPackets(P_NET_PACKETS, &TNetStat::TxPackets,
-        "Class TX packets: <interface>: <packets>;...");
-TNetStatProperty NetDrops(P_NET_DROPS, &TNetStat::TxDrops,
-        "Class TX drops: <interface>: <packets>;...");
+TNetStatProperty NetBytes(P_NET_BYTES, &TNetStat::TxBytes, "Class TX bytes: <interface>: <bytes>;...");
+TNetStatProperty NetPackets(P_NET_PACKETS, &TNetStat::TxPackets, "Class TX packets: <interface>: <packets>;...");
+TNetStatProperty NetDrops(P_NET_DROPS, &TNetStat::TxDrops, "Class TX drops: <interface>: <packets>;...");
 TNetStatProperty NetOverlimits(P_NET_OVERLIMITS, &TNetStat::TxOverruns,
-        "Class TX overlimits: <interface>: <packets>;...");
+                               "Class TX overlimits: <interface>: <packets>;...");
 
-TNetStatProperty NetRxBytes(P_NET_RX_BYTES, &TNetStat::RxBytes,
-        "Device RX bytes: <interface>: <bytes>;...");
-TNetStatProperty NetRxPackets(P_NET_RX_PACKETS, &TNetStat::RxPackets,
-        "Device RX packets: <interface>: <packets>;...");
-TNetStatProperty NetRxDrops(P_NET_RX_DROPS, &TNetStat::RxDrops,
-        "Device RX drops: <interface>: <packets>;...");
+TNetStatProperty NetRxBytes(P_NET_RX_BYTES, &TNetStat::RxBytes, "Device RX bytes: <interface>: <bytes>;...");
+TNetStatProperty NetRxPackets(P_NET_RX_PACKETS, &TNetStat::RxPackets, "Device RX packets: <interface>: <packets>;...");
+TNetStatProperty NetRxDrops(P_NET_RX_DROPS, &TNetStat::RxDrops, "Device RX drops: <interface>: <packets>;...");
 TNetStatProperty NetRxOverlimits(P_NET_RX_OVERLIMITS, &TNetStat::RxOverruns,
-        "Device RX overlimits: <interface>: <packets>;...");
+                                 "Device RX overlimits: <interface>: <packets>;...");
 
-TNetStatProperty NetTxBytes(P_NET_TX_BYTES, &TNetStat::TxBytes,
-        "Device TX bytes: <interface>: <bytes>;...");
-TNetStatProperty NetTxPackets(P_NET_TX_PACKETS, &TNetStat::TxPackets,
-        "Device TX packets: <interface>: <packets>;...");
-TNetStatProperty NetTxDrops(P_NET_TX_DROPS, &TNetStat::TxDrops,
-        "Device TX drops: <interface>: <packets>;...");
+TNetStatProperty NetTxBytes(P_NET_TX_BYTES, &TNetStat::TxBytes, "Device TX bytes: <interface>: <bytes>;...");
+TNetStatProperty NetTxPackets(P_NET_TX_PACKETS, &TNetStat::TxPackets, "Device TX packets: <interface>: <packets>;...");
+TNetStatProperty NetTxDrops(P_NET_TX_DROPS, &TNetStat::TxDrops, "Device TX drops: <interface>: <packets>;...");
 
-TNetStatProperty NetStat(P_NET_NETSTAT, nullptr,
-        "Net namespace statistics from /proc/net/netstat: <key>: <value>;...");
+TNetStatProperty NetStat(P_NET_NETSTAT, nullptr, "Net namespace statistics from /proc/net/netstat: <key>: <value>;...");
 
-TNetStatProperty NetSnmp(P_NET_SNMP, nullptr,
-        "Net namespace statistics from /proc/net/snmp: <key>: <value>;...");
-TNetStatProperty NetSnmp6(P_NET_SNMP6, nullptr,
-        "Net namespace statistics from /proc/net/snmp6: <key>: <value>;...");
+TNetStatProperty NetSnmp(P_NET_SNMP, nullptr, "Net namespace statistics from /proc/net/snmp: <key>: <value>;...");
+TNetStatProperty NetSnmp6(P_NET_SNMP6, nullptr, "Net namespace statistics from /proc/net/snmp6: <key>: <value>;...");
 
-class TIoStat : public TProperty {
+class TIoStat: public TProperty {
 public:
-    TIoStat(std::string name, EProperty prop, std::string desc) : TProperty(name, prop, desc) {
+    TIoStat(std::string name, EProperty prop, std::string desc)
+        : TProperty(name, prop, desc)
+    {
         IsReadOnly = true;
         IsRuntimeOnly = true;
         RequireControllers = CGROUP_MEMORY | CGROUP_BLKIO;
@@ -6780,8 +6848,7 @@ public:
         } else {
             std::string disk, name;
 
-            error = CgroupDriver.BlkioSubsystem->ResolveDisk(CL->ClientContainer->RootPath,
-                                               index, disk);
+            error = CgroupDriver.BlkioSubsystem->ResolveDisk(CL->ClientContainer->RootPath, index, disk);
             if (error)
                 return error;
             error = CgroupDriver.BlkioSubsystem->DiskName(disk, name);
@@ -6804,10 +6871,11 @@ public:
     }
 };
 
-class TIoReadStat : public TIoStat {
+class TIoReadStat: public TIoStat {
 public:
-    TIoReadStat() : TIoStat(P_IO_READ, EProperty::NONE,
-            "Bytes read from disk: fs|hw|<disk>|<path>: <bytes>;...") {}
+    TIoReadStat()
+        : TIoStat(P_IO_READ, EProperty::NONE, "Bytes read from disk: fs|hw|<disk>|<path>: <bytes>;...")
+    {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
         CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::BytesRead, map);
@@ -6827,10 +6895,11 @@ public:
     }
 } static IoReadStat;
 
-class TIoWriteStat : public TIoStat {
+class TIoWriteStat: public TIoStat {
 public:
-    TIoWriteStat() : TIoStat(P_IO_WRITE, EProperty::NONE,
-            "Bytes written to disk: fs|hw|<disk>|<path>: <bytes>;...") {}
+    TIoWriteStat()
+        : TIoStat(P_IO_WRITE, EProperty::NONE, "Bytes written to disk: fs|hw|<disk>|<path>: <bytes>;...")
+    {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
         CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::BytesWrite, map);
@@ -6853,10 +6922,11 @@ public:
     }
 } static IoWriteStat;
 
-class TIoOpsStat : public TIoStat {
+class TIoOpsStat: public TIoStat {
 public:
-    TIoOpsStat() : TIoStat(P_IO_OPS, EProperty::NONE,
-            "IO operations: fs|hw|<disk>|<path>: <ops>;...") {}
+    TIoOpsStat()
+        : TIoStat(P_IO_OPS, EProperty::NONE, "IO operations: fs|hw|<disk>|<path>: <ops>;...")
+    {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
         CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::IopsReadWrite, map);
@@ -6876,10 +6946,11 @@ public:
     }
 } static IoOpsStat;
 
-class TIoReadOpsStat : public TIoStat {
+class TIoReadOpsStat: public TIoStat {
 public:
-    TIoReadOpsStat() : TIoStat(P_IO_READ_OPS, EProperty::NONE,
-            "IO read operations: hw|<disk>|<path>: <ops>;...") {}
+    TIoReadOpsStat()
+        : TIoStat(P_IO_READ_OPS, EProperty::NONE, "IO read operations: hw|<disk>|<path>: <ops>;...")
+    {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
         CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::IopsRead, map);
@@ -6892,10 +6963,11 @@ public:
     }
 } static IoReadOpsStat;
 
-class TIoWriteOpsStat : public TIoStat {
+class TIoWriteOpsStat: public TIoStat {
 public:
-    TIoWriteOpsStat() : TIoStat(P_IO_WRITE_OPS, EProperty::NONE,
-            "IO write operations: hw|<disk>|<path>: <ops>;...") {}
+    TIoWriteOpsStat()
+        : TIoStat(P_IO_WRITE_OPS, EProperty::NONE, "IO write operations: hw|<disk>|<path>: <ops>;...")
+    {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
         CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::IopsWrite, map);
@@ -6908,10 +6980,11 @@ public:
     }
 } static IoWriteOpsStat;
 
-class TIoTimeStat : public TIoStat {
+class TIoTimeStat: public TIoStat {
 public:
-    TIoTimeStat() : TIoStat(P_IO_TIME, EProperty::NONE,
-            "IO time: hw|<disk>|<path>: <nanoseconds>;...") {}
+    TIoTimeStat()
+        : TIoStat(P_IO_TIME, EProperty::NONE, "IO time: hw|<disk>|<path>: <nanoseconds>;...")
+    {}
     TError GetMap(TUintMap &map) const override {
         auto blkCg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.BlkioSubsystem.get());
         CgroupDriver.BlkioSubsystem->GetIoStat(*blkCg, TBlkioSubsystem::IoStat::Time, map);
@@ -6923,9 +6996,10 @@ public:
     }
 } static IoTimeStat;
 
-class TTime : public TProperty {
+class TTime: public TProperty {
 public:
-    TTime() : TProperty(P_TIME, EProperty::NONE, "Running time [seconds]")
+    TTime()
+        : TProperty(P_TIME, EProperty::NONE, "Running time [seconds]")
     {
         IsReadOnly = true;
     }
@@ -6945,7 +7019,6 @@ public:
         else
             value = (GetCurrentTimeMs() - CT->StartTime) / 1000;
         return OK;
-
     }
 
     TError Get(std::string &value) const override {
@@ -6979,9 +7052,11 @@ public:
     }
 } static Time;
 
-class TCreationTime : public TProperty {
+class TCreationTime: public TProperty {
 public:
-    TCreationTime() : TProperty(P_CREATION_TIME, EProperty::NONE, "Creation time") {
+    TCreationTime()
+        : TProperty(P_CREATION_TIME, EProperty::NONE, "Creation time")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -7001,9 +7076,11 @@ public:
     }
 } static CreationTime;
 
-class TStartTime : public TProperty {
+class TStartTime: public TProperty {
 public:
-    TStartTime() : TProperty(P_START_TIME, EProperty::NONE, "Start time") {
+    TStartTime()
+        : TProperty(P_START_TIME, EProperty::NONE, "Start time")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -7025,9 +7102,11 @@ public:
     }
 } static StartTime;
 
-class TDeathTime : public TProperty {
+class TDeathTime: public TProperty {
 public:
-    TDeathTime() : TProperty(P_DEATH_TIME, EProperty::NONE, "Death time") {
+    TDeathTime()
+        : TProperty(P_DEATH_TIME, EProperty::NONE, "Death time")
+    {
         IsReadOnly = true;
         IsDeadOnly = true;
     }
@@ -7049,9 +7128,11 @@ public:
     }
 } static DeathTime;
 
-class TChangeTime : public TProperty {
+class TChangeTime: public TProperty {
 public:
-    TChangeTime() : TProperty(P_CHANGE_TIME, EProperty::NONE, "Change time") {
+    TChangeTime()
+        : TProperty(P_CHANGE_TIME, EProperty::NONE, "Change time")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
@@ -7071,19 +7152,21 @@ public:
     }
 } static ChangeTime;
 
-class TPortoStat : public TProperty {
+class TPortoStat: public TProperty {
 public:
     void Populate(TUintMap &m) const;
     TError Get(std::string &value) const override;
     TError GetIndexed(const std::string &index, std::string &value) override;
-    TPortoStat() : TProperty(P_PORTO_STAT, EProperty::NONE, "Porto statistics") {
+    TPortoStat()
+        : TProperty(P_PORTO_STAT, EProperty::NONE, "Porto statistics")
+    {
         IsReadOnly = true;
         IsHidden = true;
     }
 } static PortoStat;
 
 void TPortoStat::Populate(TUintMap &m) const {
-    for (const auto &it : PortoStatMembers) {
+    for (const auto &it: PortoStatMembers) {
         if (it.second.TimeStat)
             m[it.first] = (GetCurrentTimeMs() - Statistics->*(it.second.Member)) / 1000;
         else
@@ -7128,8 +7211,7 @@ TError TPortoStat::Get(std::string &value) const {
     return UintMapToString(m, value);
 }
 
-TError TPortoStat::GetIndexed(const std::string &index,
-                                       std::string &value) {
+TError TPortoStat::GetIndexed(const std::string &index, std::string &value) {
     TUintMap m;
     Populate(m);
 
@@ -7141,7 +7223,7 @@ TError TPortoStat::GetIndexed(const std::string &index,
     return OK;
 }
 
-class TPortoCpuJailState : public TProperty {
+class TPortoCpuJailState: public TProperty {
 public:
     TError Get(std::string &value) const override {
         auto state = TContainer::GetJailCpuState();
@@ -7150,16 +7232,18 @@ public:
             value += fmt::format("{:<4d} {:02d}\n", state.Permutation[i], state.Usage[i]);
         return OK;
     }
-    TPortoCpuJailState() : TProperty(P_PORTO_CPU_JAIL_STATE, EProperty::NONE, "Porto CPU jail state") {
+    TPortoCpuJailState()
+        : TProperty(P_PORTO_CPU_JAIL_STATE, EProperty::NONE, "Porto CPU jail state")
+    {
         IsReadOnly = true;
         IsHidden = true;
     }
 } static PortoCpuJailState;
 
-class TProcessCount : public TProperty {
+class TProcessCount: public TProperty {
 public:
-    TProcessCount() : TProperty(P_PROCESS_COUNT, EProperty::NONE,
-            "Process count")
+    TProcessCount()
+        : TProperty(P_PROCESS_COUNT, EProperty::NONE, "Process count")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -7188,10 +7272,10 @@ public:
     }
 } static ProcessCount;
 
-class TThreadCount : public TProperty {
+class TThreadCount: public TProperty {
 public:
-    TThreadCount() : TProperty(P_THREAD_COUNT, EProperty::NONE,
-            "Thread count")
+    TThreadCount()
+        : TProperty(P_THREAD_COUNT, EProperty::NONE, "Thread count")
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
@@ -7199,7 +7283,7 @@ public:
     }
 
     TError Get(uint64_t &value) const {
-        return  CT->GetThreadCount(value);
+        return CT->GetThreadCount(value);
     }
 
     TError Get(std::string &value) const override {
@@ -7219,10 +7303,11 @@ public:
     }
 } static ThreadCount;
 
-class TThreadLimit : public TProperty {
+class TThreadLimit: public TProperty {
 public:
-    TThreadLimit() : TProperty(P_THREAD_LIMIT, EProperty::THREAD_LIMIT,
-            "Thread limit") {}
+    TThreadLimit()
+        : TProperty(P_THREAD_LIMIT, EProperty::THREAD_LIMIT, "Thread limit")
+    {}
     void Init(void) override {
         IsDynamic = true;
         IsSupported = CgroupDriver.PidsSubsystem->Supported;
@@ -7262,10 +7347,11 @@ public:
     }
 } static ThreadLimit;
 
-class TSysctlProperty : public TProperty {
+class TSysctlProperty: public TProperty {
 public:
-    TSysctlProperty() : TProperty(P_SYSCTL, EProperty::SYSCTL,
-            "Sysctl, format: name: value;...") {}
+    TSysctlProperty()
+        : TProperty(P_SYSCTL, EProperty::SYSCTL, "Sysctl, format: name: value;...")
+    {}
 
     TError Get(std::string &value) const override {
         value = StringMapToString(CT->Sysctl);
@@ -7327,9 +7413,11 @@ public:
     }
 } static SysctlProperty;
 
-class TTaint : public TProperty {
+class TTaint: public TProperty {
 public:
-    TTaint() : TProperty(P_TAINT, EProperty::NONE, "Container problems") {
+    TTaint()
+        : TProperty(P_TAINT, EProperty::NONE, "Container problems")
+    {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {

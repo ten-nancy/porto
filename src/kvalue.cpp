@@ -1,9 +1,10 @@
 #include "kvalue.hpp"
+
+#include <google/protobuf/io/coded_stream.h>
+
 #include "config.hpp"
 #include "kv.pb.h"
 #include "util/log.hpp"
-
-#include <google/protobuf/io/coded_stream.h>
 
 extern "C" {
 #include <fcntl.h>
@@ -85,15 +86,14 @@ TError TKeyValue::Save() {
 }
 
 TError TKeyValue::Mount(const TPath &root) {
-    auto error = root.SecureTmpfsMount(TCred(RootUser, PortoGroup),
-                                       config().keyvalue_size());
+    auto error = root.SecureTmpfsMount(TCred(RootUser, PortoGroup), config().keyvalue_size());
     if (error)
         return error;
 
     std::vector<std::string> names;
     error = root.ReadDirectory(names);
     if (!error) {
-        for (auto &name : names) {
+        for (auto &name: names) {
             if (StringEndsWith(name, ".tmp"))
                 (void)(root / name).Unlink();
         }
@@ -106,7 +106,7 @@ TError TKeyValue::ListAll(const TPath &root, std::list<TKeyValue> &nodes) {
     std::vector<std::string> names;
     TError error = root.ReadDirectory(names);
     if (!error) {
-        for (auto &name : names) {
+        for (auto &name: names) {
             if (!StringEndsWith(name, ".tmp"))
                 nodes.emplace_back(root / name);
         }
@@ -124,7 +124,7 @@ void TKeyValue::DumpAll(const TPath &root) {
         return;
     }
 
-    for (auto &name : names) {
+    for (auto &name: names) {
         L("{}", name);
         if (StringEndsWith(name, ".tmp")) {
             L("SKIP");

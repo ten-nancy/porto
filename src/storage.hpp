@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+
 #include "util/path.hpp"
 
 enum EStorageType {
@@ -30,7 +31,7 @@ public:
     TError Resolve(EStorageType type, const TPath &place, const std::string &name = "", bool strict = false);
     void Open(EStorageType type, const TPath &place, const std::string &name = "");
 
-    static TError CheckName(const std::string &name, bool meta=false);
+    static TError CheckName(const std::string &name, bool meta = false);
     static TError CheckPlace(const TPath &place);
     static TError CheckBaseDirectory(const TPath &place, EStorageType type, unsigned perms);
     static TError Cleanup(const TPath &place, EStorageType type);

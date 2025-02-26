@@ -1,4 +1,5 @@
 #include "namespace.hpp"
+
 #include "log.hpp"
 
 extern "C" {

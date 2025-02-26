@@ -1,11 +1,13 @@
 #pragma once
 
-#include <vector>
 #include <cstdint>
+#include <vector>
 
 extern "C" {
 #include <seccomp.h>
 }
+
+#include "util/error.hpp"
 
 struct TSeccompRule {
     int Syscall;
@@ -20,15 +22,15 @@ struct TSeccompProfile {
 
     TSeccompProfile() = default;
 
-    TSeccompProfile& operator=(const TSeccompProfile &other) = default;
+    TSeccompProfile &operator=(const TSeccompProfile &other) = default;
 
-    TSeccompProfile& operator=(TSeccompProfile &&other) {
+    TSeccompProfile &operator=(TSeccompProfile &&other) {
         DefaultAction = other.DefaultAction;
         Rules = std::move(other.Rules);
         return *this;
     }
 
-    TError Parse(const seccomp::TProfile& rules);
+    TError Parse(const seccomp::TProfile &rules);
 
     void Dump(seccomp::TProfile &profile) const;
 

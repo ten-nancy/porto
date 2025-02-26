@@ -1,6 +1,8 @@
 #include "waiter.hpp"
-#include "client.hpp"
+
 #include <time.h>
+
+#include "client.hpp"
 
 static std::mutex ContainerWaitersLock;
 static std::list<TContainerWaiter *> ContainerWaiters;
@@ -37,12 +39,9 @@ void TContainerWaiter::Deactivate() {
 }
 
 bool TContainerWaiter::ShouldReport(TContainer &ct) {
-
     /* Sync wait reports only stopped, dead, respawning, hollow meta */
-    if (!Async && ct.State != EContainerState::Stopped &&
-            ct.State != EContainerState::Dead &&
-            ct.State != EContainerState::Respawning &&
-            (ct.State != EContainerState::Meta || ct.RunningChildren))
+    if (!Async && ct.State != EContainerState::Stopped && ct.State != EContainerState::Dead &&
+        ct.State != EContainerState::Respawning && (ct.State != EContainerState::Meta || ct.RunningChildren))
         return false;
 
     if (Async && !TargetState.empty() && TargetState != TContainer::StateName(ct.State))
@@ -71,8 +70,7 @@ void TContainerWaiter::ReportAll(TContainer &ct, const std::string &label, const
     for (auto it = ContainerWaiters.begin(); it != ContainerWaiters.end();) {
         auto waiter = *it;
         if (waiter->ShouldReport(ct) &&
-                (label.empty() || (label[0] >= 'a' && label[0] <= 'z') ||
-                 waiter->ShouldReportLabel(label))) {
+            (label.empty() || (label[0] >= 'a' && label[0] <= 'z') || waiter->ShouldReportLabel(label))) {
             auto client = waiter->Client.lock();
 
             std::string name;
@@ -118,7 +116,8 @@ bool TContainerWaiter::operator==(const TContainerWaiter &waiter) const {
     if (!equal)
         return false;
 
-    equal = (Wildcards.size() == waiter.Wildcards.size() && std::equal(Wildcards.begin(), Wildcards.end(), waiter.Wildcards.begin()));
+    equal = (Wildcards.size() == waiter.Wildcards.size() &&
+             std::equal(Wildcards.begin(), Wildcards.end(), waiter.Wildcards.begin()));
     if (!equal)
         return false;
 

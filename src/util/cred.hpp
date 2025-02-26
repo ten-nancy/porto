@@ -24,7 +24,7 @@ constexpr gid_t NoGroup = (gid_t)-1;
 
 extern gid_t PortoGroup;
 
-static constexpr const char * CRED_POSTFORK_TAINT_MESSAGE = "Credential function may deadlock in post-fork context";
+static constexpr const char *CRED_POSTFORK_TAINT_MESSAGE = "Credential function may deadlock in post-fork context";
 
 class TCred {
     uid_t Uid;
@@ -45,12 +45,18 @@ class TCred {
 public:
     std::vector<gid_t> Groups;
 
-    TCred(uid_t uid, gid_t gid) : Uid(uid), Gid(gid) {
+    TCred(uid_t uid, gid_t gid)
+        : Uid(uid),
+          Gid(gid)
+    {
         UpdateUserName();
         UpdateGroupName();
     }
 
-    TCred() : Uid(NoUser), Gid(NoGroup) {}
+    TCred()
+        : Uid(NoUser),
+          Gid(NoGroup)
+    {}
 
     static TCred Current();
 
@@ -89,10 +95,16 @@ public:
         return GName;
     }
 
-    bool IsRootUser() const { return Uid == RootUser; }
-    bool IsRootGroup() const { return Gid == RootGroup; }
+    bool IsRootUser() const {
+        return Uid == RootUser;
+    }
+    bool IsRootGroup() const {
+        return Gid == RootGroup;
+    }
 
-    bool IsUnknown() const { return Uid == NoUser && Gid == NoGroup; }
+    bool IsUnknown() const {
+        return Uid == NoUser && Gid == NoGroup;
+    }
 
     bool IsMemberOf(gid_t group) const;
 
@@ -111,9 +123,15 @@ class TCapabilities {
 
 public:
     TCapabilities() = default;
-    TCapabilities(uint64_t i): Permitted(i) {};
-    TCapabilities(const TCapabilities &c): Permitted(c.Permitted) {};
-    TCapabilities(TCapabilities &&c): Permitted(c.Permitted) {};
+    TCapabilities(uint64_t i)
+        : Permitted(i)
+    {};
+    TCapabilities(const TCapabilities &c)
+        : Permitted(c.Permitted)
+    {};
+    TCapabilities(TCapabilities &&c)
+        : Permitted(c.Permitted)
+    {};
 
     inline operator bool() noexcept {
         return Permitted != 0;
@@ -133,18 +151,18 @@ public:
         return Permitted != c.Permitted;
     }
 
-    inline TCapabilities& operator=(const TCapabilities &c) = default;
-    inline TCapabilities& operator=(TCapabilities &&c) = default;
-    inline TCapabilities& operator=(uint64_t i) noexcept {
+    inline TCapabilities &operator=(const TCapabilities &c) = default;
+    inline TCapabilities &operator=(TCapabilities &&c) = default;
+    inline TCapabilities &operator=(uint64_t i) noexcept {
         Permitted = i;
         return *this;
     }
 
-    inline TCapabilities& operator|=(uint64_t i) noexcept {
+    inline TCapabilities &operator|=(uint64_t i) noexcept {
         Permitted |= i;
         return *this;
     }
-    inline TCapabilities& operator&=(uint64_t i) noexcept {
+    inline TCapabilities &operator&=(uint64_t i) noexcept {
         Permitted &= i;
         return *this;
     }
@@ -159,7 +177,7 @@ public:
         return TCapabilities(~Permitted);
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const TCapabilities &c) {
+    friend std::ostream &operator<<(std::ostream &os, const TCapabilities &c) {
         return os << c.Format();
     }
 

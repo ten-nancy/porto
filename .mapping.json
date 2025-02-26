@@ -1,5 +1,7 @@
 {
   ".":"infra/porto/porto",
+  ".arcignore":"infra/porto/porto/.arcignore",
+  ".clang-format":"infra/porto/porto/.clang-format",
   ".dir-locals.el":"infra/porto/porto/.dir-locals.el",
   ".gitattributes":"infra/porto/porto/.gitattributes",
   ".github/workflows/cmake.yml":"infra/porto/porto/.github/workflows/cmake.yml",
@@ -37,6 +39,7 @@
   "doc/porto.md":"infra/porto/porto/doc/porto.md",
   "doc/processes_and_threads.md":"infra/porto/porto/doc/processes_and_threads.md",
   "dpkg-buildpackage":"infra/porto/porto/dpkg-buildpackage",
+  "format.sh":"infra/porto/porto/format.sh",
   "layers/.gitignore":"infra/porto/porto/layers/.gitignore",
   "layers/Makefile":"infra/porto/porto/layers/Makefile",
   "layers/base_debian_stretch.sh":"infra/porto/porto/layers/base_debian_stretch.sh",

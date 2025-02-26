@@ -1,44 +1,35 @@
+#include "cgroup.hpp"
+
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstddef>
 #include <memory>
-#include <unordered_set>
 #include <mutex>
+#include <unordered_set>
 
-#include "cgroup.hpp"
+#include "config.hpp"
 #include "container.hpp"
 #include "device.hpp"
-#include "config.hpp"
 #include "util/error.hpp"
 #include "util/log.hpp"
 #include "util/string.hpp"
-#include "util/unix.hpp"
 #include "util/task.hpp"
-#include "util/string.hpp"
+#include "util/unix.hpp"
 
 extern "C" {
 #include <fcntl.h>
-#include <unistd.h>
 #include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/sysmacros.h>
+#include <unistd.h>
 }
 
 const TFlagsNames ControllersName = {
-    { CGROUP_FREEZER,   "freezer" },
-    { CGROUP_MEMORY,    "memory" },
-    { CGROUP_CPU,       "cpu" },
-    { CGROUP_CPUACCT,   "cpuacct" },
-    { CGROUP_NETCLS,    "net_cls" },
-    { CGROUP_BLKIO,     "blkio" },
-    { CGROUP_DEVICES,   "devices" },
-    { CGROUP_HUGETLB,   "hugetlb" },
-    { CGROUP_CPUSET,    "cpuset" },
-    { CGROUP_PIDS,      "pids" },
-    { CGROUP_PERF,      "perf_event" },
-    { CGROUP_SYSTEMD,   "systemd" },
-    { CGROUP2,          "cgroup2" },
+    {CGROUP_FREEZER, "freezer"}, {CGROUP_MEMORY, "memory"}, {CGROUP_CPU, "cpu"},         {CGROUP_CPUACCT, "cpuacct"},
+    {CGROUP_NETCLS, "net_cls"},  {CGROUP_BLKIO, "blkio"},   {CGROUP_DEVICES, "devices"}, {CGROUP_HUGETLB, "hugetlb"},
+    {CGROUP_CPUSET, "cpuset"},   {CGROUP_PIDS, "pids"},     {CGROUP_PERF, "perf_event"}, {CGROUP_SYSTEMD, "systemd"},
+    {CGROUP2, "cgroup2"},
 };
 
 static constexpr const char *CGROUP_PROCS = "cgroup.procs";
@@ -244,7 +235,7 @@ TError TCgroup::GetUintMap(const std::string &knob, TUintMap &value) const {
 
 // TCgroup1
 
-class TCgroup1 : public TCgroup {
+class TCgroup1: public TCgroup {
     // cgroup1 specified
     static TError AbortFuse(pid_t pid);
 
@@ -252,7 +243,9 @@ public:
     // constructors and destructor
     // TCgroup1() = delete;
     TCgroup1() = default;
-    TCgroup1(const TSubsystem *subsystem, const std::string &name): TCgroup(subsystem, name) {}
+    TCgroup1(const TSubsystem *subsystem, const std::string &name)
+        : TCgroup(subsystem, name)
+    {}
     ~TCgroup1() = default;
 
     // modifiers
@@ -365,17 +358,14 @@ TError TCgroup1::Remove() const {
     if (error && (error.Errno != ENOENT || Exists())) {
         std::vector<pid_t> tasks;
         GetTasks(tasks);
-        L_CG_ERR("Cannot remove cgroup {} : {}, {} tasks inside",
-              *this, error, tasks.size());
+        L_CG_ERR("Cannot remove cgroup {} : {}, {} tasks inside", *this, error, tasks.size());
 
         L("Tasks before destroy:");
-        for (auto task : startTasks)
+        for (auto task: startTasks)
             L("task: {}", task);
 
         L("Tasks after destroy:");
-        for (size_t i = 0;
-             i < tasks.size() && i < config().daemon().debug_hung_tasks_count();
-             ++i) {
+        for (size_t i = 0; i < tasks.size() && i < config().daemon().debug_hung_tasks_count(); ++i) {
             auto task = tasks[i];
             PrintProc("status", task);
             PrintProc("wchan", task);
@@ -408,7 +398,7 @@ TError TCgroup1::Attach(pid_t pid, bool thread) const {
     return error;
 }
 
-TError TCgroup1::AttachAll(const TCgroup &cg,  bool thread) const {
+TError TCgroup1::AttachAll(const TCgroup &cg, bool thread) const {
     if (IsSubsystem(CGROUP_NETCLS) && !config().network().enable_netcls_classid())
         return OK;
 
@@ -463,8 +453,7 @@ TError TCgroup1::KillAll(int signal, bool abortFuse) const {
         return TError(EError::Permission, "Bad idea");
 
     do {
-        if (++iteration > 10 && !frozen &&
-            CgroupDriver.FreezerSubsystem->IsBound(*this) &&
+        if (++iteration > 10 && !frozen && CgroupDriver.FreezerSubsystem->IsBound(*this) &&
             !CgroupDriver.FreezerSubsystem->IsFrozen(*this))
         {
             error = CgroupDriver.FreezerSubsystem->Freeze(*this, false);
@@ -505,8 +494,7 @@ TError TCgroup1::KillAll(int signal, bool abortFuse) const {
     // There is case when a child cgroup is frozen and tasks cannot be killed.
     // Cgroups are walked from leaves to root so it does not have to walk children in that case.
     // It is enough to thaw on its own.
-    if (CgroupDriver.FreezerSubsystem->IsBound(*this) &&
-        CgroupDriver.FreezerSubsystem->IsFrozen(*this)) {
+    if (CgroupDriver.FreezerSubsystem->IsBound(*this) && CgroupDriver.FreezerSubsystem->IsFrozen(*this)) {
         if (!frozen)
             L_TAINT(fmt::format("Rogue freeze in cgroup {}", *this));
 
@@ -540,7 +528,7 @@ TError TCgroup1::GetCount(uint64_t &count, bool thread) const {
 
 // TCgroup2
 
-class TCgroup2 : public TCgroup {
+class TCgroup2: public TCgroup {
     // cgroup2 specified
     TPath LeafPath() const;
     static std::string LeafKnob(const std::string &knob);
@@ -548,7 +536,9 @@ class TCgroup2 : public TCgroup {
 public:
     // constructors and destructor
     TCgroup2() = delete;
-    TCgroup2(const TSubsystem *subsystem, const std::string &name): TCgroup(subsystem, name) {}
+    TCgroup2(const TSubsystem *subsystem, const std::string &name)
+        : TCgroup(subsystem, name)
+    {}
     ~TCgroup2() = default;
 
     // modifiers
@@ -668,17 +658,14 @@ TError TCgroup2::Remove() const {
     if (error && (/*error.Errno != ENOENT || */ Exists())) {
         std::vector<pid_t> tasks;
         GetTasks(tasks);
-        L_CG_ERR("Cannot remove cgroup {}: {}, {} tasks inside",
-              *this, error, tasks.size());
+        L_CG_ERR("Cannot remove cgroup {}: {}, {} tasks inside", *this, error, tasks.size());
 
         L("Tasks before destroy:");
-        for (auto task : startTasks)
+        for (auto task: startTasks)
             L("task: {}", task);
 
         L("Tasks after destroy:");
-        for (size_t i = 0;
-             i < tasks.size() && i < config().daemon().debug_hung_tasks_count();
-             ++i) {
+        for (size_t i = 0; i < tasks.size() && i < config().daemon().debug_hung_tasks_count(); ++i) {
             auto task = tasks[i];
             PrintProc("status", task);
             PrintProc("wchan", task);
@@ -784,8 +771,7 @@ TError TCgroup2::KillAll(int signal, bool) const {
     int iteration = 0;
 
     do {
-        if (++iteration > 10 && !frozen &&
-            CgroupDriver.FreezerSubsystem->IsBound(*this) &&
+        if (++iteration > 10 && !frozen && CgroupDriver.FreezerSubsystem->IsBound(*this) &&
             !CgroupDriver.FreezerSubsystem->IsFrozen(*this))
         {
             error = CgroupDriver.FreezerSubsystem->Freeze(*this, false);
@@ -817,8 +803,7 @@ TError TCgroup2::KillAll(int signal, bool) const {
         killed = tasks;
     } while (retry);
 
-    if (CgroupDriver.FreezerSubsystem->IsBound(*this) &&
-        CgroupDriver.FreezerSubsystem->IsFrozen(*this)) {
+    if (CgroupDriver.FreezerSubsystem->IsBound(*this) && CgroupDriver.FreezerSubsystem->IsFrozen(*this)) {
         if (!frozen)
             L_TAINT(fmt::format("Rogue freeze in cgroup {}", *this));
 
@@ -984,7 +969,7 @@ TError TSubsystem::TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cgroup)
 
     bool found = false;
 
-    for (auto &line : lines) {
+    for (auto &line: lines) {
         auto fields = SplitString(line, ':', 3);
         if (fields.size() < 3)
             continue;
@@ -993,7 +978,7 @@ TError TSubsystem::TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cgroup)
         if (cgroups.empty())
             cgroups.push_back("");
 
-        for (auto &cg : cgroups) {
+        for (auto &cg: cgroups) {
             // check that we do not have fake cgroups created by cgroup with \n in name
             if (cgroupTypes.find(cg) != cgroupTypes.end())
                 return TError(EError::Permission, "Fake cgroup found");
@@ -1041,8 +1026,7 @@ TError TMemorySubsystem::GetCacheUsage(const TCgroup &cg, uint64_t &usage) const
     TUintMap stat;
     TError error = Statistics(cg, stat);
     if (!error)
-        usage = stat["total_inactive_file"] +
-                stat["total_active_file"];
+        usage = stat["total_inactive_file"] + stat["total_active_file"];
     return error;
 }
 
@@ -1058,9 +1042,7 @@ TError TMemorySubsystem::GetShmemUsage(const TCgroup &cg, uint64_t &usage) const
         if (cg.Has(ANON_USAGE))
             cg.GetUint64(ANON_USAGE, usage);
         else
-            usage = stat["total_inactive_anon"] +
-                    stat["total_active_anon"] +
-                    stat["total_unevictable"];
+            usage = stat["total_inactive_anon"] + stat["total_active_anon"] + stat["total_unevictable"];
 
         if (usage >= stat["total_rss"])
             usage -= stat["total_rss"];
@@ -1087,7 +1069,7 @@ TError TMemorySubsystem::GetReclaimed(const TCgroup &cg, uint64_t &value) const 
 }
 
 TError TMemorySubsystem::Usage(const TCgroup &cg, uint64_t &value) const {
-        return cg.GetUint64(IsCgroup2() ? CURRENT : USAGE, value);
+    return cg.GetUint64(IsCgroup2() ? CURRENT : USAGE, value);
 }
 
 bool TMemorySubsystem::SupportSoftLimit() const {
@@ -1116,7 +1098,7 @@ TError TMemorySubsystem::SetGuarantee(const TCgroup &cg, uint64_t guarantee) con
     return cg.SetUint64(IsCgroup2() ? LOW : LOW_LIMIT, guarantee);
 }
 
- bool TMemorySubsystem::SupportHighLimit() const {
+bool TMemorySubsystem::SupportHighLimit() const {
     return RootCgroup()->Has(IsCgroup2() ? HIGH : HIGH_LIMIT);
 }
 
@@ -1192,10 +1174,8 @@ TError TMemorySubsystem::GetAnonUsage(const TCgroup &cg, uint64_t &usage) const 
     TUintMap stat;
     TError error = Statistics(cg, stat);
     if (!error)
-        usage = stat["total_inactive_anon"] +
-                stat["total_active_anon"] +
-                stat["total_unevictable"] +
-                stat["total_swap"];
+        usage =
+            stat["total_inactive_anon"] + stat["total_active_anon"] + stat["total_unevictable"] + stat["total_swap"];
     return error;
 }
 
@@ -1210,7 +1190,7 @@ TError TMemorySubsystem::SetAnonOnly(const TCgroup &cg, bool val) const {
 }
 
 bool TMemorySubsystem::SupportSwap() const {
-    return RootCgroup()->Has(IsCgroup2()? SWAP_MAX : MEM_SWAP_LIMIT);
+    return RootCgroup()->Has(IsCgroup2() ? SWAP_MAX : MEM_SWAP_LIMIT);
 }
 
 TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
@@ -1375,7 +1355,8 @@ std::string TMemorySubsystem::ChooseMemoryEventsKnob(bool local) const {
         return OOM_CONTROL;
 }
 
-TError TMemorySubsystem::GetMemoryEventsField(const TCgroup &cg, uint64_t &value, const std::string &field, bool local) const {
+TError TMemorySubsystem::GetMemoryEventsField(const TCgroup &cg, uint64_t &value, const std::string &field,
+                                              bool local) const {
     TError error;
     TUintMap map;
 
@@ -1468,7 +1449,7 @@ TError TCpuSubsystem::InitializeSubsystem() {
         if (HasShares && cg->GetUint64(WEIGHT, BaseShares))
             BaseShares = 100; /* kernel deafult CGROUP_WEIGHT_DFL */
 
-        MinShares = 1; /* kernel limit CGROUP_WEIGHT_MIN */
+        MinShares = 1;     /* kernel limit CGROUP_WEIGHT_MIN */
         MaxShares = 10000; /* kernel limit CGROUP_WEIGHT_MAX */
 
         SharesMultipliers = {100, 10, 10};
@@ -1477,7 +1458,7 @@ TError TCpuSubsystem::InitializeSubsystem() {
         if (HasShares && cg->GetUint64(SHARES, BaseShares))
             BaseShares = 1024;
 
-        MinShares = 2; /* kernel limit MIN_SHARES */
+        MinShares = 2;          /* kernel limit MIN_SHARES */
         MaxShares = 1024 * 256; /* kernel limit MAX_SHARES */
 
         SharesMultipliers = {256, 16, 16};
@@ -1490,15 +1471,11 @@ TError TCpuSubsystem::InitializeSubsystem() {
     if (IsCgroup2()) {
         HasQuota = cg->Has(MAX);
     } else {
-        HasQuota = cg->Has(CFS_QUOTA_US) &&
-                   cg->Has(CFS_PERIOD_US);
+        HasQuota = cg->Has(CFS_QUOTA_US) && cg->Has(CFS_PERIOD_US);
 
-        HasRtGroup = cg->Has(RT_RUNTIME_US) &&
-                     cg->Has(RT_PERIOD_US);
+        HasRtGroup = cg->Has(RT_RUNTIME_US) && cg->Has(RT_PERIOD_US);
 
-        HasReserve = HasShares && HasQuota &&
-                     cg->Has(CFS_RESERVE_US) &&
-                     cg->Has(CFS_RESERVE_SHARES) &&
+        HasReserve = HasShares && HasQuota && cg->Has(CFS_RESERVE_US) && cg->Has(CFS_RESERVE_SHARES) &&
                      config().container().enable_cpu_reserve();
     }
 
@@ -1550,10 +1527,8 @@ TError TCpuSubsystem::GetThrottled(const TCgroup &cg, uint64_t &value) const {
 }
 
 bool TCpuSubsystem::SupportUnconstrainedWait() const {
-    return RootCgroup()->Has(CgroupDriver.CpuacctSubsystem->WAIT) &&
-           RootCgroup()->Has(CFS_BURST_USAGE) &&
-           RootCgroup()->Has(CFS_BURST_LOAD) &&
-           RootCgroup()->Has(CFS_THROTTLED);
+    return RootCgroup()->Has(CgroupDriver.CpuacctSubsystem->WAIT) && RootCgroup()->Has(CFS_BURST_USAGE) &&
+           RootCgroup()->Has(CFS_BURST_LOAD) && RootCgroup()->Has(CFS_THROTTLED);
 }
 
 TError TCpuSubsystem::GetUnconstrainedWait(const TCgroup &cg, uint64_t &value) const {
@@ -1573,9 +1548,8 @@ TError TCpuSubsystem::GetUnconstrainedWait(const TCgroup &cg, uint64_t &value) c
     burstUsage = static_cast<int64_t>(stat[BURST_USAGE]);
     throttled = static_cast<int64_t>(stat[H_THROTTLED_TIME]);
 
-    value = static_cast<uint64_t>(std::max(
-            wait - std::max(burstLoad - burstUsage, static_cast<int64_t>(0)) - throttled,
-            static_cast<int64_t>(0)));
+    value = static_cast<uint64_t>(std::max(wait - std::max(burstLoad - burstUsage, static_cast<int64_t>(0)) - throttled,
+                                           static_cast<int64_t>(0)));
 
     return OK;
 }
@@ -1773,12 +1747,11 @@ TError TCpuSubsystem::SetRtLimit(const TCgroup &cg, uint64_t quota, uint64_t per
     else if (root_runtime < 0)
         root_runtime = root_period;
 
-    if (quota <= 0 || quota >= max ||
-            (double)quota / max * root_period > root_runtime) {
+    if (quota <= 0 || quota >= max || (double)quota / max * root_period > root_runtime) {
         runtime = -1;
     } else {
         runtime = (double)quota * period / max;
-        if (runtime < 1000)  /* 1ms */
+        if (runtime < 1000) /* 1ms */
             runtime = 1000;
     }
 
@@ -1925,8 +1898,7 @@ TError TCpusetSubsystem::SetCpus(const TCgroup &cg, const TBitMap &cpus) const {
 // Netcls
 
 TError TNetclsSubsystem::InitializeSubsystem() {
-    HasPriority = config().network().enable_netcls_priority() &&
-                  RootCgroup()->Has(PRIORITY);
+    HasPriority = config().network().enable_netcls_priority() && RootCgroup()->Has(PRIORITY);
     if (HasPriority)
         L_CG("support netcls priority");
     return OK;
@@ -2014,7 +1986,7 @@ TError TBlkioSubsystem::InitializeSubsystem() {
     HasThrottler = RootCgroup()->Has("blkio.throttle.io_serviced");
     auto sched = HasThrottler ? "throttle." : "";
     auto recOpsKnob = fmt::format("blkio.{}io_serviced_recursive", sched);
-    auto recur =  RootCgroup()->Has(recOpsKnob) ? "_recursive" : "";
+    auto recur = RootCgroup()->Has(recOpsKnob) ? "_recursive" : "";
 
     BytesKnob = fmt::format("blkio.{}io_service_bytes{}", sched, recur);
     OpsKnob = fmt::format("blkio.{}io_serviced{}", sched, recur);
@@ -2047,9 +2019,7 @@ void TBlkioSubsystem::ParseIoStatV1(const std::vector<std::string> &lines, enum 
                 continue;
 
             prev = words[0];
-            sum = StringStartsWith(name, "sd") ||
-                  StringStartsWith(name, "nvme") ||
-                  StringStartsWith(name, "vd");
+            sum = StringStartsWith(name, "sd") || StringStartsWith(name, "nvme") || StringStartsWith(name, "vd");
             hide = StringStartsWith(name, "ram");
         }
 
@@ -2086,9 +2056,7 @@ void TBlkioSubsystem::ParseIoStatV2(const std::vector<std::string> &lines, enum 
         if (StringStartsWith(name, "ram"))
             continue;
 
-        sum = StringStartsWith(name, "sd") ||
-              StringStartsWith(name, "nvme") ||
-              StringStartsWith(name, "vd");
+        sum = StringStartsWith(name, "sd") || StringStartsWith(name, "nvme") || StringStartsWith(name, "vd");
 
         std::string kind;
         if (stat & IoStat::Bytes)
@@ -2098,7 +2066,7 @@ void TBlkioSubsystem::ParseIoStatV2(const std::vector<std::string> &lines, enum 
         else
             return;
 
-        std::string prefixes = fmt::format("{}{}", stat & IoStat::Read ? "r" : "",  stat & IoStat::Write ? "w" : "");
+        std::string prefixes = fmt::format("{}{}", stat & IoStat::Read ? "r" : "", stat & IoStat::Write ? "w" : "");
         for (char prefix: prefixes) {
             auto value = statMap[prefix + kind];
             map[name] += value;
@@ -2140,8 +2108,7 @@ TError TBlkioSubsystem::GetIoStat(const TCgroup &cg, enum IoStat stat, TUintMap 
     return OK;
 }
 
-TError TBlkioSubsystem::SetIoLimitV1(const TCgroup &cg, const TPath &root,
-                                     const TUintMap &map, bool iops) {
+TError TBlkioSubsystem::SetIoLimitV1(const TCgroup &cg, const TPath &root, const TUintMap &map, bool iops) {
     std::string knob[2] = {
         iops ? READ_IOPS_DEVICE : READ_BPS_DEVICE,
         iops ? WRITE_IOPS_DEVICE : WRITE_BPS_DEVICE,
@@ -2170,9 +2137,9 @@ TError TBlkioSubsystem::SetIoLimitV1(const TCgroup &cg, const TPath &root,
 
         dir = 2;
         if (sep != std::string::npos) {
-            if (sep != key.size() - 2 || ( key[sep+1] != 'r' && key[sep+1] != 'w'))
+            if (sep != key.size() - 2 || (key[sep + 1] != 'r' && key[sep + 1] != 'w'))
                 return TError(EError::InvalidValue, "Invalid io limit key: " + key);
-            dir = key[sep+1] == 'r' ? 0 : 1;
+            dir = key[sep + 1] == 'r' ? 0 : 1;
             key = key.substr(0, sep);
         }
 
@@ -2200,10 +2167,9 @@ TError TBlkioSubsystem::SetIoLimitV1(const TCgroup &cg, const TPath &root,
     return result;
 }
 
-TError TBlkioSubsystem::SetIoLimitV2(const TCgroup &cg, const TPath &root,
-                                     const TUintMap &map, bool iops) {
+TError TBlkioSubsystem::SetIoLimitV2(const TCgroup &cg, const TPath &root, const TUintMap &map, bool iops) {
     TError error, result;
-    TUintPairMap plan; // <dev>: (<read limit>, <write limit>)
+    TUintPairMap plan;  // <dev>: (<read limit>, <write limit>)
     std::string disk, kind;
     std::vector<std::string> lines;
     int dir;
@@ -2215,7 +2181,7 @@ TError TBlkioSubsystem::SetIoLimitV2(const TCgroup &cg, const TPath &root,
     for (auto &line: lines) {
         auto sep = line.find(' ');
         if (sep != std::string::npos)
-            plan[line.substr(0, sep)] = {0, 0}; // 0 => max
+            plan[line.substr(0, sep)] = {0, 0};  // 0 => max
     }
 
     for (auto &it: map) {
@@ -2224,9 +2190,9 @@ TError TBlkioSubsystem::SetIoLimitV2(const TCgroup &cg, const TPath &root,
 
         dir = 2;
         if (sep != std::string::npos) {
-            if (sep != key.size() - 2 || (key[sep+1] != 'r' && key[sep+1] != 'w'))
+            if (sep != key.size() - 2 || (key[sep + 1] != 'r' && key[sep + 1] != 'w'))
                 return TError(EError::InvalidValue, "Invalid io limit key: " + key);
-            dir = key[sep+1] == 'r' ? 0 : 1;
+            dir = key[sep + 1] == 'r' ? 0 : 1;
             key = key.substr(0, sep);
         }
 
@@ -2260,16 +2226,14 @@ TError TBlkioSubsystem::SetIoLimitV2(const TCgroup &cg, const TPath &root,
     return result;
 }
 
-TError TBlkioSubsystem::SetIoLimit(const TCgroup &cg, const TPath &root,
-                                   const TUintMap &map, bool iops) {
+TError TBlkioSubsystem::SetIoLimit(const TCgroup &cg, const TPath &root, const TUintMap &map, bool iops) {
     if (IsCgroup2())
         return SetIoLimitV2(cg, root, map, iops);
     else
         return SetIoLimitV1(cg, root, map, iops);
 }
 
-TError TBlkioSubsystem::SetIoWeight(const TCgroup &cg, const std::string &policy,
-                                    double weight) const {
+TError TBlkioSubsystem::SetIoWeight(const TCgroup &cg, const std::string &policy, double weight) const {
     TError error;
     double bfqWeight = weight;
     const std::string weightKnob = IsCgroup2() ? WEIGHT : LEGACY_WEIGHT;
@@ -2404,7 +2368,8 @@ TError TCgroupDriver::InitializeCgroups() {
 
     if (mount.Target != root) {
         if (Cgroup2Hierarchy)
-            error = root.Mount("cgroup2", "cgroup2", MS_NOEXEC | MS_NOSUID | MS_NODEV | MS_RELATIME, {"nsdelegate", "memory_recursiveprot"});
+            error = root.Mount("cgroup2", "cgroup2", MS_NOEXEC | MS_NOSUID | MS_NODEV | MS_RELATIME,
+                               {"nsdelegate", "memory_recursiveprot"});
         else
             error = root.Mount("cgroup", "tmpfs", 0, {});
         if (error) {
@@ -2435,9 +2400,8 @@ TError TCgroupDriver::InitializeCgroups() {
         }
     }
 
-    if (!Cgroup2Hierarchy && config().daemon().merge_memory_blkio_controllers() &&
-            !MemorySubsystem->IsDisabled() && !BlkioSubsystem->IsDisabled() &&
-            MemorySubsystem->Root.IsEmpty() && BlkioSubsystem->Root.IsEmpty()) {
+    if (!Cgroup2Hierarchy && config().daemon().merge_memory_blkio_controllers() && !MemorySubsystem->IsDisabled() &&
+        !BlkioSubsystem->IsDisabled() && MemorySubsystem->Root.IsEmpty() && BlkioSubsystem->Root.IsEmpty()) {
         TPath path = root / "memory,blkio";
 
         if (!path.Exists())
@@ -2482,7 +2446,7 @@ TError TCgroupDriver::InitializeCgroups() {
             }
         }
 
-        error = path.Mount(subsys->MountType, subsys->MountType, 0, subsys->MountOptions() );
+        error = path.Mount(subsys->MountType, subsys->MountType, 0, subsys->MountOptions());
         if (error) {
             (void)path.Rmdir();
             L_ERR("Cannot mount cgroup: {}", error);
@@ -2556,14 +2520,10 @@ TError TCgroupDriver::InitializeCgroups() {
 }
 
 TError TCgroupDriver::InitializeDaemonCgroups() {
-    std::vector<const TSubsystem *> DaemonSubsystems = {
-        FreezerSubsystem.get(),
-        MemorySubsystem.get(),
-        CpuacctSubsystem.get(),
-        PerfSubsystem.get()
-    };
+    std::vector<const TSubsystem *> DaemonSubsystems = {FreezerSubsystem.get(), MemorySubsystem.get(),
+                                                        CpuacctSubsystem.get(), PerfSubsystem.get()};
 
-    for (auto subsys : DaemonSubsystems) {
+    for (auto subsys: DaemonSubsystems) {
         auto hy = subsys->Hierarchy;
         TError error;
 
@@ -2644,20 +2604,18 @@ again:
             L_ERR("Cannot dump porto {} cgroups : {}", hy->Type, error);
 
         for (auto it = cgroups.rbegin(); it != cgroups.rend(); ++it) {
-            auto& cg = *it;
+            auto &cg = *it;
             if (!StringStartsWith(cg->GetName(), PORTO_CGROUP_PREFIX))
                 continue;
 
             if (cg->GetName() == PORTO_DAEMON_CGROUP &&
-                    (hy->Controllers & (CGROUP_FREEZER | CGROUP_MEMORY | CGROUP_CPUACCT | CGROUP2 | CGROUP_PERF)))
+                (hy->Controllers & (CGROUP_FREEZER | CGROUP_MEMORY | CGROUP_CPUACCT | CGROUP2 | CGROUP_PERF)))
                 continue;
 
-            if (cg->GetName() == PORTO_HELPERS_CGROUP &&
-                    (hy->Controllers & CGROUP_MEMORY))
+            if (cg->GetName() == PORTO_HELPERS_CGROUP && (hy->Controllers & CGROUP_MEMORY))
                 continue;
 
-            if (cg->GetName() == PORTO_CGROUP_PREFIX &&
-                    (hy->Controllers & (CGROUP_FREEZER | CGROUP2)))
+            if (cg->GetName() == PORTO_CGROUP_PREFIX && (hy->Controllers & (CGROUP_FREEZER | CGROUP2)))
                 continue;
 
             bool found = false;
@@ -2666,8 +2624,8 @@ again:
                 auto ctCg = GetContainerCgroup(*(it.second), hy);
                 // child cgroups should not be removed in case of cgroupfs=rw
                 if (ct->State != EContainerState::Stopped &&
-                    (*ctCg == *cg || (ct->CgroupFs == ECgroupFs::Rw &&
-                                    StringStartsWith(cg->GetName(), ctCg->GetName() + "/"))))
+                    (*ctCg == *cg ||
+                     (ct->CgroupFs == ECgroupFs::Rw && StringStartsWith(cg->GetName(), ctCg->GetName() + "/"))))
                 {
                     found = true;
                     break;
@@ -2694,7 +2652,8 @@ again:
         goto again;
 }
 
-std::unique_ptr<const TCgroup> TCgroupDriver::GetContainerCgroup(const TContainer &container, TSubsystem *subsystem) const {
+std::unique_ptr<const TCgroup> TCgroupDriver::GetContainerCgroup(const TContainer &container,
+                                                                 TSubsystem *subsystem) const {
     if (container.IsRoot())
         return subsystem->RootCgroup();
 
@@ -2707,7 +2666,7 @@ std::unique_ptr<const TCgroup> TCgroupDriver::GetContainerCgroup(const TContaine
     if (subsystem->Controllers & CGROUP_SYSTEMD) {
         if (container.Controllers & CGROUP_SYSTEMD)
             return subsystem->Cgroup(std::string(PORTO_CGROUP_PREFIX) + "%" +
-                                    StringReplaceAll(container.Name, "/", "%"));
+                                     StringReplaceAll(container.Name, "/", "%"));
 
         return SystemdSubsystem->PortoService->GetUniquePtr();
     }
@@ -2735,7 +2694,8 @@ std::list<std::unique_ptr<const TCgroup>> TCgroupDriver::GetContainerCgroups(con
     return cgroups;
 }
 
-std::unique_ptr<const TCgroup> TCgroupDriver::GetContainerCgroupByKnob(const TContainer &container, const std::string &knob) const {
+std::unique_ptr<const TCgroup> TCgroupDriver::GetContainerCgroupByKnob(const TContainer &container,
+                                                                       const std::string &knob) const {
     const std::string type = knob.substr(0, knob.find('.'));
     for (auto subsys: Subsystems) {
         if (subsys->Type != type)
@@ -2755,7 +2715,8 @@ bool TCgroupDriver::HasContainerCgroupsKnob(const TContainer &container, const s
     return cg->Has(knob);
 }
 
-TError TCgroupDriver::GetContainerCgroupsKnob(const TContainer &container, const std::string &knob, std::string &value) const {
+TError TCgroupDriver::GetContainerCgroupsKnob(const TContainer &container, const std::string &knob,
+                                              std::string &value) const {
     auto cg = GetContainerCgroupByKnob(container, knob);
     if (cg == nullptr)
         return TError(EError::InvalidValue, "Cgroup does not found by {}", knob);
@@ -2765,7 +2726,6 @@ TError TCgroupDriver::GetContainerCgroupsKnob(const TContainer &container, const
 
     return cg->Get(knob, value);
 }
-
 
 TError TCgroupDriver::CreateCgroup(const TCgroup &cg) const {
     TError error;
@@ -2861,7 +2821,8 @@ TError TCgroupDriver::CreateContainerCgroups(TContainer &container, bool onResto
             return error;
 
         if (onRestore) {
-            L_WRN("There is no {} cgroup for CT{}:{}", TSubsystem::Format(hy->Controllers), container.Id, container.Name);
+            L_WRN("There is no {} cgroup for CT{}:{}", TSubsystem::Format(hy->Controllers), container.Id,
+                  container.Name);
             if (hy->Controllers & CGROUP_FREEZER)
                 continue;
 
@@ -2904,7 +2865,8 @@ TError TCgroupDriver::RemoveContainerCgroups(const TContainer &container, bool i
     return OK;
 }
 
-TError TCgroupDriver::CgroupSubtree(const TCgroup &cg, std::list<std::unique_ptr<const TCgroup>> &cgroups, bool all) const {
+TError TCgroupDriver::CgroupSubtree(const TCgroup &cg, std::list<std::unique_ptr<const TCgroup>> &cgroups,
+                                    bool all) const {
     TPathWalk walk;
     TError error;
 
@@ -2953,7 +2915,7 @@ TError TCgroupDriver::GetCgroupCount(const TCgroup &cgroup, uint64_t &count, boo
 
     count = 0;
     uint64_t buf;
-    for (auto& cg: cgroups) {
+    for (auto &cg: cgroups) {
         error = cg->GetCount(buf, thread);
         if (error) {
             count = 0;

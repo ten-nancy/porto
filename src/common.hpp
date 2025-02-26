@@ -11,18 +11,19 @@
 #define BIT(nr) ((uint64_t)1ULL << (nr))
 
 #ifndef __has_feature
-# define __has_feature(__x) 0
+#define __has_feature(__x) 0
 #endif
 
 class TNonCopyable {
 protected:
     TNonCopyable() = default;
     ~TNonCopyable() = default;
+
 private:
-    TNonCopyable(TNonCopyable const&) = delete;
-    TNonCopyable& operator= (TNonCopyable const&) = delete;
-    TNonCopyable(TNonCopyable const&&) = delete;
-    TNonCopyable& operator= (TNonCopyable const&&) = delete;
+    TNonCopyable(TNonCopyable const &) = delete;
+    TNonCopyable &operator=(TNonCopyable const &) = delete;
+    TNonCopyable(TNonCopyable const &&) = delete;
+    TNonCopyable &operator=(TNonCopyable const &&) = delete;
 };
 
 enum class EAccessLevel {
@@ -75,10 +76,10 @@ constexpr const char *PORTO_GROUP_NAME = "porto";
 constexpr const char *PORTO_SOCKET_PATH = "/run/portod.socket";
 constexpr uint64_t PORTO_SOCKET_MODE = 0666;
 
-constexpr int  REAP_EVT_FD = 128;
-constexpr int  REAP_ACK_FD = 129;
-constexpr int  PORTO_SK_FD = 130;
-constexpr int  PORTO_NL_SK_FD = 131;
+constexpr int REAP_EVT_FD = 128;
+constexpr int REAP_ACK_FD = 129;
+constexpr int PORTO_SK_FD = 130;
+constexpr int PORTO_NL_SK_FD = 131;
 
 constexpr const char *PORTO_VERSION_FILE = "/run/portod.version";
 constexpr const char *PORTO_BINARY_PATH = "/run/portod";
@@ -123,7 +124,7 @@ constexpr uint64_t CONTAINER_PATH_MAX = 200;
 constexpr uint64_t CONTAINER_PATH_MAX_FOR_SUPERUSER = 220;
 constexpr uint64_t RUN_SUBDIR_LIMIT = 100u;
 constexpr uint64_t PRIVATE_VALUE_MAX = 4096;
-constexpr uint64_t CONTAINER_COMMAND_MAX = 128 * 1024;    // ARG_MAX from include/uapi/linux/limits.h
+constexpr uint64_t CONTAINER_COMMAND_MAX = 128 * 1024;  // ARG_MAX from include/uapi/linux/limits.h
 
 constexpr const char *PORTO_NAME_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-@:.";
 

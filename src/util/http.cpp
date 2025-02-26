@@ -1,8 +1,9 @@
 #include "http.hpp"
-#include "util/log.hpp"
-#include "util/string.hpp"
 
 #include <regex>
+
+#include "util/log.hpp"
+#include "util/string.hpp"
 
 #define CPPHTTPLIB_NO_EXCEPTIONS
 #define CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND 5
@@ -122,18 +123,18 @@ std::string TUri::FormatOptions() const {
     return options;
 }
 
-
 struct THttpClient::TImpl {
     TImpl(const std::string &host)
-        : Host(host)
-        , Client(host)
+        : Host(host),
+          Client(host)
     {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
         Client.enable_server_certificate_verification(false);
 #endif
     }
 
-    TError HandleResult(const httplib::Result &res, const std::string &path, std::string &response, const THeaders &headers = {}, const TRequest *request = nullptr) {
+    TError HandleResult(const httplib::Result &res, const std::string &path, std::string &response,
+                        const THeaders &headers = {}, const TRequest *request = nullptr) {
         if (!res)
             return TError::System("HTTP request to {} failed: {}", Host + path, res.error());
 
@@ -161,26 +162,32 @@ struct THttpClient::TImpl {
     httplib::Client Client;
 };
 
-THttpClient::THttpClient(const std::string &host): Impl(new TImpl(host)) {}
+THttpClient::THttpClient(const std::string &host)
+    : Impl(new TImpl(host))
+{}
 THttpClient::~THttpClient() = default;
 
-TError THttpClient::MakeRequest(const std::string &path, std::string &response, const THeaders &headers, const TRequest *request) const {
+TError THttpClient::MakeRequest(const std::string &path, std::string &response, const THeaders &headers,
+                                const TRequest *request) const {
     httplib::Headers hdrs(headers.cbegin(), headers.cend());
 
     L_ACT("Send {} request to {} {}", request ? "POST" : "GET", Impl->Host, path);
 
     if (request)
-        return Impl->HandleResult(Impl->Client.Post(path.c_str(), hdrs, request->Body, request->ContentType), path, response);
+        return Impl->HandleResult(Impl->Client.Post(path.c_str(), hdrs, request->Body, request->ContentType), path,
+                                  response);
 
     return Impl->HandleResult(Impl->Client.Get(path.c_str(), hdrs), path, response);
 }
 
-TError THttpClient::SingleRequest(const std::string &rawUri, std::string &response, const THeaders &headers, const TRequest *request) {
+TError THttpClient::SingleRequest(const std::string &rawUri, std::string &response, const THeaders &headers,
+                                  const TRequest *request) {
     TUri uri(rawUri);
     return THttpClient::SingleRequest(uri, response, headers, request);
 }
 
-TError THttpClient::SingleRequest(const TUri &uri, std::string &response, const THeaders &headers, const TRequest *request) {
+TError THttpClient::SingleRequest(const TUri &uri, std::string &response, const THeaders &headers,
+                                  const TRequest *request) {
     std::string host = uri.Scheme + "://" + uri.Host;
     if (uri.Port > 0)
         host = fmt::format("{}:{}", host, uri.Port);

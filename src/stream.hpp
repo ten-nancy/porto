@@ -8,14 +8,18 @@ class TClient;
 
 class TStdStream {
 public:
-    int Stream;             /* 0 - stdin, 1 - stdout, 2 - stderr */
+    int Stream; /* 0 - stdin, 1 - stdout, 2 - stderr */
     TPath Path;
     bool Outside = false;
     uint64_t Limit = 0;
     uint64_t Offset = 0;
     struct stat PathStat;
 
-    TStdStream(int stream): Stream(stream) { memset(&PathStat, 0, sizeof(PathStat)); }
+    TStdStream(int stream)
+        : Stream(stream)
+    {
+        memset(&PathStat, 0, sizeof(PathStat));
+    }
 
     void SetOutside(const std::string &path) {
         Path = path;
@@ -36,6 +40,5 @@ public:
     TError Remove(const TContainer &container);
 
     TError Rotate(const TContainer &container);
-    TError Read(const TContainer &container, std::string &text,
-                const std::string &range = "") const;
+    TError Read(const TContainer &container, std::string &text, const std::string &range = "") const;
 };

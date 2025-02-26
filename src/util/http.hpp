@@ -34,9 +34,12 @@ struct THttpClient {
         const char *ContentType;
     };
 
-    TError MakeRequest(const std::string &path, std::string &response, const THeaders &headers = {}, const TRequest *request = nullptr) const;
-    static TError SingleRequest(const std::string &rawUri, std::string &response, const THeaders &headers = {}, const TRequest *request = nullptr);
-    static TError SingleRequest(const TUri &uri, std::string &response, const THeaders &headers = {}, const TRequest *request = nullptr);
+    TError MakeRequest(const std::string &path, std::string &response, const THeaders &headers = {},
+                       const TRequest *request = nullptr) const;
+    static TError SingleRequest(const std::string &rawUri, std::string &response, const THeaders &headers = {},
+                                const TRequest *request = nullptr);
+    static TError SingleRequest(const TUri &uri, std::string &response, const THeaders &headers = {},
+                                const TRequest *request = nullptr);
     static std::string EncodeBase64(const std::string &text);
 
 private:

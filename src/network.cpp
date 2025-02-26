@@ -1,36 +1,37 @@
+#include "network.hpp"
+
 #include <algorithm>
 #include <fstream>
 
 #include "bpf.hpp"
-#include "network.hpp"
-#include "container.hpp"
-#include "task.hpp"
-#include "config.hpp"
 #include "client.hpp"
+#include "config.hpp"
+#include "container.hpp"
 #include "helpers.hpp"
 #include "property.hpp"
+#include "task.hpp"
+#include "util/crc32.hpp"
+#include "util/hgram.hpp"
 #include "util/log.hpp"
 #include "util/proc.hpp"
 #include "util/string.hpp"
-#include "util/crc32.hpp"
-#include "util/hgram.hpp"
 
 extern "C" {
-#include <unistd.h>
 #include <fcntl.h>
 #include <linux/if.h>
-#include <netinet/ip6.h>
-#include <netinet/ether.h>
 #include <linux/if_tun.h>
 #include <linux/neighbour.h>
+#include <netinet/ether.h>
+#include <netinet/ip6.h>
 #include <netlink/cache.h>
-#include <netlink/route/link.h>
-#include <netlink/route/tc.h>
 #include <netlink/route/addr.h>
 #include <netlink/route/class.h>
+#include <netlink/route/link.h>
 #include <netlink/route/neighbour.h>
-#include <netlink/route/route.h>
 #include <netlink/route/qdisc/htb.h>
+#include <netlink/route/route.h>
+#include <netlink/route/tc.h>
+#include <unistd.h>
 }
 
 static std::shared_ptr<TNetwork> HostNetwork;
@@ -46,7 +47,8 @@ MeasuredMutex TNetwork::NetStateMutex("net_state");
 int TNetwork::DefaultTos = 0;
 
 std::unordered_map<ino_t, std::shared_ptr<TNetwork>> TNetwork::NetworksIndex;
-std::shared_ptr<const std::list<std::shared_ptr<TNetwork>>> TNetwork::NetworksList = std::make_shared<const std::list<std::shared_ptr<TNetwork>>>();
+std::shared_ptr<const std::list<std::shared_ptr<TNetwork>>> TNetwork::NetworksList =
+    std::make_shared<const std::list<std::shared_ptr<TNetwork>>>();
 std::atomic<int> TNetwork::GlobalStatGen;
 
 static std::thread NetThread;
@@ -104,56 +106,56 @@ static double TCP_RTO_VALUE = 0.004;
 static TNLinkSockDiag SockDiag;
 
 static std::list<std::pair<std::string, std::string>> NetSysctls = {
-    { "net.core.somaxconn", "128" },
+    {"net.core.somaxconn", "128"},
 
-    { "net.unix.max_dgram_qlen", "10" },
+    {"net.unix.max_dgram_qlen", "10"},
 
-    { "net.ipv4.icmp_echo_ignore_all", "0" },
-    { "net.ipv4.icmp_echo_ignore_broadcasts", "1" },
-    { "net.ipv4.icmp_ignore_bogus_error_responses", "1" },
-    { "net.ipv4.icmp_errors_use_inbound_ifaddr", "0" },
-    { "net.ipv4.icmp_ratelimit", "1000" },
-    { "net.ipv4.icmp_ratemask", "6168" },
-    { "net.ipv4.ping_group_range", "1\t0" },
+    {"net.ipv4.icmp_echo_ignore_all", "0"},
+    {"net.ipv4.icmp_echo_ignore_broadcasts", "1"},
+    {"net.ipv4.icmp_ignore_bogus_error_responses", "1"},
+    {"net.ipv4.icmp_errors_use_inbound_ifaddr", "0"},
+    {"net.ipv4.icmp_ratelimit", "1000"},
+    {"net.ipv4.icmp_ratemask", "6168"},
+    {"net.ipv4.ping_group_range", "1\t0"},
 
-    { "net.ipv4.tcp_ecn", "2" },
-    { "net.ipv4.tcp_ecn_fallback", "1" },
-    { "net.ipv4.ip_dynaddr", "0" },
-    { "net.ipv4.ip_early_demux", "1" },
-    { "net.ipv4.ip_default_ttl", "64" },
+    {"net.ipv4.tcp_ecn", "2"},
+    {"net.ipv4.tcp_ecn_fallback", "1"},
+    {"net.ipv4.ip_dynaddr", "0"},
+    {"net.ipv4.ip_early_demux", "1"},
+    {"net.ipv4.ip_default_ttl", "64"},
 
-    { "net.ipv4.ip_local_port_range", "32768\t60999" },
-    { "net.ipv4.ip_local_reserved_ports", "" },
-    { "net.ipv4.ip_no_pmtu_disc", "0" },
-    { "net.ipv4.ip_forward_use_pmtu", "0" },
-    { "net.ipv4.ip_nonlocal_bind", "0" },
+    {"net.ipv4.ip_local_port_range", "32768\t60999"},
+    {"net.ipv4.ip_local_reserved_ports", ""},
+    {"net.ipv4.ip_no_pmtu_disc", "0"},
+    {"net.ipv4.ip_forward_use_pmtu", "0"},
+    {"net.ipv4.ip_nonlocal_bind", "0"},
     //"net.ipv4.fwmark_reflect",
-    { "net.ipv4.tcp_fwmark_accept", "0" },
-    { "net.ipv4.tcp_mtu_probing", "0" },
-    { "net.ipv4.tcp_base_mss", "1024" },
-    { "net.ipv4.tcp_probe_threshold", "8" },
-    { "net.ipv4.tcp_probe_interval", "600" },
+    {"net.ipv4.tcp_fwmark_accept", "0"},
+    {"net.ipv4.tcp_mtu_probing", "0"},
+    {"net.ipv4.tcp_base_mss", "1024"},
+    {"net.ipv4.tcp_probe_threshold", "8"},
+    {"net.ipv4.tcp_probe_interval", "600"},
 
     //"net.ipv4.igmp_link_local_mcast_reports",
     //"net.ipv4.igmp_max_memberships",
     //"net.ipv4.igmp_max_msf",
     //"net.ipv4.igmp_qrv",
 
-    { "net.ipv4.tcp_keepalive_time", "7200" },
-    { "net.ipv4.tcp_keepalive_probes", "9" },
-    { "net.ipv4.tcp_keepalive_intvl", "75" },
-    { "net.ipv4.tcp_syn_retries", "6" },
-    { "net.ipv4.tcp_synack_retries", "5" },
-    { "net.ipv4.tcp_syncookies", "1" },
-    { "net.ipv4.tcp_reordering", "3" },
-    { "net.ipv4.tcp_retries1", "3" },
-    { "net.ipv4.tcp_retries2", "15" },
-    { "net.ipv4.tcp_orphan_retries", "0" },
-    { "net.ipv4.tcp_fin_timeout", "60" },
-    { "net.ipv4.tcp_notsent_lowat", "-1" },
-    { "net.ipv4.tcp_tw_reuse", "0" },
+    {"net.ipv4.tcp_keepalive_time", "7200"},
+    {"net.ipv4.tcp_keepalive_probes", "9"},
+    {"net.ipv4.tcp_keepalive_intvl", "75"},
+    {"net.ipv4.tcp_syn_retries", "6"},
+    {"net.ipv4.tcp_synack_retries", "5"},
+    {"net.ipv4.tcp_syncookies", "1"},
+    {"net.ipv4.tcp_reordering", "3"},
+    {"net.ipv4.tcp_retries1", "3"},
+    {"net.ipv4.tcp_retries2", "15"},
+    {"net.ipv4.tcp_orphan_retries", "0"},
+    {"net.ipv4.tcp_fin_timeout", "60"},
+    {"net.ipv4.tcp_notsent_lowat", "-1"},
+    {"net.ipv4.tcp_tw_reuse", "0"},
 
-    { "net.ipv6.bindv6only", "0" },
+    {"net.ipv6.bindv6only", "0"},
     //"net.ipv6.anycast_src_echo_reply",
     //"net.ipv6.flowlabel_consistency",
     //"net.ipv6.auto_flowlabels",
@@ -161,51 +163,49 @@ static std::list<std::pair<std::string, std::string>> NetSysctls = {
     //"net.ipv6.idgen_retries",
     //"net.ipv6.idgen_delay",
     //"net.ipv6.flowlabel_state_ranges",
-    { "net.ipv6.ip_nonlocal_bind", "0" },
+    {"net.ipv6.ip_nonlocal_bind", "0"},
 
-    { "net.ipv6.icmp.ratelimit", "1000" },
+    {"net.ipv6.icmp.ratelimit", "1000"},
 
-    { "net.ipv6.route.gc_thresh", "1024" },
-    { "net.ipv6.route.max_size", "4096" },
-    { "net.ipv6.route.gc_min_interval", "0" },
-    { "net.ipv6.route.gc_timeout", "60" },
-    { "net.ipv6.route.gc_interval", "30" },
-    { "net.ipv6.route.gc_elasticity", "9" },
-    { "net.ipv6.route.mtu_expires", "600" },
-    { "net.ipv6.route.min_adv_mss", "1220" },
-    { "net.ipv6.route.gc_min_interval_ms", "500" },
+    {"net.ipv6.route.gc_thresh", "1024"},
+    {"net.ipv6.route.max_size", "4096"},
+    {"net.ipv6.route.gc_min_interval", "0"},
+    {"net.ipv6.route.gc_timeout", "60"},
+    {"net.ipv6.route.gc_interval", "30"},
+    {"net.ipv6.route.gc_elasticity", "9"},
+    {"net.ipv6.route.mtu_expires", "600"},
+    {"net.ipv6.route.min_adv_mss", "1220"},
+    {"net.ipv6.route.gc_min_interval_ms", "500"},
 };
 
 static std::list<std::string> NamespacedNetSysctls;
 
 // 49 is maximum buckets for yasm
 static const std::vector<unsigned> L3StatBuckets = {
-    0, 10, 13, 16, 19, 22, 25, 28, 31, 35,
-    39, 43, 47, 51, 56, 61, 67, 73, 80, 88,
-    96, 105, 110, 120, 130, 140, 150, 165, 180, 200,
-    220, 240, 265, 290, 320, 350, 385, 450, 500, 600,
-    700, 800, 900, 1000, 1500, 2000, 3000, 4000, 5000,
+    0,   10,  13,  16,  19,  22,  25,  28,  31,  35,   39,   43,   47,   51,   56,   61,  67,
+    73,  80,  88,  96,  105, 110, 120, 130, 140, 150,  165,  180,  200,  220,  240,  265, 290,
+    320, 350, 385, 450, 500, 600, 700, 800, 900, 1000, 1500, 2000, 3000, 4000, 5000,
 };
 
 struct L3DeviceStat {
     // copy constructor needed for std::map in old compilers without move semantic
     L3DeviceStat(const L3DeviceStat &other)
-    : UpdateTs(other.UpdateTs)
-    , RxPrev(other.RxPrev)
-    , TxPrev(other.TxPrev)
-    , RxMax(other.RxMax.load())
-    , TxMax(other.TxMax.load())
-    , Found(other.Found)
-    , RxHgram(other.RxHgram)
-    , TxHgram(other.TxHgram)
+        : UpdateTs(other.UpdateTs),
+          RxPrev(other.RxPrev),
+          TxPrev(other.TxPrev),
+          RxMax(other.RxMax.load()),
+          TxMax(other.TxMax.load()),
+          Found(other.Found),
+          RxHgram(other.RxHgram),
+          TxHgram(other.TxHgram)
     {}
 
     L3DeviceStat()
-    : UpdateTs(GetCurrentTimeMs())
-    , RxMax(0)
-    , TxMax(0)
-    , RxHgram(std::make_shared<THistogram>(L3StatBuckets))
-    , TxHgram(std::make_shared<THistogram>(L3StatBuckets))
+        : UpdateTs(GetCurrentTimeMs()),
+          RxMax(0),
+          TxMax(0),
+          RxHgram(std::make_shared<THistogram>(L3StatBuckets)),
+          TxHgram(std::make_shared<THistogram>(L3StatBuckets))
     {}
 
     uint64_t UpdateTs;
@@ -222,20 +222,26 @@ struct L3DeviceStat {
 static std::unordered_map<int, L3DeviceStat> L3Stats;
 
 struct TNetLimitKey {
-    TNetLimitKey(uint32_t index, uint32_t classid = 0) : Index(index), ClassId(classid) {}
+    TNetLimitKey(uint32_t index, uint32_t classid = 0)
+        : Index(index),
+          ClassId(classid)
+    {}
 
     uint32_t Index;
-    uint32_t ClassId; // should be zero for rx path
+    uint32_t ClassId;  // should be zero for rx path
 };
 
 struct TNetLimitParam {
-    TNetLimitParam(uint32_t rate) : LastTime(0), Padding(0) {
+    TNetLimitParam(uint32_t rate)
+        : LastTime(0),
+          Padding(0)
+    {
         Rate = rate / 125000 * 128 * 1.024;
     }
 
     uint64_t LastTime;
     uint32_t Rate;
-    uint32_t Padding; // not used
+    uint32_t Padding;  // not used
 };
 
 constexpr const char *NET_LIMIT_RX_PROG_PATH = "/sys/fs/bpf/netlimit_rx";
@@ -359,11 +365,9 @@ bool TNetwork::NamespaceSysctl(const std::string &key) {
         return true;
     if (StringStartsWith(key, "net.ipv6.conf."))
         return true;
-    if (StringStartsWith(key, "net.ipv4.neigh.") &&
-            !StringStartsWith(key, "net.ipv4.neigh.default."))
+    if (StringStartsWith(key, "net.ipv4.neigh.") && !StringStartsWith(key, "net.ipv4.neigh.default."))
         return true;
-    if (StringStartsWith(key, "net.ipv6.neigh.") &&
-            !StringStartsWith(key, "net.ipv6.neigh.default."))
+    if (StringStartsWith(key, "net.ipv6.neigh.") && !StringStartsWith(key, "net.ipv6.neigh.default."))
         return true;
     return false;
 }
@@ -554,7 +558,8 @@ void TNetwork::InitializeConfig() {
         if (CsWeight[cs] < 1)
             CsWeight[cs] = 1;
         CsTotalWeight += CsWeight[cs];
-        L_NET("DSCP {} weight = {}, limit = {}, max_percent = {}%", FormatTos(cs), CsWeight[cs], CsLimit[cs], CsMaxPercent[cs]);
+        L_NET("DSCP {} weight = {}, limit = {}, max_percent = {}%", FormatTos(cs), CsWeight[cs], CsLimit[cs],
+              CsMaxPercent[cs]);
     }
     if (config().network().has_default_tos())
         ParseTos(config().network().default_tos(), DefaultTos);
@@ -579,7 +584,11 @@ std::string TNetwork::FormatTos(int tos) {
     return fmt::format("CS{}", tos);
 }
 
-TNetwork::TNetwork(bool host) : NetIsHost(host), NetMutex(host ? "host_net" : "container_net"), NatBitmap(0, 0) {
+TNetwork::TNetwork(bool host)
+    : NetIsHost(host),
+      NetMutex(host ? "host_net" : "container_net"),
+      NatBitmap(0, 0)
+{
     Nl = std::make_shared<TNl>();
 
     DefaultClass.BaseHandle = TC_HANDLE(ROOT_TC_MAJOR, 1);
@@ -609,7 +618,7 @@ void TNetwork::Register(std::shared_ptr<TNetwork> &net, ino_t inode) {
     NetworksIndex[inode] = net;
     net->NetInode = inode;
     net->StatTime = GetCurrentTimeMs();
-    net->StatGen =  GlobalStatGen.load();
+    net->StatGen = GlobalStatGen.load();
 
     TError error = net->SetupNetLimitSoft();
     if (error)
@@ -620,7 +629,7 @@ TError TNetwork::GetSockets(const std::vector<pid_t> &pids, std::unordered_set<i
     uint64_t fdsCount = 0;
     sockets.clear();
 
-    for (const auto &pid : pids) {
+    for (const auto &pid: pids) {
         TFile dir;
 
         auto error = dir.OpenDir("/proc/" + std::to_string(pid) + "/fd");
@@ -715,9 +724,7 @@ TError TNetwork::New(TNamespaceFd &netns, std::shared_ptr<TNetwork> &net, pid_t 
     return error;
 }
 
-TError TNetwork::Open(const TPath &path, TNamespaceFd &netns,
-                      std::shared_ptr<TNetwork> &net,
-                      bool host) {
+TError TNetwork::Open(const TPath &path, TNamespaceFd &netns, std::shared_ptr<TNetwork> &net, bool host) {
     TNamespaceFd curNs;
     TError error;
 
@@ -825,8 +832,7 @@ void TNetwork::GetDeviceSpeed(TNetDevice &dev) const {
     std::string text;
     uint64_t speed;
 
-    if (ManagedNamespace || knob.ReadAll(text) ||
-            StringToUint64(text, speed) || speed < 100) {
+    if (ManagedNamespace || knob.ReadAll(text) || StringToUint64(text, speed) || speed < 100) {
         dev.Ceil = NET_MAX_RATE;
         dev.Rate = NET_MAX_RATE;
     } else {
@@ -860,7 +866,7 @@ TError TNetwork::SetupShaper(TNetDevice &dev) {
     cls.Index = dev.Index;
     cls.Rate = cls.Ceil = rate;
     cls.Burst = UplinkSpeed;
-    cls.BurstDuration = dev.GetConfig(DefaultQdiscBurstDuration, 10) * 1000; // ms
+    cls.BurstDuration = dev.GetConfig(DefaultQdiscBurstDuration, 10) * 1000;  // ms
 
     TNlQdisc leaf(dev.Index, TC_HANDLE(ROOT_TC_MAJOR, 1), TC_HANDLE(2, 0));
     leaf.Kind = dev.GetConfig(ContainerQdisc, "pfifo");
@@ -1006,7 +1012,7 @@ TError TNetwork::SetupPolicer(TNetDevice &dev, std::unique_lock<std::mutex> &sta
     cls.Kind = qdisc.Kind;
     cls.Rate = cls.Ceil = rate;
     cls.Burst = UplinkSpeed;
-    cls.BurstDuration = dev.GetConfig(DefaultQdiscBurstDuration, 10) * 1000; // ms
+    cls.BurstDuration = dev.GetConfig(DefaultQdiscBurstDuration, 10) * 1000;  // ms
 
     TNlQdisc leaf(dev.Link, TC_HANDLE(ROOT_TC_MAJOR, 1), TC_HANDLE(2, 0));
     leaf.Kind = dev.GetConfig(ContainerQdisc, "pfifo");
@@ -1308,9 +1314,7 @@ TError TNetwork::SyncDevicesLocked() {
 
         if (dev.Type == "veth") {
             /* Ignore our veth pairs */
-            if (!ManagedNamespace &&
-                    (StringStartsWith(dev.Name, "portove-") ||
-                     StringStartsWith(dev.Name, "L3-")))
+            if (!ManagedNamespace && (StringStartsWith(dev.Name, "portove-") || StringStartsWith(dev.Name, "L3-")))
                 continue;
 
             if (ManagedNamespace)
@@ -1343,8 +1347,7 @@ TError TNetwork::SyncDevicesLocked() {
                 if (StringMatch(dev.Name, pattern))
                     dev.Managed = false;
 
-            if (std::find(UnmanagedGroups.begin(),
-                          UnmanagedGroups.end(), dev.Group) != UnmanagedGroups.end())
+            if (std::find(UnmanagedGroups.begin(), UnmanagedGroups.end(), dev.Group) != UnmanagedGroups.end())
                 dev.Managed = false;
 
             dev.Uplink = true;
@@ -1355,8 +1358,8 @@ TError TNetwork::SyncDevicesLocked() {
         dev.DeviceStat.RxBytes = rtnl_link_get_stat(link, RTNL_LINK_RX_BYTES);
         dev.DeviceStat.RxPackets = rtnl_link_get_stat(link, RTNL_LINK_RX_PACKETS);
         dev.DeviceStat.RxDrops = rtnl_link_get_stat(link, RTNL_LINK_RX_DROPPED);
-        dev.DeviceStat.RxOverruns = rtnl_link_get_stat(link, RTNL_LINK_RX_OVER_ERR) +
-                              rtnl_link_get_stat(link, RTNL_LINK_RX_ERRORS);
+        dev.DeviceStat.RxOverruns =
+            rtnl_link_get_stat(link, RTNL_LINK_RX_OVER_ERR) + rtnl_link_get_stat(link, RTNL_LINK_RX_ERRORS);
 
         dev.DeviceStat.TxBytes = rtnl_link_get_stat(link, RTNL_LINK_TX_BYTES);
         dev.DeviceStat.TxPackets = rtnl_link_get_stat(link, RTNL_LINK_TX_PACKETS);
@@ -1411,8 +1414,8 @@ TError TNetwork::SyncDevicesLocked() {
                 L_NET("Missing network {} qdisc at {}:{}", NetName, d.Index, d.Name);
                 dev.Prepared = false;
             } else if (d.Rate != dev.Rate || d.Ceil != dev.Ceil) {
-                L_NET("Speed changed {}Mbps to {}Mbps in {} at {}:{}",
-                      d.Ceil / 125000, dev.Ceil / 125000, NetName, d.Index, d.Name);
+                L_NET("Speed changed {}Mbps to {}Mbps in {} at {}:{}", d.Ceil / 125000, dev.Ceil / 125000, NetName,
+                      d.Index, d.Name);
                 dev.Prepared = false;
             }
 
@@ -1422,10 +1425,8 @@ TError TNetwork::SyncDevicesLocked() {
         }
         if (!found) {
             L_NET("New network {} {}managed device {}:{} type={} qdisc={} group={} {} mtu={} speed={}Mbps {}iB/s",
-                    NetName, dev.Managed ? "" : "un",
-                    dev.Index, dev.Name, dev.Type, dev.Qdisc, dev.GroupName,
-                    dev.Uplink ? "uplink" : "", dev.MTU,
-                    dev.Ceil / 125000, StringFormatSize(dev.Ceil));
+                  NetName, dev.Managed ? "" : "un", dev.Index, dev.Name, dev.Type, dev.Qdisc, dev.GroupName,
+                  dev.Uplink ? "uplink" : "", dev.MTU, dev.Ceil / 125000, StringFormatSize(dev.Ceil));
             Devices.push_back(dev);
         }
 
@@ -1442,9 +1443,8 @@ TError TNetwork::SyncDevicesLocked() {
 
     auto net_state_lock = LockNetState();
 
-    for (auto dev = Devices.begin(); dev != Devices.end(); ) {
+    for (auto dev = Devices.begin(); dev != Devices.end();) {
         if (dev->Missing) {
-
             L_NET("Forget network {} device {}:{}", NetName, dev->Index, dev->Name);
 
             if (IsHost() && !TNetClass::IsDisabled()) {
@@ -1517,8 +1517,7 @@ TError TNetwork::GetL3Gate(TNetDeviceConfig &dev) {
         auto addr = (struct rtnl_addr *)obj;
         auto local = rtnl_addr_get_local(addr);
 
-        if (!local || rtnl_addr_get_scope(addr) == RT_SCOPE_HOST ||
-                rtnl_addr_get_scope(addr) == RT_SCOPE_LINK)
+        if (!local || rtnl_addr_get_scope(addr) == RT_SCOPE_HOST || rtnl_addr_get_scope(addr) == RT_SCOPE_LINK)
             continue;
 
         for (auto &ip: dev.Ip) {
@@ -1565,14 +1564,13 @@ TError TNetwork::GetL3Gate(TNetDeviceConfig &dev) {
     return error;
 }
 
-TError TNetwork::SetupProxyNeighbour(const std::vector <TNlAddr> &ips,
-                                     const std::string &master) {
+TError TNetwork::SetupProxyNeighbour(const std::vector<TNlAddr> &ips, const std::string &master) {
     struct nl_cache *cache;
     TError error;
     int ret;
 
     if (master != "") {
-        for (auto &dev : Devices) {
+        for (auto &dev: Devices) {
             if (StringMatch(dev.Name, master)) {
                 for (auto &ip: ips) {
                     error = Nl->ProxyNeighbour(dev.Index, ip, true);
@@ -1588,17 +1586,15 @@ TError TNetwork::SetupProxyNeighbour(const std::vector <TNlAddr> &ips,
     if (ret < 0)
         return Nl->Error(ret, "Cannot allocate addr cache");
 
-    for (auto &dev : Devices) {
+    for (auto &dev: Devices) {
         for (auto &ip: ips) {
             bool reachable = false;
 
-            for (auto obj = nl_cache_get_first(cache); obj;
-                    obj = nl_cache_get_next(obj)) {
+            for (auto obj = nl_cache_get_first(cache); obj; obj = nl_cache_get_next(obj)) {
                 auto raddr = (struct rtnl_addr *)obj;
                 auto local = rtnl_addr_get_local(raddr);
 
-                if (rtnl_addr_get_ifindex(raddr) == dev.Index &&
-                        local && nl_addr_cmp_prefix(local, ip.Addr) == 0) {
+                if (rtnl_addr_get_ifindex(raddr) == dev.Index && local && nl_addr_cmp_prefix(local, ip.Addr) == 0) {
                     reachable = true;
                     break;
                 }
@@ -1625,8 +1621,7 @@ err:
     return error;
 }
 
-TError TNetwork::AddProxyNeightbour(const std::vector<TNlAddr> &ips,
-                                    const std::string &master) {
+TError TNetwork::AddProxyNeightbour(const std::vector<TNlAddr> &ips, const std::string &master) {
     TError error;
     if (config().network().proxy_ndp()) {
         std::vector<TNlAddr> addrs;
@@ -1696,13 +1691,11 @@ void TNetwork::RepairProxyNeightbour() {
     for (auto &nb: Neighbours) {
         bool found = false;
 
-        for (auto obj = nl_cache_get_first(cache); obj;
-                obj = nl_cache_get_next(obj)) {
+        for (auto obj = nl_cache_get_first(cache); obj; obj = nl_cache_get_next(obj)) {
             auto neigh = (struct rtnl_neigh *)obj;
             auto dst = rtnl_neigh_get_dst(neigh);
 
-            if (dst && !nl_addr_cmp(nb.Ip.Addr, dst) &&
-                    (rtnl_neigh_get_flags(neigh) & NTF_PROXY)) {
+            if (dst && !nl_addr_cmp(nb.Ip.Addr, dst) && (rtnl_neigh_get_flags(neigh) & NTF_PROXY)) {
                 found = true;
                 break;
             }
@@ -1742,14 +1735,13 @@ TError TNetwork::GetNatAddress(std::vector<TNlAddr> &addrs) {
 }
 
 TError TNetwork::PutNatAddress(const std::vector<TNlAddr> &addrs) {
-
     for (auto &addr: addrs) {
         if (addr.Family() == AF_INET && !NatBaseV4.IsEmpty()) {
-            uint64_t offset =  addr.GetOffset(NatBaseV4);
+            uint64_t offset = addr.GetOffset(NatBaseV4);
             return NatBitmap.Put(offset);
         }
         if (addr.Family() == AF_INET6 && !NatBaseV6.IsEmpty()) {
-            uint64_t offset =  addr.GetOffset(NatBaseV6);
+            uint64_t offset = addr.GetOffset(NatBaseV6);
             return NatBitmap.Put(offset);
         }
     }
@@ -1804,8 +1796,7 @@ TError TNetwork::SetupClass(TNetDevice &dev, TNetClass &cfg, int cs, bool safe) 
     cls.CeilBurst = dev.GetConfig(DeviceCeilBurst, dev.MTU * 10, cs);
 
     if (cfg.BaseHandle == TC_HANDLE(ROOT_TC_MAJOR, 1)) {
-        cls.Rate = (double)dev.GetConfig(DeviceRate, dev.Rate) *
-                    CsWeight[cs] / CsTotalWeight;
+        cls.Rate = (double)dev.GetConfig(DeviceRate, dev.Rate) * CsWeight[cs] / CsTotalWeight;
         cls.Ceil = 0;
         if (CsMaxPercent[cs] < 100)
             cls.Ceil = dev.GetConfig(DeviceCeil, dev.Ceil) * CsMaxPercent[cs] / 100;
@@ -1831,7 +1822,7 @@ TError TNetwork::SetupClass(TNetDevice &dev, TNetClass &cfg, int cs, bool safe) 
     cls.Handle = cfg.LeafHandle + cs;
 
     if (cfg.LeafHandle == TC_HANDLE(ROOT_TC_MAJOR, ROOT_TC_MINOR) ||
-            cfg.LeafHandle == TC_HANDLE(ROOT_TC_MAJOR, DEFAULT_TC_MINOR)) {
+        cfg.LeafHandle == TC_HANDLE(ROOT_TC_MAJOR, DEFAULT_TC_MINOR)) {
         cls.Rate = dev.GetConfig(DefaultClassRate, 0, cs);
         cls.Ceil = dev.GetConfig(DefaultClassCeil, 0, cs);
         cls.defRate = cls.Rate;
@@ -1882,8 +1873,7 @@ TError TNetwork::DeleteClass(TNetDevice &dev, TNetClass &cfg, int cs) {
     if (cfg.LeafHandle == cfg.BaseHandle)
         return OK; /* Fold */
 
-    TNlQdisc ctq(dev.Index, cfg.LeafHandle + cs,
-                 TC_HANDLE(TC_H_MIN(cfg.LeafHandle + cs), 0));
+    TNlQdisc ctq(dev.Index, cfg.LeafHandle + cs, TC_HANDLE(TC_H_MIN(cfg.LeafHandle + cs), 0));
     (void)ctq.Delete(*Nl);
 
     TNlClass cls(dev.Index, TC_H_UNSPEC, cfg.LeafHandle + cs);
@@ -2091,8 +2081,7 @@ retry:
                2) Classful qdiscs (highly likely belonged to Porto)
                   on unmanaged at the moment host interfaces
              */
-            if (!dev.Uplink &&
-                (dev.Qdisc == "hfsc" || dev.Qdisc == "htb") &&
+            if (!dev.Uplink && (dev.Qdisc == "hfsc" || dev.Qdisc == "htb") &&
                 (ManagedNamespace || config().network().enforce_unmanaged_defaults())) {
                 TNlQdisc qdisc(dev.Index, TC_H_ROOT, 0);
                 (void)qdisc.Delete(*Nl);
@@ -2181,9 +2170,8 @@ TError TNetwork::SyncResolvConf() {
     RootContainer->ResolvConf = conf;
 
     for (auto &ct: RootContainer->Subtree()) {
-        if (ct->Root != "/" && !ct->HasProp(EProperty::RESOLV_CONF) &&
-                ct->State != EContainerState::Dead &&
-                ct->State != EContainerState::Stopped) {
+        if (ct->Root != "/" && !ct->HasProp(EProperty::RESOLV_CONF) && ct->State != EContainerState::Dead &&
+            ct->State != EContainerState::Stopped) {
             error = ct->ApplyResolvConf();
             if (error)
                 L_WRN("Cannot apply resolv_conf CT{}:{} : {}", ct->Id, ct->Name, error);
@@ -2245,16 +2233,20 @@ void TNetwork::UpdateSockDiag() {
 
         TNetStat statDiff;
 
-        for (auto &it : ct->SocketsStats) {
+        for (auto &it: ct->SocketsStats) {
             auto itPrev = prevSocketsStats.find(it.first);
             TSockStat prev;
             if (itPrev != prevSocketsStats.end())
                 prev = itPrev->second;
 
-            statDiff.TxBytes += (it.second.TxBytes >= prev.TxBytes) ? (it.second.TxBytes - prev.TxBytes) : it.second.TxBytes;
-            statDiff.RxBytes += (it.second.RxBytes >= prev.RxBytes) ? (it.second.RxBytes - prev.RxBytes) : it.second.RxBytes;
-            statDiff.TxPackets += (it.second.TxPackets >= prev.TxPackets) ? (it.second.TxPackets - prev.TxPackets) : it.second.TxPackets;
-            statDiff.RxPackets += (it.second.RxPackets >= prev.RxPackets) ? (it.second.RxPackets - prev.RxPackets) : it.second.RxPackets;
+            statDiff.TxBytes +=
+                (it.second.TxBytes >= prev.TxBytes) ? (it.second.TxBytes - prev.TxBytes) : it.second.TxBytes;
+            statDiff.RxBytes +=
+                (it.second.RxBytes >= prev.RxBytes) ? (it.second.RxBytes - prev.RxBytes) : it.second.RxBytes;
+            statDiff.TxPackets +=
+                (it.second.TxPackets >= prev.TxPackets) ? (it.second.TxPackets - prev.TxPackets) : it.second.TxPackets;
+            statDiff.RxPackets +=
+                (it.second.RxPackets >= prev.RxPackets) ? (it.second.RxPackets - prev.RxPackets) : it.second.RxPackets;
         }
 
         state_lock.lock();
@@ -2281,13 +2273,13 @@ void TNetwork::UpdateProcNetStats(const std::string &basename) {
     TError error;
 
     auto networks = Networks();
-    for (auto net : *networks) {
+    for (auto net: *networks) {
         auto state_lock = LockNetState();
 
         if (net->NetUsers.empty() || net->IsHost())
             continue;
 
-        for (auto ct : net->NetUsers) {
+        for (auto ct: net->NetUsers) {
             if (ct->State != EContainerState::Meta && ct->State != EContainerState::Running)
                 continue;
 
@@ -2312,14 +2304,14 @@ void TNetwork::UpdateNetSoftLimitStats() {
     TError error;
 
     auto networks = Networks();
-    for (auto net : *networks) {
+    for (auto net: *networks) {
         auto state_lock = LockNetState();
 
         if (net->NetUsers.empty() || net->IsHost())
             continue;
 
         auto pprog = net->NetLimitSoftProgram;
-        if(!pprog)
+        if (!pprog)
             continue;
 
         TBpfMap map;
@@ -2388,13 +2380,14 @@ void TNetwork::NetWatchdog() {
         now = GetCurrentTimeMs();
         if (now < SockDiagDeadline) {
             auto lock = LockNetworks();
-            NetThreadCv.wait_for(lock, std::chrono::milliseconds(std::min(SockDiagDeadline - now, NetWatchdogPeriod / 2)));
+            NetThreadCv.wait_for(lock,
+                                 std::chrono::milliseconds(std::min(SockDiagDeadline - now, NetWatchdogPeriod / 2)));
         }
     }
 }
 
 void UpdateL3Stat() {
-    for (auto &stat : L3Stats)
+    for (auto &stat: L3Stats)
         stat.second.Found = false;
 
     std::vector<std::string> devices;
@@ -2406,7 +2399,7 @@ void UpdateL3Stat() {
 
     uint64_t ifindex, rx, tx;
 
-    for (const auto &l3 : devices) {
+    for (const auto &l3: devices) {
         if (!StringStartsWith(l3, "L3-"))
             continue;
 
@@ -2460,7 +2453,7 @@ void UpdateL3Stat() {
     }
 
     auto lock = LockL3Stat();
-    for(auto it = L3Stats.begin(); it != L3Stats.end();) {
+    for (auto it = L3Stats.begin(); it != L3Stats.end();) {
         if (it->second.Found)
             ++it;
         else
@@ -2487,7 +2480,6 @@ void TNetwork::StartRepair() {
 }
 
 TError TNetwork::WaitRepair() {
-
     if (HostNetwork && !IsHost()) {
         TError error = HostNetwork->WaitRepair();
         if (error)
@@ -2495,7 +2487,7 @@ TError TNetwork::WaitRepair() {
     }
 
     auto net_lock = LockNet();
-    NetCv.wait(net_lock, [this]{return NetError != EError::Queued;});
+    NetCv.wait(net_lock, [this] { return NetError != EError::Queued; });
 
     return NetError;
 }
@@ -2518,8 +2510,8 @@ void TNetwork::SyncStatLocked() {
     auto curTime = GetCurrentTimeMs();
     auto curGen = GlobalStatGen.load();
 
-    L_NET_VERBOSE("Sync network {} statistics generation {} after {} ms",
-          NetName, (unsigned)curGen, curTime - StatTime);
+    L_NET_VERBOSE("Sync network {} statistics generation {} after {} ms", NetName, (unsigned)curGen,
+                  curTime - StatTime);
 
     error = SyncDevicesLocked();
     if (error) {
@@ -2556,12 +2548,10 @@ void TNetwork::SyncStatLocked() {
     }
 
     for (auto &dev: Devices) {
-
         if (!dev.ClassCache)
             continue;
 
         for (auto cls: NetClasses) {
-
             if (dev.Owner && dev.Owner != cls->Owner)
                 continue;
 
@@ -2571,7 +2561,8 @@ void TNetwork::SyncStatLocked() {
             for (int cs = 0; cs < NR_TC_CLASSES; cs++) {
                 struct rtnl_class *tc = rtnl_class_get(dev.ClassCache, dev.Index, cls->LeafHandle + cs);
                 if (!tc) {
-                    L_NET("Missing network {} class {:#x} at {}:{}", NetName, cls->LeafHandle + cs, dev.Index, dev.Name);
+                    L_NET("Missing network {} class {:#x} at {}:{}", NetName, cls->LeafHandle + cs, dev.Index,
+                          dev.Name);
                     StartRepair();
                     continue;
                 }
@@ -2586,9 +2577,11 @@ void TNetwork::SyncStatLocked() {
                 cls->ClassStat[fmt::format("Leaf CS{}", cs)] += stat;
 
                 if (cls->LeafHandle == TC_HANDLE(ROOT_TC_MAJOR, ROOT_TC_MINOR)) {
-                    struct rtnl_class *tc = rtnl_class_get(dev.ClassCache, dev.Index, TC_HANDLE(ROOT_TC_MAJOR, DEFAULT_TC_MINOR) + cs);
+                    struct rtnl_class *tc =
+                        rtnl_class_get(dev.ClassCache, dev.Index, TC_HANDLE(ROOT_TC_MAJOR, DEFAULT_TC_MINOR) + cs);
                     if (!tc) {
-                        L_NET("Missing network {} class {:#x} at {}:{}", NetName, TC_HANDLE(ROOT_TC_MAJOR, DEFAULT_TC_MINOR) + cs, dev.Index, dev.Name);
+                        L_NET("Missing network {} class {:#x} at {}:{}", NetName,
+                              TC_HANDLE(ROOT_TC_MAJOR, DEFAULT_TC_MINOR) + cs, dev.Index, dev.Name);
                         StartRepair();
                         continue;
                     }
@@ -2682,14 +2675,15 @@ bool TNetwork::CheckForBpfProgramsUpdate() {
 
     auto netLimitProgramsLock = LockNetLimitPrograms();
 
-    auto check = [](std::shared_ptr<TBpfProgram>& currentProgram, const std::string& path) {
+    auto check = [](std::shared_ptr<TBpfProgram> &currentProgram, const std::string &path) {
         auto prog = std::make_shared<TBpfProgram>();
         TError error = prog->Open(path);
         if (error && error.Error == EError::NotFound)
             return false;
         if (error) {
-            L_ERR("Something goes wrong while updating bpf program: {}\n"
-                  "Fallback to old-style limiter for {}", error, path);
+            L_ERR(
+                "Something goes wrong while updating bpf program: {}\n"
+                "Fallback to old-style limiter for {}", error, path);
             currentProgram.reset();
             return true;
         }
@@ -2697,8 +2691,8 @@ bool TNetwork::CheckForBpfProgramsUpdate() {
         if (currentProgram && currentProgram->Id == prog->Id)
             return false;
 
-        L_NET("Detect new bpf program {} with id {}, old id {}",
-              path, prog->Id, currentProgram ? currentProgram->Id : -1);
+        L_NET("Detect new bpf program {} with id {}, old id {}", path, prog->Id,
+              currentProgram ? currentProgram->Id : -1);
 
         currentProgram = prog;
         return true;
@@ -2814,8 +2808,8 @@ void TNetwork::StopNetwork(TContainer &ct) {
             for (int cs = 0; cs < NR_TC_CLASSES; cs++) {
                 error = HostNetwork->DeleteClass(dev, ct.NetClass, cs);
                 if (error)
-                    L_NET("Cannot delete network {} class CT{}:{} CS{} {}",
-                          HostNetwork->NetName, ct.Id, ct.Name, cs, error);
+                    L_NET("Cannot delete network {} class CT{}:{} CS{} {}", HostNetwork->NetName, ct.Id, ct.Name, cs,
+                          error);
             }
         }
     }
@@ -2852,7 +2846,7 @@ void TNetwork::StopNetwork(TContainer &ct) {
         SockDiag.Disconnect();
     }
 
-    for (auto &dev : env.Devices) {
+    for (auto &dev: env.Devices) {
         if (dev.Type != "L3")
             continue;
         auto lock = HostNetwork->LockNet();
@@ -2949,12 +2943,8 @@ std::string TNetEnv::GenerateHw(const std::string &name) {
     uint32_t n = Crc32(name);
     uint32_t h = Crc32(Hostname);
 
-    return StringFormat("02:%02x:%02x:%02x:%02x:%02x",
-            (n & 0x000000FF) >> 0,
-            (h & 0xFF000000) >> 24,
-            (h & 0x00FF0000) >> 16,
-            (h & 0x0000FF00) >> 8,
-            (h & 0x000000FF) >> 0);
+    return StringFormat("02:%02x:%02x:%02x:%02x:%02x", (n & 0x000000FF) >> 0, (h & 0xFF000000) >> 24,
+                        (h & 0x00FF0000) >> 16, (h & 0x0000FF00) >> 8, (h & 0x000000FF) >> 0);
 }
 
 TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanSettings) {
@@ -2976,7 +2966,7 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
         Devices.push_back(dev);
     }
 
-    for (auto &settings : net_settings) {
+    for (auto &settings: net_settings) {
         TNetDeviceConfig dev;
 
         if (!settings.size())
@@ -3093,8 +3083,7 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
 
             /* Legacy kludge */
             if (dev.Mac.empty() && !Hostname.empty())
-                dev.Mac = GenerateHw(dev.Name + "portove-" + std::to_string(Id) +
-                                     "-" + std::to_string(vethIdx));
+                dev.Mac = GenerateHw(dev.Name + "portove-" + std::to_string(Id) + "-" + std::to_string(vethIdx));
             vethIdx++;
         } else if (type == "L3") {
             dev.Type = "L3";
@@ -3137,8 +3126,7 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
             dev.Type = "ipip6";
             dev.Name = StringTrim(settings[1]);
             if (dev.Name == "ip6tnl0")
-                return TError(EError::InvalidValue,
-                              "Cannot modify default fallback tunnel");
+                return TError(EError::InvalidValue, "Cannot modify default fallback tunnel");
             error = dev.IpIp6.Remote.Parse(AF_INET6, settings[2]);
             if (error)
                 return error;
@@ -3239,8 +3227,7 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
 
     /* manually include parent's ipvlan/macvlan configuration only if L3 (except "tap")
      * or "none" network settings are specified */
-    if (config().network().network_inherit_xvlan() &&
-        ((!NetInherit /* to exclude "tap" */ && L3Only) || NetNone) &&
+    if (config().network().network_inherit_xvlan() && ((!NetInherit /* to exclude "tap" */ && L3Only) || NetNone) &&
         Parent && !Parent->NetXVlanSettings.empty()) {
         return ParseNet(Parent->NetXVlanSettings, netXVlanSettings);
     }
@@ -3254,7 +3241,6 @@ TError TNetEnv::CheckIpLimit() {
         return OK;
 
     for (auto ct = Parent; ct; ct = ct->Parent) {
-
         /* empty means no limit */
         if (ct->IpPolicy == "any")
             continue;
@@ -3278,8 +3264,8 @@ TError TNetEnv::CheckIpLimit() {
                     }
                 }
                 if (!allow)
-                    return TError(EError::Permission, "Parent container " +
-                            ct->Name + " forbid address: " + ip.Format());
+                    return TError(EError::Permission,
+                                  "Parent container " + ct->Name + " forbid address: " + ip.Format());
             }
         }
     }
@@ -3291,7 +3277,7 @@ TError TNetEnv::ParseIp(const TMultiTuple &ip_settings) {
     TError error;
     TNlAddr ip;
 
-    for (auto &settings : ip_settings) {
+    for (auto &settings: ip_settings) {
         if (settings.size() != 2)
             return TError(EError::InvalidValue, "Invalid ip format");
         error = ip.Parse(AF_UNSPEC, settings[1]);
@@ -3308,14 +3294,14 @@ void TNetEnv::FormatIp(TMultiTuple &ip_settings) {
     ip_settings.clear();
     for (auto &dev: Devices)
         for (auto &ip: dev.Ip)
-            ip_settings.push_back({ dev.Name , ip.Format() });
+            ip_settings.push_back({dev.Name, ip.Format()});
 }
 
 TError TNetEnv::ParseGw(const TMultiTuple &gw_settings) {
     TError error;
     TNlAddr ip;
 
-    for (auto &settings : gw_settings) {
+    for (auto &settings: gw_settings) {
         if (settings.size() != 2)
             return TError(EError::InvalidValue, "Invalid gateway format");
         error = ip.Parse(AF_UNSPEC, settings[1]);
@@ -3352,14 +3338,12 @@ TError TNetEnv::ConfigureL3(TNetDeviceConfig &dev) {
         return error;
 
     std::string ipStr;
-    for (auto &ip : dev.Ip)
+    for (auto &ip: dev.Ip)
         ipStr += fmt::format("{}={} ", ip.Family() == AF_INET ? "ip4" : "ip6", ip.Format());
 
-    L_NET("Setup L3 device {} peer={} mtu={} group={} master={} {}gw4={} mtu4={} gw6={} mtu6={}",
-            dev.Name, dev.PeerName, dev.Mtu, TNetwork::DeviceGroupName(dev.Group),
-            dev.Master, ipStr,
-            dev.Gate4.Format(), dev.GateMtu4,
-            dev.Gate6.Format(), dev.GateMtu6);
+    L_NET("Setup L3 device {} peer={} mtu={} group={} master={} {}gw4={} mtu4={} gw6={} mtu6={}", dev.Name,
+          dev.PeerName, dev.Mtu, TNetwork::DeviceGroupName(dev.Group), dev.Master, ipStr, dev.Gate4.Format(),
+          dev.GateMtu4, dev.Gate6.Format(), dev.GateMtu6);
 
     error = peer.AddVeth(dev.Name, "", dev.Mtu, VirtualDeviceGroup, NetNs.GetFd());
     if (error)
@@ -3429,7 +3413,7 @@ TError TNetEnv::CreateTap(TNetDeviceConfig &dev) {
         return error;
 
     if (dev.Name.size() >= IFNAMSIZ)
-        return TError(EError::InvalidValue, "tun name too long, max {}", IFNAMSIZ-1);
+        return TError(EError::InvalidValue, "tun name too long, max {}", IFNAMSIZ - 1);
 
     struct ifreq ifr;
     memset(&ifr, 0, sizeof(struct ifreq));
@@ -3527,7 +3511,7 @@ TError TNetEnv::SetupInterfaces() {
     auto target_nl = Net->GetNl();
     TError error;
 
-    for (auto &dev : Devices) {
+    for (auto &dev: Devices) {
         if (dev.Type == "steal") {
             auto parent_lock = ParentNet->LockNet();
             auto source_nl = ParentNet->GetNl();
@@ -3574,8 +3558,7 @@ TError TNetEnv::SetupInterfaces() {
 
             TNlLink peer(source_nl, ParentNet->NewDeviceName("portove-"));
 
-            error = peer.AddVeth(dev.Name, dev.Mac, dev.Mtu,
-                                 VirtualDeviceGroup, NetNs.GetFd());
+            error = peer.AddVeth(dev.Name, dev.Mac, dev.Mtu, VirtualDeviceGroup, NetNs.GetFd());
             if (error)
                 return error;
 
@@ -3592,7 +3575,7 @@ TError TNetEnv::SetupInterfaces() {
         }
     }
 
-    for (auto &dev : Devices) {
+    for (auto &dev: Devices) {
         if (dev.Type == "L3") {
             error = ConfigureL3(dev);
             if (error)
@@ -3600,10 +3583,8 @@ TError TNetEnv::SetupInterfaces() {
         } else if (dev.Type == "ipip6") {
             TNlLink link(target_nl, dev.Name);
 
-            error = link.AddIp6Tnl(dev.Name, dev.IpIp6.Remote, dev.IpIp6.Local,
-                                   IPPROTO_IPIP, dev.Mtu,
-                                   config().network().ipip6_encap_limit(),
-                                   config().network().ipip6_ttl(),
+            error = link.AddIp6Tnl(dev.Name, dev.IpIp6.Remote, dev.IpIp6.Local, IPPROTO_IPIP, dev.Mtu,
+                                   config().network().ipip6_encap_limit(), config().network().ipip6_ttl(),
                                    config().network().ipip6_tx_queues());
             if (error)
                 return error;
@@ -3631,7 +3612,7 @@ TError TNetEnv::SetupInterfaces() {
             if (dev.Mtu < 0 && dev.Ip.empty())
                 continue;
             struct ifreq ifr;
-            strncpy(ifr.ifr_name, dev.Name.c_str(), sizeof(ifr.ifr_name)-1);
+            strncpy(ifr.ifr_name, dev.Name.c_str(), sizeof(ifr.ifr_name) - 1);
             if (!ioctl(nl_socket_get_fd(Net->GetSock()), SIOCGIFINDEX, &ifr))
                 index = ifr.ifr_ifindex;
         }
@@ -3650,8 +3631,7 @@ TError TNetEnv::SetupInterfaces() {
                 return error;
         }
 
-        if (NetUp || !dev.Ip.empty() || dev.Autoconf ||
-                !dev.Gate4.IsEmpty() || !dev.Gate6.IsEmpty()) {
+        if (NetUp || !dev.Ip.empty() || dev.Autoconf || !dev.Gate4.IsEmpty() || !dev.Gate6.IsEmpty()) {
             error = link.Up();
             if (error)
                 return error;
@@ -3685,11 +3665,11 @@ TError TNetEnv::SetupInterfaces() {
             if (error)
                 return error;
         }
-        if (dev.EnableExtraRoutes  && dev.Type == "L3") {
+        if (dev.EnableExtraRoutes && dev.Type == "L3") {
             if (!dev.Gate6.IsEmpty()) {
-                for (const auto &extraRoute : config().network().extra_routes()) {
+                for (const auto &extraRoute: config().network().extra_routes()) {
                     error = AddRoute(extraRoute.dst(), Net->DeviceIndex(dev.Name), dev.Gate6.Addr, extraRoute.mtu(),
-                            extraRoute.has_advmss() ? extraRoute.advmss() : 0);
+                                     extraRoute.has_advmss() ? extraRoute.advmss() : 0);
                     if (error)
                         return error;
                 }
@@ -3837,8 +3817,7 @@ TError TNetEnv::RunNetworkIfUpScript(TContainer &ct) {
         }
     }
 
-    env.emplace_back("PORTO_NETNS_FD=/proc/" + std::to_string(GetPid()) +
-                     "/fd/" + std::to_string(NetNs.GetFd()));
+    env.emplace_back("PORTO_NETNS_FD=/proc/" + std::to_string(GetPid()) + "/fd/" + std::to_string(NetNs.GetFd()));
     // Return error if helper script exits with non-zero exit code.
     // Client should receive an error creating slot container and may try to re-create the container.
     // No silent misconfiguration will happen.
@@ -3892,14 +3871,11 @@ TError TNetEnv::OpenNetwork(TContainer &ct) {
     TError error;
 
     /* Share L3 network with same config and ip */
-    if (config().network().l3_migration_hack() &&
-            NetIsolate && L3Only && ct.IpList.size()) {
+    if (config().network().l3_migration_hack() && NetIsolate && L3Only && ct.IpList.size()) {
         auto lock = LockContainers();
         for (auto &it: Containers) {
             auto c = it.second;
-            if (c->Net && c->Task.Pid &&
-                    c->NetProp == ct.NetProp &&
-                    c->IpList == ct.IpList) {
+            if (c->Net && c->Task.Pid && c->NetProp == ct.NetProp && c->IpList == ct.IpList) {
                 lock.unlock();
                 L_NET("Share network {}", c->Name);
                 return Open(*c);
@@ -4030,7 +4006,8 @@ TError TNetwork::SetupNetLimitSoft() {
         return TError(EError::Unknown, "TNetwork::SetupNetLimitSoft() -- network {} -- failed to bake prog", netid);
 
     if (NetLimitSoftProgram)
-        return TError(EError::Unknown, "Trying to install new netlimit soft program on network {} while already having one", netid);
+        return TError(EError::Unknown,
+                      "Trying to install new netlimit soft program on network {} while already having one", netid);
 
     auto new_program = std::make_shared<TBpfProgram>();
     error = new_program->Open("netlimit_soft", prog_code);
@@ -4040,8 +4017,10 @@ TError TNetwork::SetupNetLimitSoft() {
     NetLimitSoftProgram = new_program;
 
     auto &tag = NetLimitSoftProgram->Tag;
-    L_NET("TNetwork::SetupNetLimitSoft() for network {} netlimit_soft bpf program tag {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        netid, tag[0], tag[1], tag[2], tag[3], tag[4], tag[5], tag[6], tag[7]);
+    L_NET(
+        "TNetwork::SetupNetLimitSoft() for network {} netlimit_soft bpf program tag "
+        "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}", netid, tag[0], tag[1], tag[2], tag[3], tag[4], tag[5],
+        tag[6], tag[7]);
     return OK;
 }
 
@@ -4060,11 +4039,14 @@ TError TNetwork::UpdateNetLimitSoft(uint32_t kbs) {
         return error;
 
     if (!NetLimitSoftProgram)
-        return TError(EError::Unknown, "Can not UpdateNetLimitSoft({}), net {} has no netlimit_soft bpf program", NetLimitSoftValue, netid);
+        return TError(EError::Unknown, "Can not UpdateNetLimitSoft({}), net {} has no netlimit_soft bpf program",
+                      NetLimitSoftValue, netid);
 
     auto &tag = NetLimitSoftProgram->Tag;
-    L_NET("TNetwork::UpdateNetLimitSoft({}) for network {} netlimit_soft bpf program tag {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        NetLimitSoftValue, netid, tag[0], tag[1], tag[2], tag[3], tag[4], tag[5], tag[6], tag[7]);
+    L_NET(
+        "TNetwork::UpdateNetLimitSoft({}) for network {} netlimit_soft bpf program tag "
+        "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}", NetLimitSoftValue, netid, tag[0], tag[1], tag[2], tag[3],
+        tag[4], tag[5], tag[6], tag[7]);
     return OK;
 }
 
@@ -4075,7 +4057,9 @@ TError TNetwork::SetupNetLimitSoftInterface(int ifindex) {
     auto netid = NetInode;
 
     if (!NetLimitSoftProgram)
-        return TError(EError::Unknown, "can not setup net limit soft for network {} on interface {}, no bpf program for the net", netid, ifindex);
+        return TError(EError::Unknown,
+                      "can not setup net limit soft for network {} on interface {}, no bpf program for the net", netid,
+                      ifindex);
 
     TError error;
 
@@ -4102,4 +4086,3 @@ TError TNetwork::SetupNetLimitSoftInterface(int ifindex) {
 
     return OK;
 }
-

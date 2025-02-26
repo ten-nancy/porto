@@ -1,22 +1,23 @@
 #include "helpers.hpp"
-#include "common.hpp"
+
 #include "client.hpp"
-#include "util/path.hpp"
+#include "common.hpp"
 #include "util/log.hpp"
+#include "util/path.hpp"
 #include "util/unix.hpp"
 
 extern "C" {
-#include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/loop.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <linux/loop.h>
+#include <unistd.h>
 }
 
 extern std::atomic_bool NeedStopHelpers;
 
-static void HelperError(TFile &err, const std::string &text, TError error) __attribute__ ((noreturn));
+static void HelperError(TFile &err, const std::string &text, TError error) __attribute__((noreturn));
 
 static void HelperError(TFile &err, const std::string &text, TError error) {
     L_WRN("{}: {}", text, error);
@@ -24,21 +25,14 @@ static void HelperError(TFile &err, const std::string &text, TError error) {
     _exit(EXIT_FAILURE);
 }
 
-TError RunCommand(const std::vector<std::string> &command,
-                  const TFile &dir, const TFile &in, const TFile &out,
-                  const TCapabilities &caps,
-                  bool verboseError,
-                  bool interruptible) {
+TError RunCommand(const std::vector<std::string> &command, const TFile &dir, const TFile &in, const TFile &out,
+                  const TCapabilities &caps, bool verboseError, bool interruptible) {
     return RunCommand(command, {}, dir, in, out, caps, PORTO_HELPERS_CGROUP, verboseError, interruptible);
 }
 
-TError RunCommand(const std::vector<std::string> &command,
-                  const std::vector<std::string> &env,
-                  const TFile &dir, const TFile &in, const TFile &out,
-                  const TCapabilities &caps,
-                  const std::string &memCgroup,
-                  bool verboseError,
-                  bool interruptible) {
+TError RunCommand(const std::vector<std::string> &command, const std::vector<std::string> &env, const TFile &dir,
+                  const TFile &in, const TFile &out, const TCapabilities &caps, const std::string &memCgroup,
+                  bool verboseError, bool interruptible) {
     TError error;
     TFile err;
     TTask task;
@@ -53,7 +47,7 @@ TError RunCommand(const std::vector<std::string> &command,
 
     std::string cmdline;
 
-    for (auto &arg : command) {
+    for (auto &arg: command) {
         if (!StringStartsWith(arg, "--header=Authorization"))
             cmdline += arg + " ";
         else
@@ -174,7 +168,7 @@ TError RunCommand(const std::vector<std::string> &command,
             envp[i] = env[i].c_str();
         envp[env.size()] = nullptr;
 
-        execvpe(argv[0], (char **)argv, (char **) envp);
+        execvpe(argv[0], (char **)argv, (char **)envp);
     }
 
     err.SetFd = STDERR_FILENO;
@@ -213,9 +207,8 @@ TError CopyRecursive(const TPath &src, const TPath &dst) {
     if (error)
         return error;
 
-    return RunCommand({"cp", "--archive", "--force",
-                       "--one-file-system", "--no-target-directory",
-                       src.ToString(), "."}, dir);
+    return RunCommand({"cp", "--archive", "--force", "--one-file-system", "--no-target-directory", src.ToString(), "."},
+                      dir);
 }
 
 TError DownloadFile(const std::string &url, const TPath &path, const std::vector<std::string> &headers) {

@@ -1,16 +1,17 @@
 #pragma once
 
-#include <vector>
 #include <algorithm>
+#include <vector>
 
 #include "common.hpp"
 #include "log.hpp"
 
-class TIdMap : public TNonCopyable {
+class TIdMap: public TNonCopyable {
 private:
     int Base;
     int Last = -1;
     std::vector<bool> Used;
+
 public:
     TIdMap(int base, int size) {
         Base = base;

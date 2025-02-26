@@ -1,10 +1,11 @@
-#include <sstream>
-#include <iomanip>
-#include <cstdarg>
-#include <cctype>
-#include <algorithm>
-
 #include "util/string.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdarg>
+#include <iomanip>
+#include <sstream>
+
 #include "util/unix.hpp"
 
 extern "C" {
@@ -87,11 +88,11 @@ std::string BoolToString(bool value) {
     return value ? "true" : "false";
 }
 
-const std::string ParseUnit(char* end) {
+const std::string ParseUnit(char *end) {
     while (isspace(*end))
         end++;
     size_t len = strlen(end);
-    while (len && isspace(end[len-1]))
+    while (len && isspace(end[len - 1]))
         len--;
 
     return std::string(end, len);
@@ -125,29 +126,27 @@ TError StringToValue(const std::string &str, uint64_t &value, std::string &unit)
 
 static char size_unit[] = {'B', 'K', 'M', 'G', 'T', 'P', 'E', 0};
 
-TError UnitToMult(const std::string& unit, uint64_t &mult) {
+TError UnitToMult(const std::string &unit, uint64_t &mult) {
     if (!unit[0])
         return OK;
 
     for (int i = 0; size_unit[i]; i++) {
-        if (unit[0] == size_unit[i] ||
-            unit[0] == tolower(size_unit[i])) {
-
+        if (unit[0] == size_unit[i] || unit[0] == tolower(size_unit[i])) {
             mult = 1ull << (10 * i);
 
             /* allow K Kb kB KiB */
             switch (unit[1]) {
-                case 'b': /* FIXME turn into bits? */
-                case 'B':
-                    if (i && unit[2] == '\0')
-                        return OK;
-                    break;
-                case 'i':
-                    if (i && unit[2] == 'B' && unit[3] == '\0')
-                        return OK;
-                    break;
-                case '\0':
+            case 'b': /* FIXME turn into bits? */
+            case 'B':
+                if (i && unit[2] == '\0')
                     return OK;
+                break;
+            case 'i':
+                if (i && unit[2] == 'B' && unit[3] == '\0')
+                    return OK;
+                break;
+            case '\0':
+                return OK;
             }
 
             break;
@@ -170,7 +169,7 @@ TError StringToSize(const std::string &str, uint64_t &size) {
         if (UnitToMult(unit, mult))
             goto cast_double;
         size = value * mult;
-        if (size / mult != value) // check overflow
+        if (size / mult != value)  // check overflow
             return TError(EError::InvalidValue, "Too big: " + str);
 
         return OK;
@@ -198,7 +197,7 @@ std::string StringFormatSize(uint64_t value)
 {
     int i = 0;
 
-    while (value >= (1ull<<(10*(i+1))) && size_unit[i+1])
+    while (value >= (1ull << (10 * (i + 1))) && size_unit[i + 1])
         i++;
 
     uint64_t div = 1ull << (10 * i);
@@ -214,9 +213,9 @@ std::string StringFormatDuration(uint64_t msec) {
     if (msec < 60000)
         return StringFormat("%gs", msec / 1000.);
     int seconds = msec / 1000 % 60;
-    int minutes = msec / (60*1000) % 60;
-    int hours = msec / (60*60*1000) % 24;
-    int days = msec / (24*60*60*1000);
+    int minutes = msec / (60 * 1000) % 60;
+    int hours = msec / (60 * 60 * 1000) % 24;
+    int days = msec / (24 * 60 * 60 * 1000);
     if (!days)
         return StringFormat("%d:%02d:%02d", hours, minutes, seconds);
     return StringFormat("%dd %2d:%02d", days, hours, minutes);
@@ -266,7 +265,7 @@ TTuple SplitString(const std::string &str, const char sep, int max) {
     std::istringstream ss(str);
     std::string tok;
 
-    while(std::getline(ss, tok, sep)) {
+    while (std::getline(ss, tok, sep)) {
         if (max && !--max) {
             std::string rem;
             std::getline(ss, rem);
@@ -304,9 +303,7 @@ TMultiTuple SplitEscapedString(const std::string &str, char sep_inner, char sep_
                 tuples.push_back({});
 
         } else if (*i == '\\' && ((i + 1) != str.end()) &&
-                   ((*(i + 1) == '\\') || *(i + 1) == sep_inner ||
-                   (sep_outer && *(i + 1) == sep_outer))) {
-
+                   ((*(i + 1) == '\\') || *(i + 1) == sep_inner || (sep_outer && *(i + 1) == sep_outer))) {
             ss << *(i + 1);
             i++;
         } else {
@@ -345,7 +342,7 @@ std::string MergeEscapeStrings(const TMultiTuple &tuples, char sep_inner, char s
     std::stringstream ss;
     bool first_outer = true;
 
-    for (auto &tuple : tuples) {
+    for (auto &tuple: tuples) {
         if (tuple.size()) {
             bool first_inner = true;
 
@@ -354,7 +351,7 @@ std::string MergeEscapeStrings(const TMultiTuple &tuples, char sep_inner, char s
 
             first_outer = false;
 
-            for (auto &str : tuple) {
+            for (auto &str: tuple) {
                 if (!first_inner)
                     ss << ssp_inner;
 
@@ -378,7 +375,7 @@ std::string MergeEscapeStrings(const TMultiTuple &tuples, char sep_inner, char s
 }
 
 std::string MergeEscapeStrings(const TTuple &tuple, char sep) {
-    TMultiTuple tuples = { tuple };
+    TMultiTuple tuples = {tuple};
     return MergeEscapeStrings(tuples, sep, 0);
 }
 
@@ -400,9 +397,9 @@ std::string MergeWithQuotes(const TTuple &tuple, char sep, char quot) {
     return res;
 }
 
-std::string StringTrim(const std::string& s, const std::string &what) {
+std::string StringTrim(const std::string &s, const std::string &what) {
     std::size_t first = s.find_first_not_of(what);
-    std::size_t last  = s.find_last_not_of(what);
+    std::size_t last = s.find_last_not_of(what);
 
     if (first == std::string::npos || last == std::string::npos)
         return "";
@@ -456,13 +453,11 @@ bool StringSubpath(const std::string &path, const std::string &subpath) {
     return fnmatch(path.c_str(), subpath.c_str(), FNM_LEADING_DIR) == 0;
 }
 
-std::string StringFormatFlags(uint64_t flags,
-                              const TFlagsNames &names,
-                              const std::string sep) {
+std::string StringFormatFlags(uint64_t flags, const TFlagsNames &names, const std::string sep) {
     std::stringstream result;
     bool first = true;
 
-    for (auto &n : names) {
+    for (auto &n: names) {
         if (n.first & flags) {
             if (first)
                 first = false;
@@ -495,8 +490,7 @@ bool StringContainsAny(const std::string &str, const std::string &target) {
     return false;
 }
 
-TError StringParseFlags(const std::string &str, const TFlagsNames &names,
-                        uint64_t &result, const char sep) {
+TError StringParseFlags(const std::string &str, const TFlagsNames &names, uint64_t &result, const char sep) {
     std::stringstream ss(str);
     std::string name;
 
@@ -564,7 +558,7 @@ std::string CpuPowerToString(uint64_t nsec) {
 TError UintMapToString(const TUintMap &map, std::string &value) {
     std::stringstream str;
 
-    for (auto kv : map) {
+    for (auto kv: map) {
         if (str.str().length())
             str << "; ";
         str << kv.first << ": " << kv.second;
@@ -578,7 +572,7 @@ TError UintMapToString(const TUintMap &map, std::string &value) {
 TError StringToUintMap(const std::string &value, TUintMap &result, char sepPair, char sepValue) {
     TError error;
 
-    for (auto &line : SplitEscapedString(value, sepPair)) {
+    for (auto &line: SplitEscapedString(value, sepPair)) {
         auto nameval = SplitEscapedString(line, sepValue);
         if (nameval.size() != 2)
             return TError(EError::InvalidValue, "Invalid format");
@@ -599,7 +593,7 @@ TError StringToUintMap(const std::string &value, TUintMap &result, char sepPair,
 std::string StringMapToString(const TStringMap &map) {
     std::stringstream str;
 
-    for (auto kv : map) {
+    for (auto kv: map) {
         if (str.str().length())
             str << "; ";
         str << kv.first << ": " << kv.second;
@@ -611,7 +605,7 @@ std::string StringMapToString(const TStringMap &map) {
 TError StringToStringMap(const std::string &value, TStringMap &result) {
     TError error;
 
-    for (auto &line : SplitEscapedString(value, ';')) {
+    for (auto &line: SplitEscapedString(value, ';')) {
         auto nameval = SplitEscapedString(line, ':');
         if (nameval.size() != 2)
             return TError(EError::InvalidValue, "Invalid format");

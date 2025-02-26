@@ -1,30 +1,31 @@
-#include <algorithm>
-
 #include "rpc.hpp"
-#include "cgroup.hpp"
-#include "client.hpp"
-#include "config.hpp"
-#include "version.hpp"
-#include "property.hpp"
-#include "container.hpp"
-#include "volume.hpp"
-#include "waiter.hpp"
-#include "event.hpp"
-#include "helpers.hpp"
-#include "util/log.hpp"
-#include "util/string.hpp"
-#include "util/cred.hpp"
-#include "util/mutex.hpp"
-#include "portod.hpp"
-#include "storage.hpp"
-#include "docker.hpp"
-#include "util/quota.hpp"
 
 #include <google/protobuf/descriptor.h>
 
+#include <algorithm>
+
+#include "cgroup.hpp"
+#include "client.hpp"
+#include "config.hpp"
+#include "container.hpp"
+#include "docker.hpp"
+#include "event.hpp"
+#include "helpers.hpp"
+#include "portod.hpp"
+#include "property.hpp"
+#include "storage.hpp"
+#include "util/cred.hpp"
+#include "util/log.hpp"
+#include "util/mutex.hpp"
+#include "util/quota.hpp"
+#include "util/string.hpp"
+#include "version.hpp"
+#include "volume.hpp"
+#include "waiter.hpp"
+
 extern "C" {
-#include <unistd.h>
 #include <sys/stat.h>
+#include <unistd.h>
 }
 
 extern __thread char ReqId[9];
@@ -33,59 +34,27 @@ extern uint32_t RequestHandlingDelayMs;
 static bool PortodFrozen = false;
 
 void TRequest::Classify() {
-
     /* Normally not logged in non-verbose mode */
-    RoReq =
-        Req.has_version() ||
-        Req.has_list() ||
-        Req.has_findlabel() ||
-        Req.has_listvolumes() ||
-        Req.has_listlayers() ||
-        Req.has_liststorage() ||
-        Req.has_getlayerprivate() ||
-        Req.has_get() ||
-        Req.has_getdata() ||
-        Req.has_getproperty() ||
-        Req.has_datalist() ||
-        Req.has_propertylist() ||
-        Req.has_listvolumeproperties() ||
-        Req.has_wait() ||
-        Req.has_asyncwait() ||
-        Req.has_stopasyncwait() ||
-        Req.has_convertpath() ||
-        Req.has_locateprocess() ||
-        Req.has_getsystem() ||
-        Req.has_listcontainersby() ||
-        Req.has_getvolume();
+    RoReq = Req.has_version() || Req.has_list() || Req.has_findlabel() || Req.has_listvolumes() ||
+            Req.has_listlayers() || Req.has_liststorage() || Req.has_getlayerprivate() || Req.has_get() ||
+            Req.has_getdata() || Req.has_getproperty() || Req.has_datalist() || Req.has_propertylist() ||
+            Req.has_listvolumeproperties() || Req.has_wait() || Req.has_asyncwait() || Req.has_stopasyncwait() ||
+            Req.has_convertpath() || Req.has_locateprocess() || Req.has_getsystem() || Req.has_listcontainersby() ||
+            Req.has_getvolume();
 
-    IoReq =
-        Req.has_checkvolume() ||
-        Req.has_importlayer() ||
-        Req.has_exportlayer() ||
-        Req.has_removelayer() ||
-        Req.has_importstorage() ||
-        Req.has_exportstorage() ||
-        Req.has_removestorage() ||
-        Req.has_createmetastorage() ||
-        Req.has_removemetastorage() ||
-        Req.has_dockerimagestatus() ||
-        Req.has_listdockerimages() ||
-        Req.has_pulldockerimage() ||
-        Req.has_removedockerimage();
+    IoReq = Req.has_checkvolume() || Req.has_importlayer() || Req.has_exportlayer() || Req.has_removelayer() ||
+            Req.has_importstorage() || Req.has_exportstorage() || Req.has_removestorage() ||
+            Req.has_createmetastorage() || Req.has_removemetastorage() || Req.has_dockerimagestatus() ||
+            Req.has_listdockerimages() || Req.has_pulldockerimage() || Req.has_removedockerimage();
 
-    VlReq =
-        Req.has_createvolume() ||
-        Req.has_tunevolume() ||
-        Req.has_linkvolume() ||
-        Req.has_unlinkvolume() ||
-        Req.has_linkvolumetarget() ||
-        Req.has_unlinkvolumetarget() ||
-        Req.has_newvolume();
+    VlReq = Req.has_createvolume() || Req.has_tunevolume() || Req.has_linkvolume() || Req.has_unlinkvolume() ||
+            Req.has_linkvolumetarget() || Req.has_unlinkvolumetarget() || Req.has_newvolume();
 
-    SecretReq =
-        (Req.has_setproperty() && StringStartsWith(Req.setproperty().property(), "env_secret")) ||
-        (Req.has_createfromspec() && Req.createfromspec().has_container() && Req.createfromspec().container().has_env_secret()) ||
-        (Req.has_updatefromspec() && Req.updatefromspec().has_container() && Req.updatefromspec().container().has_env_secret());
+    SecretReq = (Req.has_setproperty() && StringStartsWith(Req.setproperty().property(), "env_secret")) ||
+                (Req.has_createfromspec() && Req.createfromspec().has_container() &&
+                 Req.createfromspec().container().has_env_secret()) ||
+                (Req.has_updatefromspec() && Req.updatefromspec().has_container() &&
+                 Req.updatefromspec().container().has_env_secret());
 }
 
 void TRequest::Parse() {
@@ -99,18 +68,18 @@ void TRequest::Parse() {
     } else if (Req.has_createweak()) {
         Cmd = "Create";
         Arg = Req.createweak().name();
-        opts = { "weak=true" };
+        opts = {"weak=true"};
     } else if (Req.has_destroy()) {
         Cmd = "Destroy";
         Arg = Req.destroy().name();
     } else if (Req.has_list()) {
         Cmd = "List";
         if (Req.list().has_mask())
-            opts = { "mask=" + Req.list().mask() };
+            opts = {"mask=" + Req.list().mask()};
     } else if (Req.has_getproperty()) {
         Cmd = "Get";
         Arg = Req.getproperty().name();
-        opts = { "property=" + Req.getproperty().property() };
+        opts = {"property=" + Req.getproperty().property()};
         if (Req.getproperty().has_sync() && Req.getproperty().sync())
             opts.push_back("sync=true");
         if (Req.getproperty().has_real() && Req.getproperty().real())
@@ -118,7 +87,7 @@ void TRequest::Parse() {
     } else if (Req.has_getdata()) {
         Cmd = "Get";
         Arg = Req.getdata().name();
-        opts = { "property=" + Req.getdata().data() };
+        opts = {"property=" + Req.getdata().data()};
         if (Req.getdata().has_sync() && Req.getdata().sync())
             opts.push_back("sync=true");
         if (Req.getdata().has_real() && Req.getdata().real())
@@ -140,9 +109,9 @@ void TRequest::Parse() {
         Cmd = "Set";
         Arg = Req.setproperty().name();
         if (SecretReq)
-            opts = { Req.setproperty().property() + "=<secret>" };
+            opts = {Req.setproperty().property() + "=<secret>"};
         else
-            opts = { Req.setproperty().property() + "=" + Req.setproperty().value() };
+            opts = {Req.setproperty().property() + "=" + Req.setproperty().value()};
     } else if (Req.has_start()) {
         Cmd = "Start";
         Arg = Req.start().name();
@@ -177,7 +146,7 @@ void TRequest::Parse() {
     } else if (Req.has_kill()) {
         Cmd = "Kill";
         Arg = Req.kill().name();
-        opts = { fmt::format("signal={}", Req.kill().sig()) };
+        opts = {fmt::format("signal={}", Req.kill().sig())};
     } else if (Req.has_version()) {
         Cmd = "Version";
     } else if (Req.has_createvolume()) {
@@ -188,11 +157,11 @@ void TRequest::Parse() {
     } else if (Req.has_linkvolume()) {
         Cmd = "LinkVolume";
         Arg = Req.linkvolume().path();
-        opts = { "container=" + Req.linkvolume().container() };
+        opts = {"container=" + Req.linkvolume().container()};
     } else if (Req.has_linkvolumetarget()) {
         Cmd = "LinkVolume";
         Arg = Req.linkvolumetarget().path();
-        opts = { "container=" + Req.linkvolumetarget().container() };
+        opts = {"container=" + Req.linkvolumetarget().container()};
         if (Req.linkvolumetarget().target() != "")
             opts.push_back("target=" + Req.linkvolumetarget().target());
         if (Req.linkvolumetarget().read_only())
@@ -202,7 +171,7 @@ void TRequest::Parse() {
     } else if (Req.has_unlinkvolume()) {
         Cmd = "UnlinkVolume";
         Arg = Req.unlinkvolume().path();
-        opts = { "container=" + Req.unlinkvolume().container() };
+        opts = {"container=" + Req.unlinkvolume().container()};
         if (Req.unlinkvolume().has_target())
             opts.push_back("target=" + Req.unlinkvolume().target());
         if (Req.unlinkvolume().strict())
@@ -210,7 +179,7 @@ void TRequest::Parse() {
     } else if (Req.has_unlinkvolumetarget()) {
         Cmd = "UnlinkVolume";
         Arg = Req.unlinkvolumetarget().path();
-        opts = { "container=" + Req.unlinkvolumetarget().container() };
+        opts = {"container=" + Req.unlinkvolumetarget().container()};
         if (Req.unlinkvolumetarget().has_target())
             opts.push_back("target=" + Req.unlinkvolumetarget().target());
         if (Req.unlinkvolumetarget().strict())
@@ -220,7 +189,7 @@ void TRequest::Parse() {
         if (Req.listvolumes().has_path())
             Arg = Req.listvolumes().path();
         if (Req.listvolumes().has_container())
-            opts = { "container=" + Req.listvolumes().container() };
+            opts = {"container=" + Req.listvolumes().container()};
     } else if (Req.has_tunevolume()) {
         Cmd = "TuneVolume";
         Arg = Req.tunevolume().path();
@@ -231,7 +200,7 @@ void TRequest::Parse() {
     } else if (Req.has_importlayer()) {
         Cmd = "ImportLayer";
         Arg = Req.importlayer().layer();
-        opts = { "tarball=" + Req.importlayer().tarball() };
+        opts = {"tarball=" + Req.importlayer().tarball()};
         if (Req.importlayer().has_compress())
             opts.push_back("compress=" + Req.importlayer().compress());
         if (Req.importlayer().has_place())
@@ -252,7 +221,7 @@ void TRequest::Parse() {
             Cmd = "ExportLayer";
             Arg = Req.exportlayer().volume();
         }
-        opts = { "tarball+" + Req.exportlayer().tarball() };
+        opts = {"tarball+" + Req.exportlayer().tarball()};
         if (Req.exportlayer().has_compress())
             opts.push_back("compress=" + Req.exportlayer().compress());
         if (Req.exportlayer().has_place())
@@ -274,7 +243,7 @@ void TRequest::Parse() {
         Cmd = "SetLayerPrivate";
     } else if (Req.has_dockerimagestatus()) {
         Cmd = "DockerImageStatus";
-        opts = { "name=" + Req.dockerimagestatus().name() };
+        opts = {"name=" + Req.dockerimagestatus().name()};
         if (Req.dockerimagestatus().has_place())
             opts.push_back("place=" + Req.dockerimagestatus().place());
     } else if (Req.has_listdockerimages()) {
@@ -285,7 +254,7 @@ void TRequest::Parse() {
             opts.push_back("place=" + Req.listdockerimages().place());
     } else if (Req.has_pulldockerimage()) {
         Cmd = "PullDockerImage";
-        opts = { "name=" + Req.pulldockerimage().name() };
+        opts = {"name=" + Req.pulldockerimage().name()};
         if (Req.pulldockerimage().has_place())
             opts.push_back("place=" + Req.pulldockerimage().place());
         if (Req.pulldockerimage().has_auth_token())
@@ -296,24 +265,24 @@ void TRequest::Parse() {
             opts.push_back("auth_service=" + Req.pulldockerimage().auth_service());
     } else if (Req.has_removedockerimage()) {
         Cmd = "RemoveDockerImage";
-        opts = { "name=" + Req.removedockerimage().name() };
+        opts = {"name=" + Req.removedockerimage().name()};
         if (Req.removedockerimage().has_place())
             opts.push_back("place=" + Req.removedockerimage().place());
     } else if (Req.has_convertpath()) {
         Cmd = "ConvertPath";
         Arg = Req.convertpath().path();
-        opts = { "source=" + Req.convertpath().source(), "destination=" + Req.convertpath().destination() };
+        opts = {"source=" + Req.convertpath().source(), "destination=" + Req.convertpath().destination()};
     } else if (Req.has_attachprocess()) {
         Cmd = "AttachProcess";
         Arg = Req.attachprocess().name();
-        opts = { "pid=" + std::to_string(Req.attachprocess().pid()), "comm=" + Req.attachprocess().comm() };
+        opts = {"pid=" + std::to_string(Req.attachprocess().pid()), "comm=" + Req.attachprocess().comm()};
     } else if (Req.has_attachthread()) {
         Cmd = "AttachThread";
         Arg = Req.attachthread().name();
-        opts = { "pid=" + std::to_string(Req.attachthread().pid()), "comm=" + Req.attachthread().comm() };
+        opts = {"pid=" + std::to_string(Req.attachthread().pid()), "comm=" + Req.attachthread().comm()};
     } else if (Req.has_locateprocess()) {
         Cmd = "LocateProcess";
-        opts = { "pid=" + std::to_string(Req.locateprocess().pid()), "comm=" + Req.locateprocess().comm() };
+        opts = {"pid=" + std::to_string(Req.locateprocess().pid()), "comm=" + Req.locateprocess().comm()};
     } else if (Req.has_findlabel()) {
         Cmd = "FindLabel";
         Arg = Req.findlabel().label();
@@ -326,7 +295,7 @@ void TRequest::Parse() {
     } else if (Req.has_setlabel()) {
         Cmd = "SetLabel";
         Arg = Req.setlabel().name();
-        opts = { Req.setlabel().label() };
+        opts = {Req.setlabel().label()};
         if (Req.setlabel().has_value())
             opts.push_back("value=" + Req.setlabel().value());
         if (Req.setlabel().has_prev_value())
@@ -334,7 +303,7 @@ void TRequest::Parse() {
     } else if (Req.has_inclabel()) {
         Cmd = "IncLabel";
         Arg = Req.inclabel().name();
-        opts = { Req.inclabel().label() };
+        opts = {Req.inclabel().label()};
         if (Req.inclabel().has_add())
             opts.push_back(fmt::format("add={}", Req.inclabel().add()));
     } else if (Req.has_getsystem()) {
@@ -377,15 +346,13 @@ static std::string ResponseAsString(const rpc::TContainerResponse &resp) {
     std::string ret;
 
     if (resp.error()) {
-        ret = fmt::format("Error {}:{}({})", resp.error(),
-                          rpc::EError_Name(resp.error()), resp.errormsg());
+        ret = fmt::format("Error {}:{}({})", resp.error(), rpc::EError_Name(resp.error()), resp.errormsg());
     } else if (resp.has_list()) {
         for (int i = 0; i < resp.list().name_size(); i++)
             ret += resp.list().name(i) + " ";
     } else if (resp.has_propertylist()) {
         for (int i = 0; i < resp.propertylist().list_size(); i++)
-            ret += resp.propertylist().list(i).name()
-                + " (" + resp.propertylist().list(i).desc() + ")";
+            ret += resp.propertylist().list(i).name() + " (" + resp.propertylist().list(i).desc() + ")";
     } else if (resp.has_volumelist()) {
         for (auto v: resp.volumelist().volumes())
             ret += v.path() + " ";
@@ -405,9 +372,7 @@ static std::string ResponseAsString(const rpc::TContainerResponse &resp) {
                 auto &val = entry.keyval(j);
                 ret += " " + val.variable() + "=";
                 if (val.has_error())
-                    ret += fmt::format("{}:{}({})", val.error(),
-                                       rpc::EError_Name(val.error()),
-                                       val.errormsg());
+                    ret += fmt::format("{}:{}({})", val.error(), rpc::EError_Name(val.error()), val.errormsg());
                 else if (val.has_value())
                     ret += val.value();
             }
@@ -532,28 +497,23 @@ noinline TError UpdateFromSpec(const rpc::TUpdateFromSpecRequest &req) {
     return error;
 }
 
-noinline TError ListContainersBy(const rpc::TListContainersRequest &req,
-                             rpc::TListContainersResponse &rsp) {
-    std::vector<
-        std::pair<std::string, std::shared_ptr<TContainer>>
-    > relnames;
+noinline TError ListContainersBy(const rpc::TListContainersRequest &req, rpc::TListContainersResponse &rsp) {
+    std::vector<std::pair<std::string, std::shared_ptr<TContainer>>> relnames;
     std::vector<std::string> props;
     std::unordered_map<std::string, std::string> propsOps;
     TError error;
 
     if (req.field_options().has_stdout_options()) {
-        propsOps["stdout"] = fmt::format("{}:{}",
-                                    req.field_options().stdout_options().stdstream_offset(),
-                                    req.field_options().stdout_options().stdstream_limit());
+        propsOps["stdout"] = fmt::format("{}:{}", req.field_options().stdout_options().stdstream_offset(),
+                                         req.field_options().stdout_options().stdstream_limit());
     }
 
     if (req.field_options().has_stderr_options()) {
-        propsOps["stderr"] = fmt::format("{}:{}",
-                                    req.field_options().stderr_options().stdstream_offset(),
-                                    req.field_options().stderr_options().stdstream_limit());
+        propsOps["stderr"] = fmt::format("{}:{}", req.field_options().stderr_options().stdstream_offset(),
+                                         req.field_options().stderr_options().stdstream_limit());
     }
 
-    for(auto &prop: req.field_options().properties())
+    for (auto &prop: req.field_options().properties())
         props.push_back(prop);
 
     auto lock = LockContainers();
@@ -568,11 +528,11 @@ noinline TError ListContainersBy(const rpc::TListContainersRequest &req,
 
     std::set<std::string> found;
 
-    for (const auto &pair : relnames) {
+    for (const auto &pair: relnames) {
         const auto &relname = pair.first;
         auto ct = pair.second;
 
-        for (auto filter : req.filters()) {
+        for (auto filter: req.filters()) {
             if (StringMatch(relname, filter.name())) {
                 if (filter.has_labels() && !ct->MatchLabels(filter.labels()))
                     continue;
@@ -587,7 +547,7 @@ noinline TError ListContainersBy(const rpc::TListContainersRequest &req,
         }
     }
 
-    for (auto filter : req.filters()) {
+    for (auto filter: req.filters()) {
         if (found.find(filter.name()) == found.end()) {
             auto container = rsp.add_containers();
             container->mutable_spec()->set_name(filter.name());
@@ -653,8 +613,7 @@ noinline TError StopContainer(const rpc::TContainerStopRequest &req) {
     TError error = CL->WriteContainer(req.name(), ct);
     if (error)
         return error;
-    uint64_t timeout_ms = req.has_timeout_ms() ?
-        req.timeout_ms() : config().container().stop_timeout_ms();
+    uint64_t timeout_ms = req.has_timeout_ms() ? req.timeout_ms() : config().container().stop_timeout_ms();
     return ct->Stop(timeout_ms);
 }
 
@@ -683,15 +642,13 @@ noinline TError RespawnContainer(const rpc::TContainerRespawnRequest &req) {
     return ct->Respawn();
 }
 
-noinline TError ListContainers(const rpc::TContainerListRequest &req,
-                               rpc::TContainerResponse &rsp) {
+noinline TError ListContainers(const rpc::TContainerListRequest &req, rpc::TContainerResponse &rsp) {
     std::string mask = req.has_mask() ? req.mask() : "***";
     auto lock = LockContainers();
     for (auto &it: Containers) {
         auto &ct = it.second;
         std::string name;
-        if (ct->IsRoot() || CL->ComposeName(ct->Name, name) ||
-                !StringMatch(name, mask))
+        if (ct->IsRoot() || CL->ComposeName(ct->Name, name) || !StringMatch(name, mask))
             continue;
         if (req.has_changed_since() && ct->ChangeTime < req.changed_since())
             continue;
@@ -722,8 +679,7 @@ noinline TError FindLabel(const rpc::TFindLabelRequest &req, rpc::TFindLabelResp
 
         if (wild_label) {
             for (auto &it: ct->Labels) {
-                if (StringMatch(it.first, label) &&
-                        (!req.has_value() || it.second == req.value())) {
+                if (StringMatch(it.first, label) && (!req.has_value() || it.second == req.value())) {
                     auto l = rsp.add_list();
                     l->set_name(name);
                     l->set_state(TContainer::StateName(ct->State));
@@ -731,8 +687,7 @@ noinline TError FindLabel(const rpc::TFindLabelRequest &req, rpc::TFindLabelResp
                     l->set_value(it.second);
                 }
             }
-        } else if (!ct->GetLabel(label, value) &&
-                (!req.has_value() || value == req.value())) {
+        } else if (!ct->GetLabel(label, value) && (!req.has_value() || value == req.value())) {
             auto l = rsp.add_list();
             l->set_name(name);
             l->set_state(TContainer::StateName(ct->State));
@@ -766,7 +721,8 @@ noinline TError SetLabel(const rpc::TSetLabelRequest &req, rpc::TSetLabelRespons
             if (req.prev_value() != "")
                 return TError(EError::LabelNotFound, "Container {} has no label {}", req.name(), req.label());
         } else if (req.prev_value() != it->second)
-            return TError(EError::Busy, "Container {} label {} is {} not {}", req.name(), req.label(), it->second, req.prev_value());
+            return TError(EError::Busy, "Container {} label {} is {} not {}", req.name(), req.label(), it->second,
+                          req.prev_value());
     }
     if (req.has_state() && TContainer::StateName(ct->State) != req.state())
         return TError(EError::InvalidState, "Container {} is {} not {}", req.name(), rsp.state(), req.state());
@@ -807,8 +763,7 @@ noinline TError IncLabel(const rpc::TIncLabelRequest &req, rpc::TIncLabelRespons
     return OK;
 }
 
-noinline TError GetContainerProperty(const rpc::TContainerGetPropertyRequest &req,
-                                     rpc::TContainerResponse &rsp) {
+noinline TError GetContainerProperty(const rpc::TContainerGetPropertyRequest &req, rpc::TContainerResponse &rsp) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->ReadContainer(req.name(), ct);
     if (!error) {
@@ -828,7 +783,7 @@ noinline TError GetContainerProperty(const rpc::TContainerGetPropertyRequest &re
         error = ct->GetProperty(req.property(), value);
         if (!error)
             rsp.mutable_getproperty()->set_value(value);
-out:
+    out:
         ct->UnlockState();
     }
     return error;
@@ -871,8 +826,7 @@ noinline TError SetContainerProperty(const rpc::TContainerSetPropertyRequest &re
     return error;
 }
 
-noinline TError GetContainerData(const rpc::TContainerGetDataRequest &req,
-                                 rpc::TContainerResponse &rsp) {
+noinline TError GetContainerData(const rpc::TContainerGetDataRequest &req, rpc::TContainerResponse &rsp) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->ReadContainer(req.name(), ct);
     if (!error) {
@@ -892,15 +846,13 @@ noinline TError GetContainerData(const rpc::TContainerGetDataRequest &req,
         error = ct->GetProperty(req.data(), value);
         if (!error)
             rsp.mutable_getdata()->set_value(value);
-out:
+    out:
         ct->UnlockState();
     }
     return error;
 }
 
-static void FillGetResponse(const rpc::TContainerGetRequest &req,
-                            rpc::TContainerGetResponse &rsp,
-                            std::string &name) {
+static void FillGetResponse(const rpc::TContainerGetRequest &req, rpc::TContainerGetResponse &rsp, std::string &name) {
     std::shared_ptr<TContainer> ct;
 
     auto lock = LockContainers();
@@ -947,10 +899,9 @@ out:
         ct->UnlockState();
 }
 
-noinline TError GetContainerCombined(const rpc::TContainerGetRequest &req,
-                                     rpc::TContainerResponse &rsp) {
+noinline TError GetContainerCombined(const rpc::TContainerGetRequest &req, rpc::TContainerResponse &rsp) {
     auto get = rsp.mutable_get();
-    std::list <std::string> masks, names;
+    std::list<std::string> masks, names;
 
     for (int i = 0; i < req.name_size(); i++) {
         auto name = req.name(i);
@@ -989,7 +940,7 @@ noinline TError GetContainerCombined(const rpc::TContainerGetRequest &req,
 
 noinline TError ListProperty(rpc::TContainerResponse &rsp) {
     auto list = rsp.mutable_propertylist();
-    for (auto &elem : ContainerProperties) {
+    for (auto &elem: ContainerProperties) {
         auto &prop = elem.second;
         if (!prop->IsSupported || prop->IsHidden)
             continue;
@@ -1004,15 +955,15 @@ noinline TError ListProperty(rpc::TContainerResponse &rsp) {
 
 noinline TError ListDataProperty(rpc::TContainerResponse &rsp) {
     auto list = rsp.mutable_datalist();
-    for (auto &elem : ContainerProperties) {
+    for (auto &elem: ContainerProperties) {
         auto &prop = elem.second;
         if (!prop->IsReadOnly || !prop->IsSupported || prop->IsHidden)
-             continue;
-         auto entry = list->add_list();
-         entry->set_name(prop->Name);
-         entry->set_desc(prop->GetDesc());
-     }
-     return OK;
+            continue;
+        auto entry = list->add_list();
+        entry->set_name(prop->Name);
+        entry->set_desc(prop->GetDesc());
+    }
+    return OK;
 }
 
 noinline TError Kill(const rpc::TContainerKillRequest &req) {
@@ -1038,8 +989,8 @@ noinline TError Version(rpc::TContainerResponse &rsp) {
     return OK;
 }
 
-noinline TError WaitContainers(const rpc::TContainerWaitRequest &req, bool async,
-        rpc::TContainerResponse &rsp, std::shared_ptr<TClient> &client, bool stop = false) {
+noinline TError WaitContainers(const rpc::TContainerWaitRequest &req, bool async, rpc::TContainerResponse &rsp,
+                               std::shared_ptr<TClient> &client, bool stop = false) {
     std::string name, full_name;
     TError error;
 
@@ -1145,20 +1096,16 @@ noinline TError WaitContainers(const rpc::TContainerWaitRequest &req, bool async
     return async ? OK : TError::Queued();
 }
 
-noinline TError ConvertPath(const rpc::TConvertPathRequest &req,
-                            rpc::TContainerResponse &rsp) {
+noinline TError ConvertPath(const rpc::TConvertPathRequest &req, rpc::TContainerResponse &rsp) {
     std::shared_ptr<TContainer> src, dst;
     TError error;
 
     auto lock = LockContainers();
-    error = CL->ResolveContainer(
-            (req.has_source() && req.source().length()) ?
-            req.source() : SELF_CONTAINER, src);
+    error = CL->ResolveContainer((req.has_source() && req.source().length()) ? req.source() : SELF_CONTAINER, src);
     if (error)
         return error;
     error = CL->ResolveContainer(
-            (req.has_destination() && req.destination().length()) ?
-            req.destination() : SELF_CONTAINER, dst);
+        (req.has_destination() && req.destination().length()) ? req.destination() : SELF_CONTAINER, dst);
     if (error)
         return error;
 
@@ -1187,8 +1134,7 @@ noinline TError ListVolumeProperties(rpc::TContainerResponse &rsp) {
     return OK;
 }
 
-noinline TError CreateVolume(const rpc::TVolumeCreateRequest &req,
-                             rpc::TContainerResponse &rsp) {
+noinline TError CreateVolume(const rpc::TVolumeCreateRequest &req, rpc::TContainerResponse &rsp) {
     std::shared_ptr<TVolume> volume;
     rpc::TVolumeSpec spec;
     TStringMap cfg;
@@ -1275,8 +1221,7 @@ noinline TError UnlinkVolume(const rpc::TVolumeUnlinkRequest &req) {
     TError error;
 
     if (!req.has_container() || req.container() != "***") {
-        error = CL->WriteContainer(req.has_container() ? req.container() :
-                                    SELF_CONTAINER, ct, true);
+        error = CL->WriteContainer(req.has_container() ? req.container() : SELF_CONTAINER, ct, true);
         if (error)
             return error;
     }
@@ -1296,15 +1241,14 @@ noinline TError UnlinkVolume(const rpc::TVolumeUnlinkRequest &req) {
         bool valid_for_removal = volume->State == EVolumeState::Ready;
         volumes_lock.unlock();
 
-        error = valid_for_removal ? volume->Destroy() :
-                TError(EError::VolumeNotReady, "Volume {} is not ready", req.path());
+        error = valid_for_removal ? volume->Destroy()
+                                  : TError(EError::VolumeNotReady, "Volume {} is not ready", req.path());
     }
 
     return error;
 }
 
-static std::map<TPath, std::shared_ptr<TVolumeLink>>
-ListInnerVolumes(const TPath &base, const std::string &mask = "") {
+static std::map<TPath, std::shared_ptr<TVolumeLink>> ListInnerVolumes(const TPath &base, const std::string &mask = "") {
     std::map<TPath, std::shared_ptr<TVolumeLink>> map;
     TPath path;
     auto volumes_lock = LockVolumes();
@@ -1328,8 +1272,7 @@ ListInnerVolumes(const TPath &base, const std::string &mask = "") {
     return map;
 }
 
-noinline TError ListVolumes(const rpc::TVolumeListRequest &req,
-                            rpc::TContainerResponse &rsp) {
+noinline TError ListVolumes(const rpc::TVolumeListRequest &req, rpc::TContainerResponse &rsp) {
     TError error;
 
     if (req.has_path() && !req.path().empty() && !StringContains(req.path(), '*')) {
@@ -1359,7 +1302,7 @@ noinline TError ListVolumes(const rpc::TVolumeListRequest &req,
     } else
         base_path = CL->ClientContainer->RootPath;
 
-    for (auto &it : ListInnerVolumes(base_path, mask)) {
+    for (auto &it: ListInnerVolumes(base_path, mask)) {
         auto entry = rsp.mutable_volumelist()->add_volumes();
         auto volume = it.second->Volume.get();
         if (req.has_changed_since() && volume->ChangeTime < req.changed_since()) {
@@ -1373,8 +1316,7 @@ noinline TError ListVolumes(const rpc::TVolumeListRequest &req,
     return OK;
 }
 
-noinline TError NewVolume(const rpc::TNewVolumeRequest &req,
-                          rpc::TNewVolumeResponse &rsp) {
+noinline TError NewVolume(const rpc::TNewVolumeRequest &req, rpc::TNewVolumeResponse &rsp) {
     Statistics->VolumesCreated++;
 
     std::shared_ptr<TVolume> volume;
@@ -1388,8 +1330,7 @@ noinline TError NewVolume(const rpc::TNewVolumeRequest &req,
     return OK;
 }
 
-noinline TError GetVolume(const rpc::TGetVolumeRequest &req,
-                          rpc::TGetVolumeResponse &rsp) {
+noinline TError GetVolume(const rpc::TGetVolumeRequest &req, rpc::TGetVolumeResponse &rsp) {
     TError error;
 
     std::shared_ptr<TContainer> ct;
@@ -1423,7 +1364,7 @@ noinline TError GetVolume(const rpc::TGetVolumeRequest &req,
     }
 
     if (req.path().size() == 0) {
-        for (auto &it : ListInnerVolumes(ct->RootPath)) {
+        for (auto &it: ListInnerVolumes(ct->RootPath)) {
             auto volume = it.second->Volume.get();
             auto spec = rsp.add_volume();
             if (req.has_changed_since() && volume->ChangeTime < req.changed_since()) {
@@ -1466,14 +1407,11 @@ noinline TError ImportLayer(const rpc::TLayerImportRequest &req) {
 
     layer.Owner = CL->Cred;
 
-    return layer.ImportArchive(CL->ResolvePath(req.tarball()), memCgroup,
-                               req.has_compress() ? req.compress() : "",
-                               req.merge(),
-                               req.verbose_error());
+    return layer.ImportArchive(CL->ResolvePath(req.tarball()), memCgroup, req.has_compress() ? req.compress() : "",
+                               req.merge(), req.verbose_error());
 }
 
-noinline TError GetLayerPrivate(const rpc::TLayerGetPrivateRequest &req,
-                                rpc::TContainerResponse &rsp) {
+noinline TError GetLayerPrivate(const rpc::TLayerGetPrivateRequest &req, rpc::TContainerResponse &rsp) {
     TStorage layer;
     TError error;
 
@@ -1511,8 +1449,7 @@ noinline TError ExportLayer(const rpc::TLayerExportRequest &req) {
         if (error)
             return error;
 
-        return layer.ExportArchive(CL->ResolvePath(req.tarball()),
-                                   req.has_compress() ? req.compress() : "");
+        return layer.ExportArchive(CL->ResolvePath(req.tarball()), req.has_compress() ? req.compress() : "");
     }
 
     std::shared_ptr<TVolume> volume;
@@ -1529,8 +1466,7 @@ noinline TError ExportLayer(const rpc::TLayerExportRequest &req) {
     if (error)
         return error;
 
-    return layer.ExportArchive(CL->ResolvePath(req.tarball()),
-                               req.has_compress() ? req.compress() : "");
+    return layer.ExportArchive(CL->ResolvePath(req.tarball()), req.has_compress() ? req.compress() : "");
 }
 
 noinline TError RemoveLayer(const rpc::TLayerRemoveRequest &req) {
@@ -1545,8 +1481,7 @@ noinline TError RemoveLayer(const rpc::TLayerRemoveRequest &req) {
     return layer.Remove(false, async);
 }
 
-noinline TError ListLayers(const rpc::TLayerListRequest &req,
-                           rpc::TContainerResponse &rsp) {
+noinline TError ListLayers(const rpc::TLayerListRequest &req, rpc::TContainerResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1588,7 +1523,7 @@ noinline TError ListLayers(const rpc::TLayerListRequest &req,
     return error;
 }
 
-static void imageToProtoImage(::rpc::TDockerImage* protoImage, const TDockerImage &image) {
+static void imageToProtoImage(::rpc::TDockerImage *protoImage, const TDockerImage &image) {
     protoImage->set_id(image.Digest);
     for (const auto &i: image.Images)
         for (const auto &tag: i.second)
@@ -1604,8 +1539,7 @@ static void imageToProtoImage(::rpc::TDockerImage* protoImage, const TDockerImag
         cfg->add_env(env);
 }
 
-noinline TError DockerImageStatus(const rpc::TDockerImageStatusRequest &req,
-                                  rpc::TDockerImageStatusResponse &rsp) {
+noinline TError DockerImageStatus(const rpc::TDockerImageStatusRequest &req, rpc::TDockerImageStatusResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1626,8 +1560,7 @@ noinline TError DockerImageStatus(const rpc::TDockerImageStatusRequest &req,
     return OK;
 }
 
-noinline TError ListDockerImages(const rpc::TDockerImageListRequest &req,
-                                 rpc::TDockerImageListResponse &rsp) {
+noinline TError ListDockerImages(const rpc::TDockerImageListRequest &req, rpc::TDockerImageListResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1649,8 +1582,7 @@ noinline TError ListDockerImages(const rpc::TDockerImageListRequest &req,
     return OK;
 }
 
-noinline TError PullDockerImage(const rpc::TDockerImagePullRequest &req,
-                                rpc::TDockerImagePullResponse &rsp) {
+noinline TError PullDockerImage(const rpc::TDockerImagePullRequest &req, rpc::TDockerImagePullResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1728,8 +1660,7 @@ noinline TError AttachProcess(const rpc::TAttachProcessRequest &req, bool thread
     if (error)
         return error;
 
-    if (pid == oldCt->Task.Pid || pid == oldCt->WaitTask.Pid ||
-            pid == oldCt->SeizeTask.Pid)
+    if (pid == oldCt->Task.Pid || pid == oldCt->WaitTask.Pid || pid == oldCt->SeizeTask.Pid)
         return TError(EError::Busy, "cannot move main process");
 
     auto lock = LockContainers();
@@ -1741,18 +1672,16 @@ noinline TError AttachProcess(const rpc::TAttachProcessRequest &req, bool thread
     if (!newCt->IsChildOf(*oldCt))
         return TError(EError::Permission, "new container must be child of current");
 
-    if (newCt->State != EContainerState::Running &&
-            newCt->State != EContainerState::Meta)
+    if (newCt->State != EContainerState::Running && newCt->State != EContainerState::Meta)
         return TError(EError::InvalidState, "new container is not running");
 
     for (auto ct = newCt; ct && ct != oldCt; ct = ct->Parent)
         if (ct->Isolate)
             return TError(EError::InvalidState, "new container must be not isolated from current");
 
-    L_ACT("Attach {} {} ({}) from {} to {}", thread ? "thread" : "process",
-          pid, comm, oldCt->Name, newCt->Name);
+    L_ACT("Attach {} {} ({}) from {} to {}", thread ? "thread" : "process", pid, comm, oldCt->Name, newCt->Name);
 
-    for (auto& cg: CgroupDriver.GetContainerCgroups(*newCt)) {
+    for (auto &cg: CgroupDriver.GetContainerCgroups(*newCt)) {
         error = cg->Attach(pid, thread);
         if (error)
             goto undo;
@@ -1761,14 +1690,13 @@ noinline TError AttachProcess(const rpc::TAttachProcessRequest &req, bool thread
     return OK;
 
 undo:
-    for (auto& cg: CgroupDriver.GetContainerCgroups(*newCt))
+    for (auto &cg: CgroupDriver.GetContainerCgroups(*newCt))
         (void)cg->Attach(pid, thread);
 
     return error;
 }
 
-noinline TError LocateProcess(const rpc::TLocateProcessRequest &req,
-                              rpc::TContainerResponse &rsp) {
+noinline TError LocateProcess(const rpc::TLocateProcessRequest &req, rpc::TContainerResponse &rsp) {
     TError error;
     std::shared_ptr<TContainer> ct;
     pid_t pid = req.pid();
@@ -1796,8 +1724,7 @@ noinline TError LocateProcess(const rpc::TLocateProcessRequest &req,
     return OK;
 }
 
-noinline TError ListStorage(const rpc::TStorageListRequest &req,
-                            rpc::TContainerResponse &rsp) {
+noinline TError ListStorage(const rpc::TStorageListRequest &req, rpc::TContainerResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1887,8 +1814,7 @@ noinline TError ExportStorage(const rpc::TStorageExportRequest &req) {
     if (error)
         return error;
 
-    return storage.ExportArchive(CL->ResolvePath(req.tarball()),
-                                 req.has_compress() ? req.compress() : "");
+    return storage.ExportArchive(CL->ResolvePath(req.tarball()), req.has_compress() ? req.compress() : "");
 }
 
 noinline TError CreateMetaStorage(const rpc::TMetaStorage &req) {
@@ -2059,12 +1985,12 @@ noinline static TError ClearStatistics(const rpc::TClearStatisticsRequest *req) 
         if (it == PortoStatMembers.end())
             return TError(EError::InvalidValue, "Unknown statistic");
 
-         if (!it->second.Resetable)
+        if (!it->second.Resetable)
             return TError(EError::InvalidValue, "Field cannot be cleared");
 
         Statistics->*(it->second.Member) = 0;
     } else {
-        for (const auto &it : PortoStatMembers) {
+        for (const auto &it: PortoStatMembers) {
             if (it.second.Resetable)
                 Statistics->*(it.second.Member) = 0;
         }
@@ -2127,16 +2053,13 @@ void TRequest::Handle() {
     else if (Req.has_createfromspec()) {
         error = CreateFromSpec(*Req.mutable_createfromspec());
         specRequest = true;
-    }
-    else if (Req.has_updatefromspec()) {
+    } else if (Req.has_updatefromspec()) {
         error = UpdateFromSpec(Req.updatefromspec());
         specRequest = true;
-    }
-    else if (Req.has_listcontainersby()) {
+    } else if (Req.has_listcontainersby()) {
         error = ListContainersBy(Req.listcontainersby(), *rsp.mutable_listcontainersby());
         specRequest = true;
-    }
-    else if (Req.has_create())
+    } else if (Req.has_create())
         error = CreateContainer(Req.create().name(), false);
     else if (Req.has_createweak())
         error = CreateContainer(Req.createweak().name(), true);
@@ -2165,7 +2088,7 @@ void TRequest::Handle() {
     else if (Req.has_propertylist())
         error = ListProperty(rsp);
     else if (Req.has_datalist())
-        error = ListDataProperty(rsp); // deprecated
+        error = ListDataProperty(rsp);  // deprecated
     else if (Req.has_kill())
         error = Kill(Req.kill());
     else if (Req.has_version())
@@ -2282,8 +2205,7 @@ void TRequest::Handle() {
             Statistics->RequestsLonger5m++;
 
         if (RoReq && RequestTime > Statistics->LongestRoRequest) {
-            L("Longest read request {} time={}+{} ms", Cmd,
-                    StartTime - QueueTime, FinishTime - StartTime);
+            L("Longest read request {} time={}+{} ms", Cmd, StartTime - QueueTime, FinishTime - StartTime);
             Statistics->LongestRoRequest = RequestTime;
         }
     } else {
@@ -2324,13 +2246,13 @@ void TRequest::Handle() {
     rsp.set_timestamp(timestamp);
 
     if (!RoReq || Verbose) {
-        L_RSP("{} {} {} {} to {} lock={} ms time={}+{} ms", Cmd, Arg, Opt, ResponseAsString(rsp),
-              Client->Id, LockTimer::Get(), WaitTime, ExecTime);
+        L_RSP("{} {} {} {} to {} lock={} ms time={}+{} ms", Cmd, Arg, Opt, ResponseAsString(rsp), Client->Id,
+              LockTimer::Get(), WaitTime, ExecTime);
     } else if (error || RequestTime >= 1000) {
         /* Log failed or slow silent requests without details */
         L_REQ("{} {} from {}", Cmd, Arg, Client->Id);
-        L_RSP("{} {} {} to {} lock={} ms time={}+{} ms", Cmd, Arg, error,
-              Client->Id, LockTimer::Get(), WaitTime, ExecTime);
+        L_RSP("{} {} {} to {} lock={} ms time={}+{} ms", Cmd, Arg, error, Client->Id, LockTimer::Get(), WaitTime,
+              ExecTime);
     }
 
     if (Debug)
@@ -2366,7 +2288,9 @@ class TRequestQueue {
     const std::string Name;
 
 public:
-    TRequestQueue(const std::string &name) : Name(name) {}
+    TRequestQueue(const std::string &name)
+        : Name(name)
+    {}
 
     void Start(int thread_count) {
         StartTime.resize(thread_count);
@@ -2429,7 +2353,7 @@ public:
 static TRequestQueue RwQueue("portod-RW");
 static TRequestQueue RoQueue("portod-RO");
 static TRequestQueue IoQueue("portod-IO");
-static TRequestQueue VlQueue("portod-VL"); // queue for volume operations
+static TRequestQueue VlQueue("portod-VL");  // queue for volume operations
 
 void StartRpcQueue() {
     RwQueue.Start(config().daemon().rw_threads());
@@ -2458,7 +2382,6 @@ void QueueRpcRequest(std::unique_ptr<TRequest> &request) {
     else
         RwQueue.Enqueue(request);
 }
-
 
 uint64_t RpcRequestsTopRunningTime() {
     auto rw = RwQueue.TopRunningTime();

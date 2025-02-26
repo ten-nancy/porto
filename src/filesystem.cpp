@@ -1,39 +1,28 @@
 #include "filesystem.hpp"
-#include "config.hpp"
+
 #include "cgroup.hpp"
+#include "config.hpp"
 #include "container.hpp"
 #include "util/log.hpp"
 
 extern "C" {
+#include <linux/fs.h>
+#include <linux/kdev_t.h>
+#include <linux/magic.h>
 #include <sys/fcntl.h>
 #include <sys/stat.h>
-#include <linux/kdev_t.h>
 #include <sys/vfs.h>
-#include <linux/magic.h>
-#include <linux/fs.h>
 }
 
 #ifndef TRACEFS_MAGIC
-#define TRACEFS_MAGIC          0x74726163
+#define TRACEFS_MAGIC 0x74726163
 #endif
 
 extern bool EnableDockerMode;
 
 static std::vector<TPath> SystemPaths = {
-    "/bin",
-    "/boot",
-    "/dev",
-    "/etc",
-    "/lib",
-    "/lib32",
-    "/lib64",
-    "/libx32",
-    "/proc",
-    "/root",
-    "/sbin",
-    "/sys",
-    "/usr",
-    "/var",
+    "/bin",    "/boot", "/dev",  "/etc",  "/lib", "/lib32", "/lib64",
+    "/libx32", "/proc", "/root", "/sbin", "/sys", "/usr",   "/var",
 };
 
 static std::vector<TPath> ExcludedSystemPaths = {
@@ -98,12 +87,10 @@ TError TBindMount::Parse(const std::string &str, std::vector<TBindMount> &binds)
 
         if (line.size() > 2) {
             error = TMount::ParseFlags(line[2], bind.MntFlags,
-                                       MS_RDONLY | MS_ALLOW_WRITE |
-                                       MS_NODEV | MS_ALLOW_DEV |    /* check permissions at start */
-                                       MS_NOSUID | MS_ALLOW_SUID |
-                                       MS_NOEXEC | MS_ALLOW_EXEC |
-                                       MS_REC | MS_PRIVATE | MS_UNBINDABLE |
-                                       MS_NOATIME | MS_NODIRATIME | MS_RELATIME);
+                                       MS_RDONLY | MS_ALLOW_WRITE | MS_NODEV |
+                                           MS_ALLOW_DEV | /* check permissions at start */
+                                           MS_NOSUID | MS_ALLOW_SUID | MS_NOEXEC | MS_ALLOW_EXEC | MS_REC | MS_PRIVATE |
+                                           MS_UNBINDABLE | MS_NOATIME | MS_NODIRATIME | MS_RELATIME);
             if (error)
                 return error;
         }
@@ -140,13 +127,11 @@ TError TBindMount::Load(const rpc::TContainerBindMount &spec) {
     MntFlags = 0;
 
     for (const auto &flag_str: spec.flag()) {
-        error = TMount::ParseFlags(flag_str, flag,
-                                   MS_RDONLY | MS_ALLOW_WRITE |
-                                   MS_NODEV | MS_ALLOW_DEV |    /* check permissions at start */
-                                   MS_NOSUID | MS_ALLOW_SUID |
-                                   MS_NOEXEC | MS_ALLOW_EXEC |
-                                   MS_REC | MS_PRIVATE | MS_UNBINDABLE |
-                                   MS_NOATIME | MS_NODIRATIME | MS_RELATIME);
+        error =
+            TMount::ParseFlags(flag_str, flag,
+                               MS_RDONLY | MS_ALLOW_WRITE | MS_NODEV | MS_ALLOW_DEV | /* check permissions at start */
+                                   MS_NOSUID | MS_ALLOW_SUID | MS_NOEXEC | MS_ALLOW_EXEC | MS_REC | MS_PRIVATE |
+                                   MS_UNBINDABLE | MS_NOATIME | MS_NODIRATIME | MS_RELATIME);
         if (error)
             return error;
 
@@ -292,7 +277,6 @@ TError TMountNamespace::MountRun(const TContainer &ct) {
 
     run_paths.reserve(RUN_SUBDIR_LIMIT);
     for (const auto &i: subdirs) {
-
         /* Skip creating special directories, we'll do it later */
         if (i == "shm" || i == "lock")
             continue;
@@ -311,7 +295,7 @@ TError TMountNamespace::MountRun(const TContainer &ct) {
         if (subdirs.size() + run_paths.size() >= RUN_SUBDIR_LIMIT)
             return TError("Too many subdirectories in /run!");
 
-        for (auto dir : subdirs)
+        for (auto dir: subdirs)
             run_paths.push_back(current + "/" + dir);
     }
 
@@ -331,7 +315,7 @@ TError TMountNamespace::MountRun(const TContainer &ct) {
         return error;
 
     error = run.Mount("tmpfs", "tmpfs", MS_NOSUID | MS_NODEV | MS_STRICTATIME,
-                      { "mode=755", "size=" + std::to_string(RunSize) });
+                      {"mode=755", "size=" + std::to_string(RunSize)});
     if (error)
         return error;
 
@@ -405,9 +389,7 @@ TError TMountNamespace::RemountRun(const TContainer &ct) {
         return error;
 
     for (auto it = mounts.rbegin(); it != mounts.rend(); ++it) {
-        if (!it->Target.IsInside(run) ||
-                it->Target == run ||
-                it->Target == run_lock)
+        if (!it->Target.IsInside(run) || it->Target == run || it->Target == run_lock)
             continue;
 
         TPath src = tmp / run.InnerPath(it->Target);
@@ -473,7 +455,6 @@ TError TMountNamespace::MountTraceFs() {
 }
 
 TError TMountNamespace::MountSystemd() {
-
     if (Systemd.empty())
         return OK;
 
@@ -490,7 +471,7 @@ TError TMountNamespace::MountSystemd() {
     if (!error)
         error = tmpfs.Remount(MS_RDONLY);
     if (!error)
-        error = systemd.Mount("cgroup", "cgroup", MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_RDONLY, { "name=systemd" });
+        error = systemd.Mount("cgroup", "cgroup", MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_RDONLY, {"name=systemd"});
     if (!error)
         error = systemd_rw.BindRemount(systemd_rw, MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_ALLOW_WRITE);
 
@@ -516,23 +497,20 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         std::vector<std::string> Options;
         bool Cgroup1;
         bool Cgroup2;
-    } cgroups[] = {
-        { "cgroup",  "freezer",          { "freezer" },             true,  true},
-        { "cgroup",  "pids",             { "pids" },                true,  false},
-        { "cgroup",  "cpuset",           { "cpuset" },              true,  false},
-        { "cgroup",  "memory",           { "memory" },              true,  false},
-        { "cgroup",  "blkio",            { "blkio" },               true,  false},
-        { "cgroup",  "cpu,cpuacct",      { "cpu", "cpuacct" },      true,  false},
-        { "cgroup",  "cpuacct",          { "cpuacct" },             false, true},
-        { "cgroup",  "devices",          { "devices" },             true,  true},
-        { "cgroup",  "hugetlb",          { "hugetlb" },             true,  true},
-        { "cgroup",  "net_cls,net_prio", { "net_cls", "net_prio" }, true,  false},
-        { "cgroup",  "perf_event",       { "perf_event" },          true,  true},
-        { "cgroup",  "systemd",          { "name=systemd" },        true,  true},
-        { "cgroup2", "unified",          {},                        true,  true}
-    };
+    } cgroups[] = {{"cgroup", "freezer", {"freezer"}, true, true}, {"cgroup", "pids", {"pids"}, true, false},
+                   {"cgroup", "cpuset", {"cpuset"}, true, false},
+                   {"cgroup", "memory", {"memory"}, true, false},
+                   {"cgroup", "blkio", {"blkio"}, true, false},
+                   {"cgroup", "cpu,cpuacct", {"cpu", "cpuacct"}, true, false},
+                   {"cgroup", "cpuacct", {"cpuacct"}, false, true},
+                   {"cgroup", "devices", {"devices"}, true, true},
+                   {"cgroup", "hugetlb", {"hugetlb"}, true, true},
+                   {"cgroup", "net_cls,net_prio", {"net_cls", "net_prio"}, true, false},
+                   {"cgroup", "perf_event", {"perf_event"}, true, true},
+                   {"cgroup", "systemd", {"name=systemd"}, true, true},
+                   {"cgroup2", "unified", {}, true, true}};
 
-    for (const auto &cg : cgroups) {
+    for (const auto &cg: cgroups) {
         if (CgroupDriver.UseCgroup2()) {
             if (!cg.Cgroup2)
                 continue;
@@ -548,7 +526,8 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
 
         bool rw = rwCgroupFs && !(cg.Path == "net_cls,net_prio" && !config().container().enable_rw_net_cgroups());
 
-        error = cgroup.Mount(cg.Type, cg.Type, MS_NOSUID | MS_NOEXEC | MS_NODEV | (rw ? MS_ALLOW_WRITE : MS_RDONLY), cg.Options);
+        error = cgroup.Mount(cg.Type, cg.Type, MS_NOSUID | MS_NOEXEC | MS_NODEV | (rw ? MS_ALLOW_WRITE : MS_RDONLY),
+                             cg.Options);
         if (error)
             return error;
 
@@ -569,14 +548,14 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         TPath path;
         TPath target;
     } symlinks[] = {
-        { "sys/fs/cgroup/cpu",      "cpu,cpuacct" },
-        { "sys/fs/cgroup/cpuacct",  "cpu,cpuacct" },
-        { "sys/fs/cgroup/net_cls",  "net_cls,net_prio" },
-        { "sys/fs/cgroup/net_prio", "net_cls,net_prio" },
+        {"sys/fs/cgroup/cpu", "cpu,cpuacct"},
+        {"sys/fs/cgroup/cpuacct", "cpu,cpuacct"},
+        {"sys/fs/cgroup/net_cls", "net_cls,net_prio"},
+        {"sys/fs/cgroup/net_prio", "net_cls,net_prio"},
     };
 
     if (!CgroupDriver.UseCgroup2()) {
-        for (auto &s : symlinks) {
+        for (auto &s: symlinks) {
             error = s.path.Symlink(s.target);
             if (error)
                 return error;
@@ -589,7 +568,7 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
             return error;
 
         if (!CgroupDriver.UseCgroup2()) {
-            for (auto &s : symlinks) {
+            for (auto &s: symlinks) {
                 error = s.path.Lchown(ct.UserNsCred);
                 if (error)
                     return error;
@@ -645,15 +624,16 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
         unsigned long flags;
         std::vector<std::string> opts;
     } mounts[] = {
-        { "dev", "tmpfs", MS_NOSUID | MS_STRICTATIME,
-            { "mode=755", "size=" + std::to_string(config().container().dev_size()) }},
-        { "dev/pts", "devpts", MS_NOSUID | MS_NOEXEC,
-            { "newinstance", "ptmxmode=0666", "mode=620" ,"gid=5",
-              "max=" + std::to_string(config().container().devpts_max()) }},
-        { "sys", "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV | (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : (uint64_t)MS_RDONLY), {}},
+        {"dev", "tmpfs", MS_NOSUID | MS_STRICTATIME,
+         {"mode=755", "size=" + std::to_string(config().container().dev_size())}},
+        {"dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, {"newinstance", "ptmxmode=0666", "mode=620", "gid=5",
+                                                      "max=" + std::to_string(config().container().devpts_max())}},
+        {"sys", "sysfs",
+         MS_NOSUID | MS_NOEXEC | MS_NODEV | (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : (uint64_t)MS_RDONLY),
+         {}},
     };
 
-    for (auto &m : mounts) {
+    for (auto &m: mounts) {
         error = m.target.MkdirAll(0755);
         if (!error)
             error = m.target.Mount(m.type, m.type, m.flags, m.opts);
@@ -667,7 +647,7 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
 
     if (BindPortoSock) {
         TPath sock(PORTO_SOCKET_PATH);
-        //TPath portoctl(PORTO_PORTOCTL_PATH);
+        // TPath portoctl(PORTO_PORTOCTL_PATH);
         TPath dest = dot / sock;
 
         error = dest.Mkfile(0);
@@ -690,12 +670,12 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
         TPath path;
         mode_t mode;
     } dirs[] = {
-        { "run/lock",  01777 },
-        { "run/shm",   01777 },
-        { "dev/shm",   01777 },
+        {"run/lock", 01777},
+        {"run/shm", 01777},
+        {"dev/shm", 01777},
     };
 
-    for (auto &d : dirs) {
+    for (auto &d: dirs) {
         error = d.path.Mkdir(d.mode);
         if (error)
             return error;
@@ -705,14 +685,11 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
         TPath path;
         TPath target;
     } symlinks[] = {
-        { "dev/ptmx", "pts/ptmx" },
-        { "dev/fd", "/proc/self/fd" },
-        { "dev/stdin", "/proc/self/fd/0" },
-        { "dev/stdout", "/proc/self/fd/1" },
-        { "dev/stderr", "/proc/self/fd/2" },
+        {"dev/ptmx", "pts/ptmx"},          {"dev/fd", "/proc/self/fd"},       {"dev/stdin", "/proc/self/fd/0"},
+        {"dev/stdout", "/proc/self/fd/1"}, {"dev/stderr", "/proc/self/fd/2"},
     };
 
-    for (auto &s : symlinks) {
+    for (auto &s: symlinks) {
         error = s.path.Symlink(s.target);
         if (error)
             return error;
@@ -723,7 +700,7 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
         error = path.Mkdir(0755);
         if (error)
             return error;
-        error = path.Mount("hugetlbfs", "hugetlbfs", MS_NOSUID | MS_NODEV, { "mode=01777" });
+        error = path.Mount("hugetlbfs", "hugetlbfs", MS_NOSUID | MS_NODEV, {"mode=01777"});
         if (error)
             return error;
     }
@@ -733,11 +710,11 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
         TPath src;
         unsigned long flags;
     } binds[] = {
-        { "run/lock", "run/lock", MS_NOSUID | MS_NODEV | MS_NOEXEC },
-        { "dev/shm", "run/shm", MS_NOSUID | MS_NODEV | MS_STRICTATIME },
+        {"run/lock", "run/lock", MS_NOSUID | MS_NODEV | MS_NOEXEC},
+        {"dev/shm", "run/shm", MS_NOSUID | MS_NODEV | MS_STRICTATIME},
     };
 
-    for (auto &b : binds) {
+    for (auto &b: binds) {
         error = b.dst.BindRemount(b.src, b.flags);
         if (error)
             return error;
@@ -770,7 +747,7 @@ TError TMountNamespace::ProtectProc() {
     if (error)
         return error;
 
-    for (auto &path : proc_ro) {
+    for (auto &path: proc_ro) {
         error = path.BindRemount(path, MS_RDONLY);
         if (error)
             return error;
@@ -879,7 +856,6 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         error = TPath(PORTO_NBD_KV).UmountAll();
         if (error)
             return error;
-
     }
 
     if (Root.IsRoot()) {
@@ -890,7 +866,10 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         if (error)
             return error;
 
-        error = sys.Mount("sysfs", "sysfs", (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : (uint64_t)MS_RDONLY) | MS_NOSUID | MS_NOEXEC | MS_NODEV, {});
+        error = sys.Mount("sysfs", "sysfs",
+                          (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : (uint64_t)MS_RDONLY) | MS_NOSUID |
+                              MS_NOEXEC | MS_NODEV,
+                          {});
         if (error)
             return error;
 
@@ -931,7 +910,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
     if (error)
         return error;
 
-    for (const auto &bind : BindMounts) {
+    for (const auto &bind: BindMounts) {
         error = bind.Mount(BindCred, Root);
         if (error)
             return error;

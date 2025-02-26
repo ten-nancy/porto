@@ -1,18 +1,23 @@
 #pragma once
 
-#include <string>
 #include <array>
+#include <string>
 
 #include "common.hpp"
-#include "util/unix.hpp"
 #include "util/path.hpp"
+#include "util/unix.hpp"
 
-class TNamespaceFd : public TNonCopyable {
+class TNamespaceFd: public TNonCopyable {
     int Fd;
+
 public:
-    TNamespaceFd() : Fd(-1) {}
-    ~TNamespaceFd() { Close(); }
-    TNamespaceFd& operator=(TNamespaceFd&& other) {
+    TNamespaceFd()
+        : Fd(-1)
+    {}
+    ~TNamespaceFd() {
+        Close();
+    }
+    TNamespaceFd &operator=(TNamespaceFd &&other) {
         Close();
         Fd = other.Fd;
         other.Fd = -1;
@@ -20,7 +25,9 @@ public:
     }
     TError Open(TPath path);
     TError Open(pid_t pid, std::string type);
-    int GetFd() const { return Fd; }
+    int GetFd() const {
+        return Fd;
+    }
     void Close();
     TError SetNs(int type = 0) const;
     TError Chroot() const;

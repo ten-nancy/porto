@@ -3,9 +3,9 @@
 #include <string>
 
 #include "cgroup.hpp"
-#include "util/string.hpp"
-#include "util/path.hpp"
 #include "util/cred.hpp"
+#include "util/path.hpp"
+#include "util/string.hpp"
 
 class TCgroup;
 
@@ -28,7 +28,11 @@ struct TDevice {
     static TError CheckPath(const TPath &path);
 
     TDevice() {}
-    TDevice(const TPath &path, dev_t node) : Path(path), PathInside(path), Node(node) {}
+    TDevice(const TPath &path, dev_t node)
+        : Path(path),
+          PathInside(path),
+          Node(node)
+    {}
 
     TError Parse(TTuple &opt, const TCred &cred);
     std::string FormatNode() const;
@@ -53,7 +57,7 @@ struct TDevices {
     TDevices(const TDevices &other) = default;
     TDevices(TDevices &&other) = default;
 
-    TDevices& operator=(const TDevices &other) = default;
+    TDevices &operator=(const TDevices &other) = default;
 
     TError Parse(const std::string &str, const TCred &cred);
     std::string Format() const;
@@ -64,7 +68,9 @@ struct TDevices {
 
     TError InitDefault();
     TDevices &Merge(const TDevices &devices);
-    bool Empty() const { return Devices.empty(); }
+    bool Empty() const {
+        return Devices.empty();
+    }
 
     std::set<TPath> AllowedPaths() const {
         std::set<TPath> paths;
@@ -75,7 +81,7 @@ struct TDevices {
         return paths;
     }
 
-    TDevices operator|(const TDevices& other) {
+    TDevices operator|(const TDevices &other) {
         return TDevices(*this).Merge(other);
     }
 

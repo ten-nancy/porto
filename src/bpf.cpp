@@ -1,14 +1,14 @@
 #include "bpf.hpp"
 
-#include <unistd.h>
 #include <fcntl.h>
 #include <linux/version.h>
+#include <unistd.h>
 
 // FIXME: required linux-headers from 5.8
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
 enum bpf_stats_type {
-        /* enabled run_time_ns and run_cnt */
-        BPF_STATS_RUN_TIME = 0,
+    /* enabled run_time_ns and run_cnt */
+    BPF_STATS_RUN_TIME = 0,
 };
 // FIXME: libbpf is broken when building with C++
 // https://github.com/libbpf/libbpf/issues/820
@@ -16,8 +16,8 @@ enum bpf_stats_type {
 enum bpf_link_type {};
 #endif
 
-#include <libbpf.h>
 #include <bpf.h>
+#include <libbpf.h>
 
 TError TBpfMap::Open(uint32_t id)
 {
@@ -142,7 +142,8 @@ TError TBpfProgram::Open(const std::string &prog_name, const std::vector<uint8_t
     struct bpf_program *prog = bpf_object__find_program_by_name(obj, prog_name.c_str());
     if (!prog) {
         bpf_object__close(obj);
-        return TError(EError::Unknown, "Failed to load program '{}' -- failed to find bpf program in the loaded object", prog_name);
+        return TError(EError::Unknown, "Failed to load program '{}' -- failed to find bpf program in the loaded object",
+                      prog_name);
     }
 
     bpf_program__set_type(prog, BPF_PROG_TYPE_SCHED_CLS);
@@ -158,7 +159,8 @@ TError TBpfProgram::Open(const std::string &prog_name, const std::vector<uint8_t
     bpf_object__close(obj);
 
     if (nfd < 0) {
-        return TError(EError::Unknown, "Failed to load program '{}' -- failed to obtain bpf program file descriptor", prog_name);
+        return TError(EError::Unknown, "Failed to load program '{}' -- failed to obtain bpf program file descriptor",
+                      prog_name);
     }
 
     File.SetFd = nfd;
@@ -234,7 +236,7 @@ TError TBpfProgram::GetMap(const std::string &name, TBpfMap &map)
     if (error)
         return error;
 
-    for (auto& m : maps) {
+    for (auto &m: maps) {
         if (m.Name == name) {
             map = std::move(m);
             return OK;
@@ -267,7 +269,7 @@ TError TBpfProgram::GetMaps(std::vector<TBpfMap> &maps)
         if (error)
             return error;
 
-        for (uint32_t id : mapIds) {
+        for (uint32_t id: mapIds) {
             TBpfMap map;
             TError error = map.Open(id);
             if (error)

@@ -3,7 +3,6 @@
 #include <string>
 
 #include "common.hpp"
-
 #include "config.pb.h"
 
 extern cfg::TConfig &config();

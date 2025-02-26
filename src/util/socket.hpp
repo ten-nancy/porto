@@ -7,12 +7,12 @@
 #include "util/unix.hpp"
 
 extern "C" {
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 }
 
 // TOOD(ovov): maybe rewrite with epoll/coroutine/greenthreads
-class TSocket : public TNonCopyable {
+class TSocket: public TNonCopyable {
     uint64_t DeadlineMs = 0;
     TError Connect(const sockaddr *addr, size_t len);
     TError Connect(const std::string &host, const std::string &port);
@@ -34,13 +34,21 @@ public:
         int SetFd;
     };
 
-    TSocket() : SetFd(-1) { };
-    ~TSocket() { Close(); }
-    TSocket(TSocket&& other) : SetFd(other.Fd) {
+    TSocket()
+        : SetFd(-1)
+    {};
+    ~TSocket() {
+        Close();
+    }
+    TSocket(TSocket &&other)
+        : SetFd(other.Fd)
+    {
         other.SetFd = -1;
     }
 
-    void SetDeadline(uint64_t deadlineMs) { DeadlineMs = deadlineMs; }
+    void SetDeadline(uint64_t deadlineMs) {
+        DeadlineMs = deadlineMs;
+    }
     TError ResetDeadline() {
         SetDeadline(0);
         auto error = SetReadTimeout(0);
@@ -56,5 +64,4 @@ public:
 
     TError Read(void *buf, size_t len) const;
     TError Write(const void *buf, size_t len) const;
-
 };

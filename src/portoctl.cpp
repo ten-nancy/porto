@@ -1,36 +1,36 @@
-#include <iostream>
-#include <iomanip>
-#include <sstream>
 #include <algorithm>
-#include <csignal>
 #include <cmath>
+#include <csignal>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
 
-#include "libporto.hpp"
 #include "cli.hpp"
-#include "volume.hpp"
-#include "util/string.hpp"
+#include "libporto.hpp"
 #include "util/signal.hpp"
+#include "util/string.hpp"
 #include "util/unix.hpp"
+#include "volume.hpp"
 
 extern "C" {
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
 #include <fcntl.h>
-#include <wordexp.h>
-#include <termios.h>
 #include <poll.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <termios.h>
+#include <unistd.h>
+#include <wordexp.h>
 }
 
-using std::string;
-using std::vector;
-using std::stringstream;
-using std::ostream_iterator;
 using std::map;
+using std::ostream_iterator;
 using std::pair;
 using std::set;
 using std::shared_ptr;
+using std::string;
+using std::stringstream;
+using std::vector;
 
 static int ForwardPtyMaster;
 
@@ -67,7 +67,9 @@ static TError RunCommand(const std::string &command, std::string &output) {
 class TLauncher {
 public:
     Porto::Connection *Api;
-    TLauncher(Porto::Connection *api) : Api(api) {}
+    TLauncher(Porto::Connection *api)
+        : Api(api)
+    {}
 
     bool WeakContainer = false;
     bool StartContainer = true;
@@ -119,7 +121,6 @@ public:
     }
 
     TError SetProperty(const std::string &key, const std::string &val) {
-
         if (key == "virt_mode")
             VirtMode = val;
 
@@ -165,8 +166,7 @@ public:
     }
 
     TError ImportLayer(const TPath &path, std::string &id) {
-        id = "_weak_portoctl-" + std::to_string(GetPid()) + "-" +
-             std::to_string(LayerIndex++) + "-" + path.BaseName();
+        id = "_weak_portoctl-" + std::to_string(GetPid()) + "-" + std::to_string(LayerIndex++) + "-" + path.BaseName();
         std::cout << "Importing layer " << path << " as " << id << std::endl;
         if (Api->ImportLayer(id, path.ToString(), MergeLayers, Place))
             return GetLastError();
@@ -181,7 +181,7 @@ public:
         if (Api->ListLayers(known, Place))
             return GetLastError();
 
-        for (auto &layer : Layers) {
+        for (auto &layer: Layers) {
             bool found = false;
             for (auto &l: known) {
                 if (l.Name == layer) {
@@ -260,7 +260,7 @@ public:
     }
 
     TError WaitContainer(int timeout) {
-        std::vector<std::string> containers = { Container };
+        std::vector<std::string> containers = {Container};
         std::string result, oom_killed;
         TError error;
         int status;
@@ -271,8 +271,7 @@ public:
         if (result == "")
             return TError(EError::Busy, "Wait timeout");
 
-        if (Api->GetProperty(Container, "exit_status", result) ||
-                Api->GetProperty(Container, "oom_killed", oom_killed))
+        if (Api->GetProperty(Container, "exit_status", result) || Api->GetProperty(Container, "oom_killed", oom_killed))
             return GetLastError();
 
         error = StringToInt(result, status);
@@ -284,8 +283,7 @@ public:
             } else if (WIFSIGNALED(status)) {
                 ExitSignal = WTERMSIG(status);
                 ExitCode = -ExitSignal;
-                ExitMessage = fmt::format("Container killed by signal: {} ({})",
-                                            ExitSignal, strsignal(ExitSignal));
+                ExitMessage = fmt::format("Container killed by signal: {} ({})", ExitSignal, strsignal(ExitSignal));
             } else if (WIFEXITED(status)) {
                 ExitSignal = 0;
                 ExitCode = WEXITSTATUS(status);
@@ -375,7 +373,7 @@ public:
                 }
 
                 for (int i = 0; i < nread; i++) {
-                    if (buf[i] == '\30') // ^X
+                    if (buf[i] == '\30')  // ^X
                         escape++;
                     else
                         escape = 0;
@@ -412,14 +410,13 @@ public:
 
         if (ForwardTerminal) {
             std::string tty = "/dev/fd/" + std::to_string(SlavePty);
-            if (Api->SetProperty(Container, "stdin_path", tty) ||
-                    Api->SetProperty(Container, "stdout_path", tty) ||
-                    Api->SetProperty(Container, "stderr_path", tty))
+            if (Api->SetProperty(Container, "stdin_path", tty) || Api->SetProperty(Container, "stdout_path", tty) ||
+                Api->SetProperty(Container, "stderr_path", tty))
                 goto err;
         } else if (ForwardStreams) {
             if (Api->SetProperty(Container, "stdin_path", "/dev/fd/0") ||
-                    Api->SetProperty(Container, "stdout_path", "/dev/fd/1") ||
-                    Api->SetProperty(Container, "stderr_path", "/dev/fd/2"))
+                Api->SetProperty(Container, "stdout_path", "/dev/fd/1") ||
+                Api->SetProperty(Container, "stderr_path", "/dev/fd/2"))
                 goto err;
         }
 
@@ -430,7 +427,7 @@ public:
                 goto err;
         }
 
-        for (auto &prop : Properties) {
+        for (auto &prop: Properties) {
             if (Api->SetProperty(Container, prop.first, prop.second))
                 goto err;
         }
@@ -446,8 +443,7 @@ public:
                 var->set_value(env.substr(equalPos + 1));
         }
 
-        if (Properties.find("command") == Properties.end() &&
-                Properties.find("command_argv") == Properties.end()) {
+        if (Properties.find("command") == Properties.end() && Properties.find("command_argv") == Properties.end()) {
             for (const auto &command: Command)
                 spec.mutable_command_argv()->add_argv(command);
         }
@@ -456,7 +452,7 @@ public:
             goto err;
 
         return OK;
-err:
+    err:
         return GetLastError();
     }
 
@@ -480,7 +476,7 @@ err:
 
         /* forward terminal only if stdin is a tty */
         if (ForwardTerminal)
-             ForwardTerminal = isatty(STDIN_FILENO);
+            ForwardTerminal = isatty(STDIN_FILENO);
 
         if (ForwardTerminal) {
             error = OpenPty();
@@ -515,7 +511,7 @@ err:
 
         return OK;
 
-err:
+    err:
         Cleanup();
         return error;
     }
@@ -541,7 +537,7 @@ err:
             VolumeLinked = false;
         }
 
-        for (auto &layer : ImportedLayers) {
+        for (auto &layer: ImportedLayers) {
             if (Api->RemoveLayer(layer, Place) && GetLastError() != EError::LayerNotFound)
                 std::cerr << "Cannot remove layer " << layer << " : " << GetLastError() << std::endl;
         }
@@ -567,62 +563,33 @@ static std::string HumanValue(const std::string &full_name, const std::string &v
 
     if (name == "stdout" || name == "stderr") {
         if (val.size() > 4096)
-            return val.substr(0, 2048) + "\n... skip " +
-                std::to_string(val.size() - 4096) + " bytes ...\n" +
-                val.substr(val.size() - 2048);
+            return val.substr(0, 2048) + "\n... skip " + std::to_string(val.size() - 4096) + " bytes ...\n" +
+                   val.substr(val.size() - 2048);
         return val;
     }
 
-    if (name == "env" ||
-            name == "labels" ||
-            name == "net" ||
-            name == "ip" ||
-            name == "default_gw" ||
-            name == "devices" ||
-            name == "bind" ||
-            name == "symlink" ||
-            name == "ulimit" ||
-            name == "cgroups" ||
-            name == "controllers" ||
-            name == "resolv_conf" ||
-            name == "volumes_owned" ||
-            name == "volumes_linked" ||
-            name == "volumes_required" ||
-            name == "net_drops" ||
-            name == "net_overlimits" ||
-            name == "net_packets" ||
-            name == "net_rx_drops" ||
-            name == "net_rx_packets" ||
-            name == "net_tx_drops" ||
-            name == "net_tx_packets" ||
-            name == "net_class_id" ||
-            name == "io_ops_limit" ||
-            name == "io_ops" ||
-            StringStartsWith(name, "capabilities")) {
-                if (multiline)
-                    return StringReplaceAll(val, ";", ";\n      ");
-                return val;
+    if (name == "env" || name == "labels" || name == "net" || name == "ip" || name == "default_gw" ||
+        name == "devices" || name == "bind" || name == "symlink" || name == "ulimit" || name == "cgroups" ||
+        name == "controllers" || name == "resolv_conf" || name == "volumes_owned" || name == "volumes_linked" ||
+        name == "volumes_required" || name == "net_drops" || name == "net_overlimits" || name == "net_packets" ||
+        name == "net_rx_drops" || name == "net_rx_packets" || name == "net_tx_drops" || name == "net_tx_packets" ||
+        name == "net_class_id" || name == "io_ops_limit" || name == "io_ops" ||
+        StringStartsWith(name, "capabilities")) {
+        if (multiline)
+            return StringReplaceAll(val, ";", ";\n      ");
+        return val;
     }
 
-    if (name == "net_limit" ||
-         name == "net_rx_limit" ||
-         name == "net_guarantee" ||
-         name == "net_bytes" ||
-         name == "net_rx_bytes" ||
-         name == "net_tx_bytes" ||
-         name == "place_usage" ||
-         name == "place_limit" ||
-         name == "io_limit" ||
-         name == "io_read" ||
-         name == "io_write" ||
-         name == "virtual_memory") {
+    if (name == "net_limit" || name == "net_rx_limit" || name == "net_guarantee" || name == "net_bytes" ||
+        name == "net_rx_bytes" || name == "net_tx_bytes" || name == "place_usage" || name == "place_limit" ||
+        name == "io_limit" || name == "io_read" || name == "io_write" || name == "virtual_memory") {
         if (name != full_name && !StringToUint64(val, num)) {
             return StringFormatSize(num);
         } else if (!StringToUintMap(val, map)) {
             std::stringstream str;
-            for (auto kv : map) {
+            for (auto kv: map) {
                 if (str.str().length())
-                    str << ( multiline ? ";\n       " : "; " );
+                    str << (multiline ? ";\n       " : "; ");
                 str << kv.first << ": " << StringFormatSize(kv.second);
             }
             return str.str();
@@ -636,7 +603,7 @@ static std::string HumanValue(const std::string &full_name, const std::string &v
             return StringFormatDuration(num / 1000000);
         } else if (!StringToUintMap(val, map)) {
             std::stringstream str;
-            for (auto kv : map) {
+            for (auto kv: map) {
                 if (str.str().length())
                     str << (multiline ? ";\n       " : "; ");
                 str << kv.first << ": " << StringFormatDuration(kv.second / 1000000);
@@ -650,35 +617,18 @@ static std::string HumanValue(const std::string &full_name, const std::string &v
     if (val == "" || StringToUint64(val, num))
         return val;
 
-    if (name == "memory_guarantee" ||
-        name == "memory_limit" ||
-        name == "memory_usage" ||
-        name == "memory_limit_total" ||
-        name == "memory_guarantee_total" ||
-        name == "memory_reclaimed" ||
-        name == "anon_usage" ||
-        name == "anon_max_usage" ||
-        name == "cache_usage" ||
-        name == "shmem_usage" ||
-        name == "mlock_usage" ||
-        name == "anon_limit" ||
-        name == "anon_limit_total" ||
-        name == "max_rss" ||
-        name == "stdout_limit" ||
-        name == "hugetlb_limit" ||
-        name == "hugetlb_usage")
+    if (name == "memory_guarantee" || name == "memory_limit" || name == "memory_usage" ||
+        name == "memory_limit_total" || name == "memory_guarantee_total" || name == "memory_reclaimed" ||
+        name == "anon_usage" || name == "anon_max_usage" || name == "cache_usage" || name == "shmem_usage" ||
+        name == "mlock_usage" || name == "anon_limit" || name == "anon_limit_total" || name == "max_rss" ||
+        name == "stdout_limit" || name == "hugetlb_limit" || name == "hugetlb_usage")
         return StringFormatSize(num);
 
     if (name == "time" || name == "aging_time")
         return StringFormatDuration(num * 1000);
 
-    if (name == "cpu_usage" ||
-        name == "cpu_usage_system" ||
-        name == "cpu_wait" ||
-        name == "cpu_throttled" ||
-        name == "cpu_burst_usage" ||
-        name == "cpu_unconstrained_wait" ||
-        name == "cpu_period" ||
+    if (name == "cpu_usage" || name == "cpu_usage_system" || name == "cpu_wait" || name == "cpu_throttled" ||
+        name == "cpu_burst_usage" || name == "cpu_unconstrained_wait" || name == "cpu_period" ||
         name == "respawn_delay")
         return StringFormatDuration(num / 1000000);
 
@@ -688,9 +638,11 @@ static std::string HumanValue(const std::string &full_name, const std::string &v
     return val;
 }
 
-class TRawCmd final : public ICmd {
+class TRawCmd final: public ICmd {
 public:
-    TRawCmd(Porto::Connection *api) : ICmd(api, "raw", 1, "<request>", "send request in text protobuf") {}
+    TRawCmd(Porto::Connection *api)
+        : ICmd(api, "raw", 1, "<request>", "send request in text protobuf")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         stringstream req;
@@ -706,12 +658,14 @@ public:
     }
 };
 
-class TCreateCmd final : public ICmd {
+class TCreateCmd final: public ICmd {
 public:
-    TCreateCmd(Porto::Connection *api) : ICmd(api, "create", 1, "<container1> [container2...]", "create container") {}
+    TCreateCmd(Porto::Connection *api)
+        : ICmd(api, "create", 1, "<container1> [container2...]", "create container")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
-        for (const auto &arg : env->GetArgs()) {
+        for (const auto &arg: env->GetArgs()) {
             int ret = Api->Create(arg);
             if (ret) {
                 PrintError("Can't create container");
@@ -723,19 +677,19 @@ public:
     }
 };
 
-class TGetPropertyCmd final : public ICmd {
+class TGetPropertyCmd final: public ICmd {
 public:
-    TGetPropertyCmd(Porto::Connection *api) : ICmd(api, "pget", 2,
-            "[-s] [-k] <container> <property> [property...]",
-            "get raw container property") {}
+    TGetPropertyCmd(Porto::Connection *api)
+        : ICmd(api, "pget", 2, "[-s] [-k] <container> <property> [property...]", "get raw container property")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         bool printKey = false;
         int flags = 0;
 
         const auto &args = env->GetOpts({
-            { 'k', false, [&](const char *) { printKey = true; } },
-            { 's', false, [&](const char *) { flags |= Porto::GetFlags::Sync; } },
+            {'k', false, [&](const char *) { printKey = true; }},
+            {'s', false, [&](const char *) { flags |= Porto::GetFlags::Sync; }},
         });
 
         for (size_t i = 1; i < args.size(); ++i) {
@@ -755,9 +709,11 @@ public:
     }
 };
 
-class TSetPropertyCmd final : public ICmd {
+class TSetPropertyCmd final: public ICmd {
 public:
-    TSetPropertyCmd(Porto::Connection *api) : ICmd(api, "set", 2, "<container> <property>[=| ]<value>", "set container property") {}
+    TSetPropertyCmd(Porto::Connection *api)
+        : ICmd(api, "set", 2, "<container> <property>[=| ]<value>", "set container property")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         const auto &args = env->GetArgs();
@@ -790,19 +746,19 @@ public:
     }
 };
 
-class TGetDataCmd final : public ICmd {
+class TGetDataCmd final: public ICmd {
 public:
-    TGetDataCmd(Porto::Connection *api) : ICmd(api, "dget", 2,
-            "[-s] [-k] <container> <property>...",
-            "get raw container property") {}
+    TGetDataCmd(Porto::Connection *api)
+        : ICmd(api, "dget", 2, "[-s] [-k] <container> <property>...", "get raw container property")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         bool printKey = false;
         int flags = 0;
 
         const auto &args = env->GetOpts({
-            { 'k', false, [&](const char *) { printKey = true; } },
-            { 's', false, [&](const char *) { flags |= Porto::GetFlags::Sync; } },
+            {'k', false, [&](const char *) { printKey = true; }},
+            {'s', false, [&](const char *) { flags |= Porto::GetFlags::Sync; }},
         });
 
         for (size_t i = 1; i < args.size(); ++i) {
@@ -822,12 +778,14 @@ public:
     }
 };
 
-class TStartCmd final : public ICmd {
+class TStartCmd final: public ICmd {
 public:
-    TStartCmd(Porto::Connection *api) : ICmd(api, "start", 1, "<container1> [container2...]", "start container") {}
+    TStartCmd(Porto::Connection *api)
+        : ICmd(api, "start", 1, "<container1> [container2...]", "start container")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
-        for (const auto &arg : env->GetArgs()) {
+        for (const auto &arg: env->GetArgs()) {
             int ret = Api->Start(arg);
             if (ret) {
                 PrintError("Can't start container");
@@ -840,58 +798,37 @@ public:
 };
 
 static const map<string, int> sigMap = {
-    { "SIGHUP",     SIGHUP },
-    { "SIGINT",     SIGINT },
-    { "SIGQUIT",    SIGQUIT },
-    { "SIGILL",     SIGILL },
-    { "SIGABRT",    SIGABRT },
-    { "SIGFPE",     SIGFPE },
-    { "SIGKILL",    SIGKILL },
-    { "SIGSEGV",    SIGSEGV },
-    { "SIGPIPE",    SIGPIPE },
+    {"SIGHUP", SIGHUP},       {"SIGINT", SIGINT},   {"SIGQUIT", SIGQUIT},     {"SIGILL", SIGILL},
+    {"SIGABRT", SIGABRT},     {"SIGFPE", SIGFPE},   {"SIGKILL", SIGKILL},     {"SIGSEGV", SIGSEGV},
+    {"SIGPIPE", SIGPIPE},
 
-    { "SIGALRM",    SIGALRM },
-    { "SIGTERM",    SIGTERM },
-    { "SIGUSR1",    SIGUSR1 },
-    { "SIGUSR2",    SIGUSR2 },
-    { "SIGCHLD",    SIGCHLD },
-    { "SIGCONT",    SIGCONT },
-    { "SIGSTOP",    SIGSTOP },
-    { "SIGTSTP",    SIGTSTP },
-    { "SIGTTIN",    SIGTTIN },
-    { "SIGTTOU",    SIGTTOU },
+    {"SIGALRM", SIGALRM},     {"SIGTERM", SIGTERM}, {"SIGUSR1", SIGUSR1},     {"SIGUSR2", SIGUSR2},
+    {"SIGCHLD", SIGCHLD},     {"SIGCONT", SIGCONT}, {"SIGSTOP", SIGSTOP},     {"SIGTSTP", SIGTSTP},
+    {"SIGTTIN", SIGTTIN},     {"SIGTTOU", SIGTTOU},
 
-    { "SIGBUS",     SIGBUS },
-    { "SIGPOLL",    SIGPOLL },
-    { "SIGPROF",    SIGPROF },
-    { "SIGSYS",     SIGSYS },
-    { "SIGTRAP",    SIGTRAP },
-    { "SIGURG",     SIGURG },
-    { "SIGVTALRM",  SIGVTALRM },
-    { "SIGXCPU",    SIGXCPU },
-    { "SIGXFSZ",    SIGXFSZ },
+    {"SIGBUS", SIGBUS},       {"SIGPOLL", SIGPOLL}, {"SIGPROF", SIGPROF},     {"SIGSYS", SIGSYS},
+    {"SIGTRAP", SIGTRAP},     {"SIGURG", SIGURG},   {"SIGVTALRM", SIGVTALRM}, {"SIGXCPU", SIGXCPU},
+    {"SIGXFSZ", SIGXFSZ},
 
-    { "SIGIOT",     SIGIOT },
+    {"SIGIOT", SIGIOT},
 #ifdef SIGEMT
-    { "SIGEMT",     SIGEMT },
+    {"SIGEMT", SIGEMT},
 #endif
-    { "SIGSTKFLT",  SIGSTKFLT },
-    { "SIGIO",      SIGIO },
-    { "SIGCLD",     SIGCLD },
-    { "SIGPWR",     SIGPWR },
+    {"SIGSTKFLT", SIGSTKFLT}, {"SIGIO", SIGIO},     {"SIGCLD", SIGCLD},       {"SIGPWR", SIGPWR},
 #ifdef SIGINFO
-    { "SIGINFO",    SIGINFO },
+    {"SIGINFO", SIGINFO},
 #endif
 #ifdef SIGLOST
-    { "SIGLOST",    SIGLOST },
+    {"SIGLOST", SIGLOST},
 #endif
-    { "SIGWINCH",   SIGWINCH },
-    { "SIGSYS",     SIGSYS },
+    {"SIGWINCH", SIGWINCH},   {"SIGSYS", SIGSYS},
 };
 
-class TKillCmd final : public ICmd {
+class TKillCmd final: public ICmd {
 public:
-    TKillCmd(Porto::Connection *api) : ICmd(api, "kill", 1, "<container> [signal]", "send signal to container") {}
+    TKillCmd(Porto::Connection *api)
+        : ICmd(api, "kill", 1, "<container> [signal]", "send signal to container")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         int sig = SIGTERM;
@@ -918,19 +855,21 @@ public:
     }
 };
 
-class TStopCmd final : public ICmd {
+class TStopCmd final: public ICmd {
 public:
-    TStopCmd(Porto::Connection *api) : ICmd(api, "stop", 1, "[-T <seconds>] <container1> [container2...]", "stop container",
-             "    -T <seconds> per-container stop timeout\n") {}
+    TStopCmd(Porto::Connection *api)
+        : ICmd(api, "stop", 1, "[-T <seconds>] <container1> [container2...]", "stop container",
+               "    -T <seconds> per-container stop timeout\n")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         int timeout = -1;
 
         const auto &containers = env->GetOpts({
-            { 'T', true, [&](const char *arg) { timeout = std::stoi(arg); } },
+            {'T', true, [&](const char *arg) { timeout = std::stoi(arg); }},
         });
 
-        for (const auto &arg : containers) {
+        for (const auto &arg: containers) {
             int ret = Api->Stop(arg, timeout);
             if (ret) {
                 PrintError("Can't stop container");
@@ -942,12 +881,14 @@ public:
     }
 };
 
-class TRestartCmd final : public ICmd {
+class TRestartCmd final: public ICmd {
 public:
-    TRestartCmd(Porto::Connection *api) : ICmd(api, "restart", 1, "<container1> [container2...]", "restart container") {}
+    TRestartCmd(Porto::Connection *api)
+        : ICmd(api, "restart", 1, "<container1> [container2...]", "restart container")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
-        for (const auto &arg : env->GetArgs()) {
+        for (const auto &arg: env->GetArgs()) {
             int ret = Api->Stop(arg);
             if (ret) {
                 PrintError("Can't stop container");
@@ -965,12 +906,14 @@ public:
     }
 };
 
-class TPauseCmd final : public ICmd {
+class TPauseCmd final: public ICmd {
 public:
-    TPauseCmd(Porto::Connection *api) : ICmd(api, "pause", 1, "<container> [name...]", "pause container") {}
+    TPauseCmd(Porto::Connection *api)
+        : ICmd(api, "pause", 1, "<container> [name...]", "pause container")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
-        for (const auto &arg : env->GetArgs()) {
+        for (const auto &arg: env->GetArgs()) {
             int ret = Api->Pause(arg);
             if (ret) {
                 PrintError("Can't pause container");
@@ -982,12 +925,14 @@ public:
     }
 };
 
-class TResumeCmd final : public ICmd {
+class TResumeCmd final: public ICmd {
 public:
-    TResumeCmd(Porto::Connection *api) : ICmd(api, "resume", 1, "<container1> [container2...]", "resume container") {}
+    TResumeCmd(Porto::Connection *api)
+        : ICmd(api, "resume", 1, "<container1> [container2...]", "resume container")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
-        for (const auto &arg : env->GetArgs()) {
+        for (const auto &arg: env->GetArgs()) {
             int ret = Api->Resume(arg);
             if (ret) {
                 PrintError("Can't resume container");
@@ -999,11 +944,13 @@ public:
     }
 };
 
-class TRespawnCmd final : public ICmd {
+class TRespawnCmd final: public ICmd {
 public:
-    TRespawnCmd(Porto::Connection *api) : ICmd(api, "respawn", 1, "<container1> [container2...]", "respawn container") {}
+    TRespawnCmd(Porto::Connection *api)
+        : ICmd(api, "respawn", 1, "<container1> [container2...]", "respawn container")
+    {}
     int Execute(TCommandEnviroment *env) final override {
-        for (const auto &arg : env->GetArgs()) {
+        for (const auto &arg: env->GetArgs()) {
             int ret = Api->Respawn(arg);
             if (ret) {
                 PrintError("Cannot respawn container");
@@ -1014,14 +961,14 @@ public:
     }
 };
 
-class TGetCmd final : public ICmd {
+class TGetCmd final: public ICmd {
 public:
-    TGetCmd(Porto::Connection *api) : ICmd(api, "get", 1,
-            "[-n] [-s] [-r] [container|pattern]... [--] [property]...",
-            "get container properties",
-            "   -n   non-blocking\n"
-            "   -s   synchronize cached values\n"
-            "   -r   only real values\n") {}
+    TGetCmd(Porto::Connection *api)
+        : ICmd(api, "get", 1, "[-n] [-s] [-r] [container|pattern]... [--] [property]...", "get container properties",
+               "   -n   non-blocking\n"
+               "   -s   synchronize cached values\n"
+               "   -r   only real values\n")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         bool multiline = isatty(STDOUT_FILENO);
@@ -1036,9 +983,9 @@ public:
         int ret;
 
         const auto &args = env->GetOpts({
-                {'n', false, [&](const char *) { flags |= Porto::GetFlags::NonBlock; }},
-                {'s', false, [&](const char *) { flags |= Porto::GetFlags::Sync; }},
-                {'r', false, [&](const char *) { flags |= Porto::GetFlags::Real; }},
+            {'n', false, [&](const char *) { flags |= Porto::GetFlags::NonBlock; }},
+            {'s', false, [&](const char *) { flags |= Porto::GetFlags::Sync; }},
+            {'r', false, [&](const char *) { flags |= Porto::GetFlags::Real; }},
         });
 
         int sep = -1;
@@ -1074,7 +1021,7 @@ public:
                 return EXIT_FAILURE;
             }
             vars.reserve(plist.size());
-            for (auto p : plist)
+            for (auto p: plist)
                 vars.push_back(p.Name);
             std::sort(vars.begin(), vars.end());
         }
@@ -1097,7 +1044,7 @@ public:
             if (multiGet)
                 fmt::print("{}:\n", it.first);
 
-            for (const auto &key : vars) {
+            for (const auto &key: vars) {
                 if (data[key].Error) {
                     if (printErrors || key == "state") {
                         TError error((rpc::EError)data[key].Error, data[key].ErrorMsg);
@@ -1109,7 +1056,7 @@ public:
 
                 auto val = data[key].Value;
                 if (val.empty() && !printEmpty)
-                continue;
+                    continue;
 
                 if (printHuman)
                     val = HumanValue(key, val, multiline);
@@ -1128,13 +1075,13 @@ public:
     }
 };
 
-class TRunCmd final : public ICmd {
+class TRunCmd final: public ICmd {
 public:
-    TRunCmd(Porto::Connection *api) : ICmd(api, "run", 1,
-            "[-L layer] [-W] ... <container> [properties]",
-            "create and start container with given properties",
-            "    -L layer|dir|tarball        add lower layer (-L top ... -L bottom)\n"
-            "    -W                          wait until container exits\n")
+    TRunCmd(Porto::Connection *api)
+        : ICmd(api, "run", 1, "[-L layer] [-W] ... <container> [properties]",
+               "create and start container with given properties",
+               "    -L layer|dir|tarball        add lower layer (-L top ... -L bottom)\n"
+               "    -W                          wait until container exits\n")
     {}
 
     int Execute(TCommandEnviroment *env) final override {
@@ -1142,15 +1089,11 @@ public:
         TError error;
 
         const auto &args = env->GetOpts({
-            { 'L', true, [&](const char *arg) {
-                    launcher.Layers.push_back(arg);
-                    launcher.NeedVolume = true;
-                }
-            },
-            { 'W', false, [&](const char *) {
-                    launcher.WaitExit = true;
-                }
-            },
+            {'L', true, [&](const char *arg) {
+                 launcher.Layers.push_back(arg);
+                 launcher.NeedVolume = true;
+             }},
+            {'W', false, [&](const char *) { launcher.WaitExit = true; }},
         });
 
         launcher.Container = args[0];
@@ -1172,13 +1115,13 @@ public:
     }
 };
 
-class TExecCmd final : public ICmd {
+class TExecCmd final: public ICmd {
 public:
-    TExecCmd(Porto::Connection *api) : ICmd(api, "exec", 1,
-        "[-C] [-T] [-L layer]... <container> [properties]",
-        "Execute command in container, forward terminal, destroy container at the end, exit - ^X^X",
-        "    -L layer|dir|tarball        add lower layer (-L top ... -L bottom)\n"
-        ) {}
+    TExecCmd(Porto::Connection *api)
+        : ICmd(api, "exec", 1, "[-C] [-T] [-L layer]... <container> [properties]",
+               "Execute command in container, forward terminal, destroy container at the end, exit - ^X^X",
+               "    -L layer|dir|tarball        add lower layer (-L top ... -L bottom)\n")
+    {}
 
     int Execute(TCommandEnviroment *environment) final override {
         TLauncher launcher(Api);
@@ -1190,9 +1133,12 @@ public:
         launcher.WaitExit = true;
 
         const auto &args = environment->GetOpts({
-            { 'C', false, [&](const char *) { launcher.WeakContainer = false; } },
-            { 'T', false, [&](const char *) { launcher.ForwardTerminal = false; } },
-            { 'L', true, [&](const char *arg) { launcher.Layers.push_back(arg); launcher.NeedVolume = true; } },
+            {'C', false, [&](const char *) { launcher.WeakContainer = false; }},
+            {'T', false, [&](const char *) { launcher.ForwardTerminal = false; }},
+            {'L', true, [&](const char *arg) {
+                 launcher.Layers.push_back(arg);
+                 launcher.NeedVolume = true;
+             }},
         });
 
         launcher.Container = args[0];
@@ -1205,13 +1151,12 @@ public:
         }
 
         bool command_found = false;
-        for (auto &kv : launcher.Properties) {
+        for (auto &kv: launcher.Properties) {
             if (kv.first == "command") {
                 command_found = true;
 
                 if (StringTrim(kv.second).empty()) {
-                    std::cerr << "Exec with empty command is not supported"
-                              << std::endl;
+                    std::cerr << "Exec with empty command is not supported" << std::endl;
                     return EXIT_FAILURE;
                 }
             }
@@ -1250,15 +1195,16 @@ public:
     }
 };
 
-
-class TRawShellCmd : public ICmd {
+class TRawShellCmd: public ICmd {
     bool JobMode;
 
 public:
     TRawShellCmd(Porto::Connection *api, const std::string &name, bool jobMode = false)
         : ICmd(api, name, 1, "[-u <user>] [-g <group>] <container> [command] [argument]...",
-               fmt::format("start shell (default /bin/bash) in container{}, exit - ^X^X", jobMode ? " with virt_mode=job" : ""))
-        , JobMode(jobMode) { }
+               fmt::format("start shell (default /bin/bash) in container{}, exit - ^X^X",
+                           jobMode ? " with virt_mode=job" : "")),
+          JobMode(jobMode)
+    {}
 
     int Execute(TCommandEnviroment *environment) final override {
         std::string current_user = getenv("SUDO_USER") ?: getenv("USER") ?: "unknown";
@@ -1266,8 +1212,8 @@ public:
         std::string user, group;
 
         const auto &args = environment->GetOpts({
-            { 'u', true, [&](const char *arg) { user = arg; } },
-            { 'g', true, [&](const char *arg) { group = arg; } },
+            {'u', true, [&](const char *arg) { user = arg; }},
+            {'g', true, [&](const char *arg) { group = arg; }},
         });
 
         TLauncher launcher(Api);
@@ -1294,7 +1240,7 @@ public:
 
         unsigned name_max = getuid() ? CONTAINER_PATH_MAX_FOR_SUPERUSER : CONTAINER_PATH_MAX;
         if (launcher.Container.size() > name_max)
-            launcher.Container = ct + "/shell-"+ std::to_string(GetPid());
+            launcher.Container = ct + "/shell-" + std::to_string(GetPid());
 
         launcher.SetProperty("command", command);
         launcher.SetProperty("isolate", "false");
@@ -1303,8 +1249,7 @@ public:
         if (ct.size() <= 50)
             launcher.Environment.push_back("debian_chroot=" + ct);
         else
-            launcher.Environment.push_back("debian_chroot=" +
-                    ct.substr(0, 24) + ".." + ct.substr(ct.size() - 24));
+            launcher.Environment.push_back("debian_chroot=" + ct.substr(0, 24) + ".." + ct.substr(ct.size() - 24));
 
         launcher.Environment.push_back("PORTO_SHELL_NAME=" + ct);
         launcher.Environment.push_back("PORTO_SHELL_USER=" + current_user);
@@ -1353,19 +1298,25 @@ public:
     }
 };
 
-class TShellCmd final : public TRawShellCmd {
+class TShellCmd final: public TRawShellCmd {
 public:
-    TShellCmd(Porto::Connection *api) : TRawShellCmd(api, "shell") {}
+    TShellCmd(Porto::Connection *api)
+        : TRawShellCmd(api, "shell")
+    {}
 };
 
-class TEnterCmd final : public TRawShellCmd {
+class TEnterCmd final: public TRawShellCmd {
 public:
-    TEnterCmd(Porto::Connection *api) : TRawShellCmd(api, "enter", true) {}
+    TEnterCmd(Porto::Connection *api)
+        : TRawShellCmd(api, "enter", true)
+    {}
 };
 
-class TGcCmd final : public ICmd {
+class TGcCmd final: public ICmd {
 public:
-    TGcCmd(Porto::Connection *api) : ICmd(api, "gc", 0, "", "remove all dead containers") {}
+    TGcCmd(Porto::Connection *api)
+        : ICmd(api, "gc", 0, "", "remove all dead containers")
+    {}
 
     int Execute(TCommandEnviroment *) final override {
         vector<string> clist;
@@ -1375,7 +1326,7 @@ public:
             return ret;
         }
 
-        for (const auto &c : clist) {
+        for (const auto &c: clist) {
             if (c == "/")
                 continue;
 
@@ -1400,9 +1351,11 @@ public:
     }
 };
 
-class TFindCmd final : public ICmd {
+class TFindCmd final: public ICmd {
 public:
-    TFindCmd(Porto::Connection *api) : ICmd(api, "find", 1, "<pid> [comm]", "find container for given process id") {}
+    TFindCmd(Porto::Connection *api)
+        : ICmd(api, "find", 1, "<pid> [comm]", "find container for given process id")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         int pid;
@@ -1434,13 +1387,15 @@ public:
     }
 };
 
-class TDestroyCmd final : public ICmd {
+class TDestroyCmd final: public ICmd {
 public:
-    TDestroyCmd(Porto::Connection *api) : ICmd(api, "destroy", 1, "<container1> [container2...]", "destroy container") {}
+    TDestroyCmd(Porto::Connection *api)
+        : ICmd(api, "destroy", 1, "<container1> [container2...]", "destroy container")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         int exitStatus = EXIT_SUCCESS;
-        for (const auto &arg : env->GetArgs()) {
+        for (const auto &arg: env->GetArgs()) {
             int ret = Api->Destroy(arg);
             if (ret) {
                 PrintError("Can't destroy container");
@@ -1452,21 +1407,22 @@ public:
     }
 };
 
-class TWaitCmd final : public ICmd {
+class TWaitCmd final: public ICmd {
 public:
-    TWaitCmd(Porto::Connection *api) : ICmd(api, "wait", 0,
-             "[-A] [-T <seconds>] <container|wildcard> ...",
-             "Wait for any listed container change state to dead or meta without running children",
-             "    -T <seconds>  timeout\n"
-             "    -L <label>    wait for label\n"
-             "    -A            async wait\n"
-             ) {}
+    TWaitCmd(Porto::Connection *api)
+        : ICmd(api, "wait", 0, "[-A] [-T <seconds>] <container|wildcard> ...",
+               "Wait for any listed container change state to dead or meta without running children",
+               "    -T <seconds>  timeout\n"
+               "    -L <label>    wait for label\n"
+               "    -A            async wait\n")
+    {}
 
     static void PrintAsyncWait(Porto::AsyncWaitEvent &event) {
         if (event.Label.empty())
             fmt::print("{} {}\t{}\n", FormatTime(event.When), event.State, event.Name);
         else
-            fmt::print("{} {}\t{}\t{} = {}\n", FormatTime(event.When), event.State, event.Name, event.Label, event.Value);
+            fmt::print("{} {}\t{}\t{} = {}\n", FormatTime(event.When), event.State, event.Name, event.Label,
+                       event.Value);
         if (event.State == "timeout")
             exit(0);
     }
@@ -1478,15 +1434,16 @@ public:
         std::string targetState;
 
         const auto &containers = env->GetOpts({
-            { 't', true, [&](const char *arg) { timeout = (std::stoi(arg) + 999) / 1000; } },
-            { 'T', true, [&](const char *arg) { timeout = std::stoi(arg); } },
-            { 'S', true, [&](const char *arg) { targetState = arg; } },
-            { 'L', true, [&](const char *arg) { labels.push_back(arg); } },
-            { 'A', false, [&](const char *) { async = true; } },
+            {'t', true, [&](const char *arg) { timeout = (std::stoi(arg) + 999) / 1000; }},
+            {'T', true, [&](const char *arg) { timeout = std::stoi(arg); }},
+            {'S', true, [&](const char *arg) { targetState = arg; }},
+            {'L', true, [&](const char *arg) { labels.push_back(arg); }},
+            {'A', false, [&](const char *) { async = true; }},
         });
 
         if (async) {
-            int ret = Api->AsyncWait(containers.empty() ? std::vector<std::string>({"***"}) : containers, labels, PrintAsyncWait, timeout, targetState);
+            int ret = Api->AsyncWait(containers.empty() ? std::vector<std::string>({"***"}) : containers, labels,
+                                     PrintAsyncWait, timeout, targetState);
             if (ret) {
                 PrintError("Can't wait for containers");
                 return ret;
@@ -1516,23 +1473,22 @@ public:
     }
 };
 
-class TListCmd final : public ICmd {
+class TListCmd final: public ICmd {
 public:
-    TListCmd(Porto::Connection *api) : ICmd(api, "list", 0,
-            "[-1] [-f] [-r] [-t] [-L label[=value]] [pattern]",
-            "list containers",
-            "    -1        only names\n"
-            "    -f        forest\n"
-            "    -r        only running\n"
-            "    -t        only toplevel\n"
-            "    -L        only with label\n"
-            "\n"
-            "patterns:\n"
-            " \"***\"        all containres\n"
-            " \"*\"          all first level\n"
-            " \"foo*/bar*\"  all matching\n"
-            "\n"
-            ) {}
+    TListCmd(Porto::Connection *api)
+        : ICmd(api, "list", 0, "[-1] [-f] [-r] [-t] [-L label[=value]] [pattern]", "list containers",
+               "    -1        only names\n"
+               "    -f        forest\n"
+               "    -r        only running\n"
+               "    -t        only toplevel\n"
+               "    -L        only with label\n"
+               "\n"
+               "patterns:\n"
+               " \"***\"        all containres\n"
+               " \"*\"          all first level\n"
+               " \"foo*/bar*\"  all matching\n"
+               "\n")
+    {}
 
     size_t CountChar(const std::string &s, const char ch) {
         size_t count = 0;
@@ -1557,17 +1513,17 @@ public:
         bool running = false;
         std::string label;
         const auto &args = env->GetOpts({
-            { '1', false, [&](const char *) { details = false; } },
-            { 'f', false, [&](const char *) { forest = true; } },
-            { 't', false, [&](const char *) { toplevel = true; } },
-            { 'L', true,  [&](const char *arg) { label = arg; } },
-            { 'r', false, [&](const char *) { running = true; } },
+            {'1', false, [&](const char *) { details = false; }},
+            {'f', false, [&](const char *) { forest = true; }},
+            {'t', false, [&](const char *) { toplevel = true; }},
+            {'L', true, [&](const char *arg) { label = arg; }},
+            {'r', false, [&](const char *) { running = true; }},
         });
         std::string mask = args.size() ? args[0] : "";
         int ret;
 
         vector<string> clist;
-        if (label != "" ) {
+        if (label != "") {
             auto sep = label.find('=');
 
             rpc::TContainerRequest req;
@@ -1607,13 +1563,13 @@ public:
                 if (parent != "/") {
                     string prefix = " ";
                     for (size_t j = 1; j < CountChar(displayName[i], '/'); j++)
-                            prefix = prefix + "   ";
+                        prefix = prefix + "   ";
 
                     displayName[i] = prefix + "\\_ " + displayName[i].substr(parent.length() + 1);
                 }
             }
 
-        const std::vector<std::string> vars = { "state", "time" };
+        const std::vector<std::string> vars = {"state", "time"};
         std::map<std::string, std::map<std::string, Porto::GetResponse>> result;
         ret = Api->Get(clist, vars, result);
         if (ret) {
@@ -1621,7 +1577,7 @@ public:
             return ret;
         }
 
-        vector<string> states = { "running", "dead", "meta", "stopped", "paused" };
+        vector<string> states = {"running", "dead", "meta", "stopped", "paused"};
         size_t stateLen = MaxFieldLength(states);
         size_t nameLen = MaxFieldLength(displayName);
         size_t timeLen = 12;
@@ -1654,12 +1610,9 @@ public:
                     std::cout << std::right << std::setw(stateLen) << state.Value;
 
                 auto time = result[c]["time"];
-                bool showTime = state.Value == "running" ||
-                                state.Value == "meta" ||
-                                state.Value == "dead";
+                bool showTime = state.Value == "running" || state.Value == "meta" || state.Value == "dead";
                 if (showTime && !time.Error)
-                    std::cout << std::right << std::setw(timeLen)
-                              << HumanValue("time", time.Value);
+                    std::cout << std::right << std::setw(timeLen) << HumanValue("time", time.Value);
             }
 
             std::cout << std::endl;
@@ -1669,13 +1622,12 @@ public:
     }
 };
 
-class TSortCmd final : public ICmd {
+class TSortCmd final: public ICmd {
 public:
-    TSortCmd(Porto::Connection *api) : ICmd(api, "sort", 0,
-            "[container|pattern... --] [property...]",
-            "print containers sorted by resource usage",
-            ""
-            ) {}
+    TSortCmd(Porto::Connection *api)
+        : ICmd(api, "sort", 0, "[container|pattern... --] [property...]", "print containers sorted by resource usage",
+               "")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         const auto &args = env->GetArgs();
@@ -1707,23 +1659,22 @@ public:
         for (auto &it: result)
             names.push_back(it.first);
 
-        std::sort(names.begin(), names.end(),
-                  [&](const std::string &a, const std::string &b) -> bool {
-                      for (auto &key: keys) {
-                          std::string &a_str = result[a][key].Value;
-                          std::string &b_str = result[b][key].Value;
-                          if (a_str == b_str)
-                              continue;
-                          int64_t a_int, b_int;
-                          if (!StringToInt64(a_str, a_int) && !StringToInt64(b_str, b_int)) {
-                              if (a_int == b_int)
-                                  continue;
-                              return a_int > b_int;
-                          }
-                          return a_str > b_str;
-                      }
-                      return a > b;
-                  });
+        std::sort(names.begin(), names.end(), [&](const std::string &a, const std::string &b) -> bool {
+            for (auto &key: keys) {
+                std::string &a_str = result[a][key].Value;
+                std::string &b_str = result[b][key].Value;
+                if (a_str == b_str)
+                    continue;
+                int64_t a_int, b_int;
+                if (!StringToInt64(a_str, a_int) && !StringToInt64(b_str, b_int)) {
+                    if (a_int == b_int)
+                        continue;
+                    return a_int > b_int;
+                }
+                return a_str > b_str;
+            }
+            return a > b;
+        });
 
         TMultiTuple text;
         std::vector<unsigned> width;
@@ -1764,12 +1715,12 @@ public:
     }
 };
 
-class TCreateVolumeCmd final : public ICmd {
+class TCreateVolumeCmd final: public ICmd {
 public:
-    TCreateVolumeCmd(Porto::Connection *api) : ICmd(api, "vcreate", 1, "-A|<path> [property=value...]",
-        "create volume",
-        "    -A        choose path automatically\n"
-        ) {}
+    TCreateVolumeCmd(Porto::Connection *api)
+        : ICmd(api, "vcreate", 1, "-A|<path> [property=value...]", "create volume",
+               "    -A        choose path automatically\n")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         std::map<std::string, std::string> properties;
@@ -1805,104 +1756,104 @@ public:
     }
 };
 
-class TLinkVolumeCmd final : public ICmd {
+class TLinkVolumeCmd final: public ICmd {
 public:
-    TLinkVolumeCmd(Porto::Connection *api) : ICmd(api, "vlink", 1,
-            "[-R] <path> [container] [target] [ro|rw]",
-            "link volume to container", "default container - self\n") {}
+    TLinkVolumeCmd(Porto::Connection *api)
+        : ICmd(api, "vlink", 1, "[-R] <path> [container] [target] [ro|rw]", "link volume to container",
+               "default container - self\n")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         bool required = false;
         const auto &args = env->GetOpts({
-                {'R', false, [&](const char *) { required = true; }},
+            {'R', false, [&](const char *) { required = true; }},
         });
         const auto path = TPath(args[0]).AbsolutePath().NormalPath().ToString();
-        int ret = Api->LinkVolume(path,
-                (args.size() > 1) ? args[1] : "",
-                (args.size() > 2) ? args[2] : "",
-                (args.size() > 3) && args[3] == "ro",
-                required);
+        int ret = Api->LinkVolume(path, (args.size() > 1) ? args[1] : "", (args.size() > 2) ? args[2] : "",
+                                  (args.size() > 3) && args[3] == "ro", required);
         if (ret)
             PrintError("Can't link volume");
         return ret;
     }
 };
 
-class TUnlinkVolumeCmd final : public ICmd {
+class TUnlinkVolumeCmd final: public ICmd {
 public:
-    TUnlinkVolumeCmd(Porto::Connection *api) : ICmd(api, "vunlink", 1,
-                    "[-A] [-S] <path> [<container>|self|***] [<target>|***]",
-                    "unlink volume from container",
-                    "    -A        unlink from all containers, same as ***\n"
-                    "    -S        strict unlink with non-lazy umount\n"
-                    "default container - current, *** - unlink from all containers\n"
-                    "default target - *** - unlink all targets\n"
-                    "removing last link destroys volume\n") {}
+    TUnlinkVolumeCmd(Porto::Connection *api)
+        : ICmd(api, "vunlink", 1, "[-A] [-S] <path> [<container>|self|***] [<target>|***]",
+               "unlink volume from container",
+               "    -A        unlink from all containers, same as ***\n"
+               "    -S        strict unlink with non-lazy umount\n"
+               "default container - current, *** - unlink from all containers\n"
+               "default target - *** - unlink all targets\n"
+               "removing last link destroys volume\n")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         bool all = false;
         bool strict = false;
         const auto &args = env->GetOpts({
-            { 'A', false, [&](const char *) { all = true; } },
-            { 'S', false, [&](const char *) { strict = true; } },
+            {'A', false, [&](const char *) { all = true; }},
+            {'S', false, [&](const char *) { strict = true; }},
         });
         const auto path = TPath(args[0]).AbsolutePath().NormalPath().ToString();
         std::vector<Porto::Volume> vol;
         int ret;
 
-        ret = Api->UnlinkVolume(path, (args.size() > 1) ? args[1] : all ? "***" : "",
-                                args.size() > 2 ? args[2] : "***", strict);
+        ret = Api->UnlinkVolume(path,
+                                (args.size() > 1) ? args[1]
+                                : all             ? "***"
+                                                  : "", args.size() > 2 ? args[2] : "***", strict);
         if (ret)
             PrintError("Cannot unlink volume");
         return ret;
     }
 };
 
-class TListVolumesCmd final : public ICmd {
+class TListVolumesCmd final: public ICmd {
     bool details = true;
     bool verbose = false;
     bool inodes = false;
 
 public:
-    TListVolumesCmd(Porto::Connection *api) : ICmd(api, "vlist", 0, "[-1|-i|-v] [-c <ct>] [volume]...",
-        "list volumes",
-        "    -1                         list only paths\n"
-        "    -i                         list inode information\n"
-        "    -v                         list all properties\n"
-        "    -c <ct>                    list volumes linked to container\n"
-        "\npatterns:\n"
-        " \"***/suffix/of/path\"          volumes with the specified suffix of path\n"
-        " \"/prefix/of/path/***\"         volumes with the specified prefix of path\n"
-        " \"/foo*/bar*\"                  all matching"
-        "\n"
-        ) {}
+    TListVolumesCmd(Porto::Connection *api)
+        : ICmd(api, "vlist", 0, "[-1|-i|-v] [-c <ct>] [volume]...", "list volumes",
+               "    -1                         list only paths\n"
+               "    -i                         list inode information\n"
+               "    -v                         list all properties\n"
+               "    -c <ct>                    list volumes linked to container\n"
+               "\npatterns:\n"
+               " \"***/suffix/of/path\"          volumes with the specified suffix of path\n"
+               " \"/prefix/of/path/***\"         volumes with the specified prefix of path\n"
+               " \"/foo*/bar*\"                  all matching"
+               "\n")
+    {}
 
     void ShowSizeProperty(Porto::Volume &v, const char *p, int w, bool raw = false) {
-      uint64_t val;
+        uint64_t val;
 
-      if (!v.Properties.count(std::string(p)))
-          std::cout << std::setw(w) << "-";
-      else if (StringToUint64(v.Properties.at(std::string(p)), val))
-          std::cout << std::setw(w) << "err";
-      else if (raw)
-          std::cout << std::setw(w) << val;
-      else
-          std::cout << std::setw(w) << StringFormatSize(val);
+        if (!v.Properties.count(std::string(p)))
+            std::cout << std::setw(w) << "-";
+        else if (StringToUint64(v.Properties.at(std::string(p)), val))
+            std::cout << std::setw(w) << "err";
+        else if (raw)
+            std::cout << std::setw(w) << val;
+        else
+            std::cout << std::setw(w) << StringFormatSize(val);
     }
 
     void ShowPercent(Porto::Volume &v, const char *u, const char *a, int w) {
-      uint64_t used, avail;
+        uint64_t used, avail;
 
-      if (!v.Properties.count(std::string(u)) ||
-          !v.Properties.count(std::string(a)))
-          std::cout << std::setw(w) << "-";
-      else if (StringToUint64(v.Properties.at(std::string(u)), used) ||
-               StringToUint64(v.Properties.at(std::string(a)), avail))
-          std::cout << std::setw(w) << "err";
-      else if (used + avail)
-          std::cout << std::setw(w - 1) << std::llround(100. * used / (used + avail)) << "%";
-      else
-          std::cout << std::setw(w) << "inf";
+        if (!v.Properties.count(std::string(u)) || !v.Properties.count(std::string(a)))
+            std::cout << std::setw(w) << "-";
+        else if (StringToUint64(v.Properties.at(std::string(u)), used) ||
+                 StringToUint64(v.Properties.at(std::string(a)), avail))
+            std::cout << std::setw(w) << "err";
+        else if (used + avail)
+            std::cout << std::setw(w - 1) << std::llround(100. * used / (used + avail)) << "%";
+        else
+            std::cout << std::setw(w) << "inf";
     }
 
     void ShowVolume(Porto::Volume &v) {
@@ -1946,7 +1897,8 @@ public:
             for (auto link: v.Links) {
                 std::cout << " " << link.Container;
                 if (link.Target != "")
-                    std::cout << "(" << link.Target << (link.ReadOnly ? " ro" : "") << (link.Required ? " !" : "") << ")";
+                    std::cout << "(" << link.Target << (link.ReadOnly ? " ro" : "") << (link.Required ? " !" : "")
+                              << ")";
             }
 
             std::cout << std::endl;
@@ -1965,21 +1917,18 @@ public:
 
         for (auto link: v.Links)
             if (link.Target != "")
-                std::cout << "  " << std::left << std::setw(20) << "link" << " "
-                    << link.Container << " " << link.Target
-                    << (link.ReadOnly ? " ro" : "")
-                    << (link.Required ? " !" : "")
-                    << std::endl;
+                std::cout << "  " << std::left << std::setw(20) << "link" << " " << link.Container << " " << link.Target
+                          << (link.ReadOnly ? " ro" : "") << (link.Required ? " !" : "") << std::endl;
 
         std::cout << std::resetiosflags(std::ios::adjustfield);
 
         for (auto kv: v.Properties) {
-             std::cout << "  " << std::left << std::setw(20) << kv.first;
-             if (kv.second.length())
-                  std::cout << " " << kv.second;
+            std::cout << "  " << std::left << std::setw(20) << kv.first;
+            if (kv.second.length())
+                std::cout << " " << kv.second;
 
-             std::cout << std::resetiosflags(std::ios::adjustfield);
-             std::cout << std::endl;
+            std::cout << std::resetiosflags(std::ios::adjustfield);
+            std::cout << std::endl;
         }
         std::cout << std::endl;
     }
@@ -1987,10 +1936,13 @@ public:
     int Execute(TCommandEnviroment *env) final override {
         std::string container;
         const auto &args = env->GetOpts({
-            { '1', false, [&](const char *) { details = false; } },
-            { 'i', false, [&](const char *) { inodes = true; } },
-            { 'v', false, [&](const char *) { verbose = true; details = false; } },
-            { 'c', true , [&](const char *arg) { container = arg; } },
+            {'1', false, [&](const char *) { details = false; }},
+            {'i', false, [&](const char *) { inodes = true; }},
+            {'v', false, [&](const char *) {
+                 verbose = true;
+                 details = false;
+             }},
+            {'c', true, [&](const char *arg) { container = arg; }},
         });
 
         vector<Porto::Volume> vlist;
@@ -2012,19 +1964,20 @@ public:
         }
 
         if (args.empty()) {
-          int ret = Api->ListVolumes("", container, vlist);
-          if (ret) {
-              PrintError("Can't list volumes");
-              return ret;
-          }
+            int ret = Api->ListVolumes("", container, vlist);
+            if (ret) {
+                PrintError("Can't list volumes");
+                return ret;
+            }
 
-          for (auto &v : vlist)
-              ShowVolume(v);
+            for (auto &v: vlist)
+                ShowVolume(v);
         } else {
             int errors = 0;
 
-            for (const auto &arg : args) {
-                const auto path = (arg.find('*') == std::string::npos ? TPath(arg).AbsolutePath().NormalPath().ToString() : arg);
+            for (const auto &arg: args) {
+                const auto path =
+                    (arg.find('*') == std::string::npos ? TPath(arg).AbsolutePath().NormalPath().ToString() : arg);
 
                 vlist.clear();
                 int ret = Api->ListVolumes(path, "", vlist);
@@ -2034,7 +1987,7 @@ public:
                     continue;
                 }
 
-                for (auto &v : vlist)
+                for (auto &v: vlist)
                     ShowVolume(v);
             }
 
@@ -2046,10 +1999,11 @@ public:
     }
 };
 
-class TTuneVolumeCmd final : public ICmd {
+class TTuneVolumeCmd final: public ICmd {
 public:
-    TTuneVolumeCmd(Porto::Connection *api) :
-        ICmd(api, "vtune", 1, "<path> [property=value...]", "tune volume") { }
+    TTuneVolumeCmd(Porto::Connection *api)
+        : ICmd(api, "vtune", 1, "<path> [property=value...]", "tune volume")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         std::map<std::string, std::string> properties;
@@ -2075,10 +2029,11 @@ public:
     }
 };
 
-class TCheckVolumeCmd final : public ICmd {
+class TCheckVolumeCmd final: public ICmd {
 public:
-    TCheckVolumeCmd(Porto::Connection *api) :
-            ICmd(api, "vcheck", 1, "<path>", "check consistency of the volume (e.g. quota)") { }
+    TCheckVolumeCmd(Porto::Connection *api)
+        : ICmd(api, "vcheck", 1, "<path>", "check consistency of the volume (e.g. quota)")
+    {}
 
     int Execute(TCommandEnviroment *env) final override {
         const auto &args = env->GetArgs();
@@ -2100,24 +2055,24 @@ public:
     }
 };
 
-class TStorageCmd final : public ICmd {
+class TStorageCmd final: public ICmd {
 public:
-    TStorageCmd(Porto::Connection *api) : ICmd(api, "storage", 0,
-        "[-P <place>] [-M] -L|-R|-F [meta/][storage]",
-        "Manage internal persistent volume storage",
-        "    -P <place>               optional path to place\n"
-        "    -L                       list existing storages\n"
-        "    -R <storage>             remove storage\n"
-        "    -F [days]                remove all unused for [days]\n"
-        "    -S <private>             set private value\n"
-        "    -I <storage> <archive>   import storage from archive\n"
-        "    -E <storage> <archive>   export storage to archive\n"
-        "    -c <compression>         override compression\n"
-        "    -M                       meta storage\n"
-        "    -r                       resize\n"
-        "    -Q <space_limit>\n"
-        "    -q <inode_limit>\n"
-        ) {}
+    TStorageCmd(Porto::Connection *api)
+        : ICmd(api, "storage", 0, "[-P <place>] [-M] -L|-R|-F [meta/][storage]",
+               "Manage internal persistent volume storage",
+               "    -P <place>               optional path to place\n"
+               "    -L                       list existing storages\n"
+               "    -R <storage>             remove storage\n"
+               "    -F [days]                remove all unused for [days]\n"
+               "    -S <private>             set private value\n"
+               "    -I <storage> <archive>   import storage from archive\n"
+               "    -E <storage> <archive>   export storage to archive\n"
+               "    -c <compression>         override compression\n"
+               "    -M                       meta storage\n"
+               "    -r                       resize\n"
+               "    -Q <space_limit>\n"
+               "    -q <inode_limit>\n")
+    {}
 
     int ret = EXIT_SUCCESS;
     bool list = false;
@@ -2135,18 +2090,18 @@ public:
 
     int Execute(TCommandEnviroment *env) final override {
         const auto &args = env->GetOpts({
-            { 'P', true,  [&](const char *arg) { place = arg;   } },
-            { 'S', true,  [&](const char *arg) { private_ = arg;   } },
-            { 'R', false, [&](const char *) { remove = true; } },
-            { 'L', false, [&](const char *) { list = true;   } },
-            { 'F', false, [&](const char *) { flush = true;   } },
-            { 'I', false, [&](const char *) { import = true;   } },
-            { 'E', false, [&](const char *) { export_ = true;   } },
-            { 'M', false, [&](const char *) { meta = true;   } },
-            { 'r', false, [&](const char *) { resize = true;   } },
-            { 'c', true, [&](const char * arg) { compression = arg; } },
-            { 'q', true, [&](const char * arg) {  StringToSize(arg, inode_limit); } },
-            { 'Q', true, [&](const char * arg) { StringToSize(arg, space_limit); } },
+            {'P', true, [&](const char *arg) { place = arg; }},
+            {'S', true, [&](const char *arg) { private_ = arg; }},
+            {'R', false, [&](const char *) { remove = true; }},
+            {'L', false, [&](const char *) { list = true; }},
+            {'F', false, [&](const char *) { flush = true; }},
+            {'I', false, [&](const char *) { import = true; }},
+            {'E', false, [&](const char *) { export_ = true; }},
+            {'M', false, [&](const char *) { meta = true; }},
+            {'r', false, [&](const char *) { resize = true; }},
+            {'c', true, [&](const char *arg) { compression = arg; }},
+            {'q', true, [&](const char *arg) { StringToSize(arg, inode_limit); }},
+            {'Q', true, [&](const char *arg) { StringToSize(arg, space_limit); }},
         });
 
         std::string archive;
@@ -2158,7 +2113,7 @@ public:
             if (args.size() >= 1) {
                 if (StringToUint64(args[0], age))
                     return EXIT_FAILURE;
-                age *= 60*60*24;
+                age *= 60 * 60 * 24;
             }
             auto rsp = Api->ListStorage(place);
             if (!rsp) {
@@ -2181,7 +2136,6 @@ public:
             if (!rsp) {
                 PrintError("Cannot list storage paths");
             } else {
-
                 for (const auto &s: rsp->meta_storages()) {
                     std::cout << "meta " << s.name() << std::endl;
                     if (s.has_owner_user())
@@ -2266,29 +2220,30 @@ public:
     }
 };
 
-class TLayerCmd final : public ICmd {
+class TLayerCmd final: public ICmd {
 public:
-    TLayerCmd(Porto::Connection *api) : ICmd(api, "layer", 0,
-        "[-P <place>] [-S <private>] -I|-M|-R|-L|-F|-E|-G <layer> [<tarball> [<memory cgroup>]]",
-        "Manage overlayfs layers in internal storage",
-        "    -P <place>                             optional path to place\n"
-        "    -S <private>                           store layer private value while importing or separately\n"
-        "    -I <layer> <tarball> [<container>]     import layer from tarball\n"
-        "    -M <layer> <tarball>                   merge tarball into existing or new layer\n"
-        "    -R <layer> [layer...]                  remove layer from storage\n"
-        "    -F [days]                              remove all unused layers (unused for [days])\n"
-        "    -L                                     list present layers\n"
-        "    -E <volume> <tarball>                  export upper layer into tarball\n"
-        "    -Q <volume> <squashfs>                 export upper layer into squashfs\n"
-        "    -c compression                         override compression\n"
-        "    -G <layer>                             retrieve layer stored private value\n"
-        "    -v                                     be verbose\n"
-        ) {}
+    TLayerCmd(Porto::Connection *api)
+        : ICmd(api, "layer", 0,
+               "[-P <place>] [-S <private>] -I|-M|-R|-L|-F|-E|-G <layer> [<tarball> [<memory cgroup>]]",
+               "Manage overlayfs layers in internal storage",
+               "    -P <place>                             optional path to place\n"
+               "    -S <private>                           store layer private value while importing or separately\n"
+               "    -I <layer> <tarball> [<container>]     import layer from tarball\n"
+               "    -M <layer> <tarball>                   merge tarball into existing or new layer\n"
+               "    -R <layer> [layer...]                  remove layer from storage\n"
+               "    -F [days]                              remove all unused layers (unused for [days])\n"
+               "    -L                                     list present layers\n"
+               "    -E <volume> <tarball>                  export upper layer into tarball\n"
+               "    -Q <volume> <squashfs>                 export upper layer into squashfs\n"
+               "    -c compression                         override compression\n"
+               "    -G <layer>                             retrieve layer stored private value\n"
+               "    -v                                     be verbose\n")
+    {}
 
     bool import = false;
-    bool merge  = false;
+    bool merge = false;
     bool remove = false;
-    bool list   = false;
+    bool list = false;
     bool verbose = false;
     bool export_ = false;
     bool squash = false;
@@ -2303,18 +2258,21 @@ public:
     int Execute(TCommandEnviroment *env) final override {
         int ret = EXIT_SUCCESS;
         const auto &args = env->GetOpts({
-            { 'P', true,  [&](const char *arg) { place = arg; } },
-            { 'I', false, [&](const char *) { import = true; } },
-            { 'M', false, [&](const char *) { merge  = true; } },
-            { 'R', false, [&](const char *) { remove = true; } },
-            { 'F', false, [&](const char *) { flush  = true; } },
-            { 'L', false, [&](const char *) { list   = true; } },
-            { 'E', false, [&](const char *) { export_= true; } },
-            { 'Q', false, [&](const char *) { squash = true; } },
-            { 'G', false, [&](const char *) { get_private = true; } },
-            { 'S', true, [&](const char *arg) { set_private = true; private_value = arg; } },
-            { 'c', true, [&](const char *arg) { compression = arg; } },
-            { 'v', false, [&](const char *) { verbose = true; } },
+            {'P', true, [&](const char *arg) { place = arg; }},
+            {'I', false, [&](const char *) { import = true; }},
+            {'M', false, [&](const char *) { merge = true; }},
+            {'R', false, [&](const char *) { remove = true; }},
+            {'F', false, [&](const char *) { flush = true; }},
+            {'L', false, [&](const char *) { list = true; }},
+            {'E', false, [&](const char *) { export_ = true; }},
+            {'Q', false, [&](const char *) { squash = true; }},
+            {'G', false, [&](const char *) { get_private = true; }},
+            {'S', true, [&](const char *arg) {
+                 set_private = true;
+                 private_value = arg;
+             }},
+            {'c', true, [&](const char *arg) { compression = arg; }},
+            {'v', false, [&](const char *) { verbose = true; }},
         });
 
         if (squash && compression.empty())
@@ -2354,7 +2312,7 @@ public:
             if (args.size() < 1)
                 return EXIT_FAILURE;
 
-            for (const auto &arg : args) {
+            for (const auto &arg: args) {
                 ret = Api->RemoveLayer(arg, place);
                 if (ret)
                     PrintError("Can't remove layer");
@@ -2364,7 +2322,7 @@ public:
             if (args.size() >= 1) {
                 if (StringToUint64(args[0], age))
                     return EXIT_FAILURE;
-                age *= 60*60*24;
+                age *= 60 * 60 * 24;
             }
             std::vector<Porto::Layer> layers;
             ret = Api->ListLayers(layers, place);
@@ -2425,27 +2383,28 @@ public:
     }
 };
 
-class TBuildCmd final : public ICmd {
+class TBuildCmd final: public ICmd {
 public:
-    TBuildCmd(Porto::Connection *api) : ICmd(api, "build", 0,
-            "[-k] [-M] [-l|-L layer]... [-o layer.tar] [-O image.img] [-Q image.squashfs] [-B|-b script] [-S|-s script]... [properties]...",
-            "build container image",
-            "    -l layer|dir|tarball       layer for bootstrap, if empty run in host\n"
-            "    -L layer|dir|tarball       add lower layer (-L top ... -L bottom)\n"
-            "    -o layer.tar               save as overlayfs layer\n"
-            "    -O image.img               save as filesystem image\n"
-            "    -Q image.squashfs          save as squashfs image\n"
-            "    -c compression             override compression\n"
-            "    -B bootstrap               bash script runs outside (with cwd=volume)\n"
-            "    -b bootstrap2              bash script runs inside before os (with root=volume)\n"
-            "    -S script                  bash script runs inside (with root=volume)\n"
-            "    -s script2                 bash script runs inside after os stop (with root=volume)\n"
-            "    -M                         merge all layers together\n"
-            "    -k                         keep volume and container\n"
-            "    -D                         drop CAP_SYS_ADMIN for base container\n"
-            ) { }
+    TBuildCmd(Porto::Connection *api)
+        : ICmd(api, "build", 0,
+               "[-k] [-M] [-l|-L layer]... [-o layer.tar] [-O image.img] [-Q image.squashfs] [-B|-b script] [-S|-s "
+               "script]... [properties]...", "build container image",
+               "    -l layer|dir|tarball       layer for bootstrap, if empty run in host\n"
+               "    -L layer|dir|tarball       add lower layer (-L top ... -L bottom)\n"
+               "    -o layer.tar               save as overlayfs layer\n"
+               "    -O image.img               save as filesystem image\n"
+               "    -Q image.squashfs          save as squashfs image\n"
+               "    -c compression             override compression\n"
+               "    -B bootstrap               bash script runs outside (with cwd=volume)\n"
+               "    -b bootstrap2              bash script runs inside before os (with root=volume)\n"
+               "    -S script                  bash script runs inside (with root=volume)\n"
+               "    -s script2                 bash script runs inside after os stop (with root=volume)\n"
+               "    -M                         merge all layers together\n"
+               "    -k                         keep volume and container\n"
+               "    -D                         drop CAP_SYS_ADMIN for base container\n")
+    {}
 
-    ~TBuildCmd() { }
+    ~TBuildCmd() {}
 
     int Execute(TCommandEnviroment *environment) final override {
         TLauncher launcher(Api);
@@ -2480,19 +2439,25 @@ public:
         TPath bootstrap2_script;
 
         const auto &opts = environment->GetOpts({
-            { 'L', true, [&](const char *arg) { launcher.Layers.push_back(arg); } },
-            { 'l', true, [&](const char *arg) { bootstrap.Layers.push_back(arg); bootstrap.NeedVolume = true; } },
-            { 'o', true, [&](const char *arg) { output = TPath(arg).AbsolutePath(); } },
-            { 'O', true, [&](const char *arg) { outputImage = TPath(arg).AbsolutePath(); } },
-            { 'Q', true, [&](const char *arg) { outputImage = TPath(arg).AbsolutePath(); squash = true; } },
-            { 'c', true, [&](const char *arg) { compression = arg; } },
-            { 'B', true, [&](const char *arg) { bootstrap_script = TPath(arg).RealPath(); } },
-            { 'b', true, [&](const char *arg) { bootstrap2_script = TPath(arg).RealPath(); } },
-            { 'S', true, [&](const char *arg) { scripts.push_back(TPath(arg).RealPath()); } },
-            { 's', true, [&](const char *arg) { scripts2.push_back(TPath(arg).RealPath()); } },
-            { 'k', false, [&](const char *) { launcher.WeakContainer = false; } },
-            { 'D', false, [&](const char *) { dropSysAdmin = true; } },
-            { 'M', false, [&](const char *) { launcher.MergeLayers = true; } },
+            {'L', true, [&](const char *arg) { launcher.Layers.push_back(arg); }},
+            {'l', true, [&](const char *arg) {
+                 bootstrap.Layers.push_back(arg);
+                 bootstrap.NeedVolume = true;
+             }},
+            {'o', true, [&](const char *arg) { output = TPath(arg).AbsolutePath(); }},
+            {'O', true, [&](const char *arg) { outputImage = TPath(arg).AbsolutePath(); }},
+            {'Q', true, [&](const char *arg) {
+                 outputImage = TPath(arg).AbsolutePath();
+                 squash = true;
+             }},
+            {'c', true, [&](const char *arg) { compression = arg; }},
+            {'B', true, [&](const char *arg) { bootstrap_script = TPath(arg).RealPath(); }},
+            {'b', true, [&](const char *arg) { bootstrap2_script = TPath(arg).RealPath(); }},
+            {'S', true, [&](const char *arg) { scripts.push_back(TPath(arg).RealPath()); }},
+            {'s', true, [&](const char *arg) { scripts2.push_back(TPath(arg).RealPath()); }},
+            {'k', false, [&](const char *) { launcher.WeakContainer = false; }},
+            {'D', false, [&](const char *) { dropSysAdmin = true; }},
+            {'M', false, [&](const char *) { launcher.MergeLayers = true; }},
         });
 
         if (squash && compression.empty())
@@ -2628,7 +2593,9 @@ public:
             if (bootstrap.Layers.empty()) {
                 /* allow devices at root for unpatched debootsrap */
                 bootstrap.SetProperty("bind", volume + " " + volume + " rw,dev;/tmp /tmp rw");
-                bootstrap.SetProperty("root_readonly" "true");
+                bootstrap.SetProperty(
+                    "root_readonly"
+                    "true");
             } else {
                 bootstrap.SetProperty("bind", volume + " " + volume + " rw");
             }
@@ -2811,10 +2778,10 @@ public:
             TLauncher executor(Api);
 
             volume_script.WriteAll(
-                    "find root/run -xdev -mindepth 1 -delete\n"
-                    "find run -maxdepth 1 -type d | "
-                    "tar --create --no-recursion --files-from - | "
-                    "tar --verbose --extract -C root\n");
+                "find root/run -xdev -mindepth 1 -delete\n"
+                "find run -maxdepth 1 -type d | "
+                "tar --create --no-recursion --files-from - | "
+                "tar --verbose --extract -C root\n");
             executor.Container = chroot.Container + "/save_run";
             executor.ForwardStreams = true;
             executor.WaitExit = true;
@@ -2850,8 +2817,8 @@ public:
         }
 
         if (Api->SetProperty(chroot.Container, "command", "rm " + build_script) ||
-                Api->SetProperty(chroot.Container, "virt_mode", "os") ||
-                Api->Start(chroot.Container) || chroot.WaitContainer(-1)) {
+            Api->SetProperty(chroot.Container, "virt_mode", "os") || Api->Start(chroot.Container) ||
+            chroot.WaitContainer(-1)) {
             std::cerr << "Cannot remove script" << std::endl;
             goto err;
         }
@@ -2893,7 +2860,7 @@ public:
 
         return EXIT_SUCCESS;
 
-err:
+    err:
         if (launcher.WeakContainer)
             launcher.Cleanup();
         if (!loopImage.IsEmpty()) {
@@ -2904,21 +2871,18 @@ err:
     }
 };
 
-class TConvertPathCmd final : public ICmd {
-
+class TConvertPathCmd final: public ICmd {
 public:
-    TConvertPathCmd(Porto::Connection *api) : ICmd(api, "convert", 1,
-                                           "[-s container] [-d container] <path>",
-                                           "convert paths between different containers",
-                                           "    -s container    source container (client container if omitted)\n"
-                                           "    -d container    destination container (client container if omitted)\n") { }
+    TConvertPathCmd(Porto::Connection *api)
+        : ICmd(api, "convert", 1, "[-s container] [-d container] <path>", "convert paths between different containers",
+               "    -s container    source container (client container if omitted)\n"
+               "    -d container    destination container (client container if omitted)\n")
+    {}
 
     int Execute(TCommandEnviroment *environment) final override {
         std::string path, src, dest;
-        auto args  = environment->GetOpts({
-                {'s', true, [&](const char *arg) { src = arg; }},
-                {'d', true, [&](const char *arg) { dest = arg; }}
-        });
+        auto args = environment->GetOpts(
+            {{'s', true, [&](const char *arg) { src = arg; }}, {'d', true, [&](const char *arg) { dest = arg; }}});
 
         if (args.size() != 1) {
             PrintError("Require exactly one agrument");
@@ -2937,16 +2901,17 @@ public:
     }
 };
 
-class TAttachCmd final : public ICmd {
+class TAttachCmd final: public ICmd {
 public:
-    TAttachCmd(Porto::Connection *api) : ICmd(api, "attach", 2,
-            "[-t] <container> <pid> [comm]", "move process or thread into container") { }
+    TAttachCmd(Porto::Connection *api)
+        : ICmd(api, "attach", 2, "[-t] <container> <pid> [comm]", "move process or thread into container")
+    {}
 
     int Execute(TCommandEnviroment *environment) final override {
         std::string comm;
         bool thread = false;
         const auto &args = environment->GetOpts({
-                {'t', false, [&](const char *) { thread = true; }},
+            {'t', false, [&](const char *) { thread = true; }},
         });
         auto name = args[0];
         int pid;
@@ -2972,21 +2937,20 @@ public:
     }
 };
 
-class TDockerImageListCmd final : public ICmd {
+class TDockerImageListCmd final: public ICmd {
 public:
-    TDockerImageListCmd(Porto::Connection *api) : ICmd(api, "docker-images", 0,
-            "[-P <place>] [pattern]",
-            "List available docker images",
-            "    -P <place>                             optional path to place\n"
-            ) { }
+    TDockerImageListCmd(Porto::Connection *api)
+        : ICmd(api, "docker-images", 0, "[-P <place>] [pattern]", "List available docker images",
+               "    -P <place>                             optional path to place\n")
+    {}
 
     std::string place;
     bool verbose = false;
 
     int Execute(TCommandEnviroment *environment) final override {
         const auto &args = environment->GetOpts({
-            { 'P', true,  [&](const char *arg) { place = arg; } },
-            { 'v', false, [&](const char *) { verbose = true; } },
+            {'P', true, [&](const char *arg) { place = arg; }},
+            {'v', false, [&](const char *) { verbose = true; }},
         });
 
         std::string mask = args.size() ? args[0] : "";
@@ -3032,15 +2996,14 @@ public:
     }
 };
 
-class TDockerImagePullCmd final : public ICmd {
+class TDockerImagePullCmd final: public ICmd {
 public:
-    TDockerImagePullCmd(Porto::Connection *api) : ICmd(api, "docker-pull", 1,
-            "[-P <place>] <name>",
-            "Pull docker image from a registry",
-            "    -P <place>                             optional path to place\n"
-            "    -H <auth_path>                         optional auth path (default https://auth.docker.io/token)\n"
-            "    -S <auth_service>                      optional auth service (default registry.docker.io)\n"
-            ) { }
+    TDockerImagePullCmd(Porto::Connection *api)
+        : ICmd(api, "docker-pull", 1, "[-P <place>] <name>", "Pull docker image from a registry",
+               "    -P <place>                             optional path to place\n"
+               "    -H <auth_path>                         optional auth path (default https://auth.docker.io/token)\n"
+               "    -S <auth_service>                      optional auth service (default registry.docker.io)\n")
+    {}
 
     std::string place;
     std::string auth_path;
@@ -3048,9 +3011,9 @@ public:
 
     int Execute(TCommandEnviroment *environment) final override {
         const auto &args = environment->GetOpts({
-            { 'P', true,  [&](const char *arg) { place = arg; } },
-            { 'H', true,  [&](const char *arg) { auth_path = arg; } },
-            { 'S', true,  [&](const char *arg) { auth_service = arg; } },
+            {'P', true, [&](const char *arg) { place = arg; }},
+            {'H', true, [&](const char *arg) { auth_path = arg; }},
+            {'S', true, [&](const char *arg) { auth_service = arg; }},
         });
 
         if (args.size() != 1) {
@@ -3073,19 +3036,18 @@ public:
     }
 };
 
-class TDockerImageRemoveCmd final : public ICmd {
+class TDockerImageRemoveCmd final: public ICmd {
 public:
-    TDockerImageRemoveCmd(Porto::Connection *api) : ICmd(api, "docker-rmi", 1,
-            "[-P <place>] <name>",
-            "Remove docker image",
-            "    -P <place>                             optional path to place\n"
-            ) { }
+    TDockerImageRemoveCmd(Porto::Connection *api)
+        : ICmd(api, "docker-rmi", 1, "[-P <place>] <name>", "Remove docker image",
+               "    -P <place>                             optional path to place\n")
+    {}
 
     std::string place;
 
     int Execute(TCommandEnviroment *environment) final override {
         const auto &args = environment->GetOpts({
-            { 'P', true,  [&](const char *arg) { place = arg; } },
+            {'P', true, [&](const char *arg) { place = arg; }},
         });
 
         if (args.size() != 1) {
@@ -3104,14 +3066,14 @@ public:
     }
 };
 
-class TDockerRunCmd final : public ICmd {
+class TDockerRunCmd final: public ICmd {
 public:
-    TDockerRunCmd(Porto::Connection *api) : ICmd(api, "docker-run", 2,
-            "[-P <place>] [-T] [-W] ... <container> <image> [properties]",
-            "create and start container with given properties",
-            "    -P <place>                     optional path to place\n"
-            "    -T                             forward terminal and destroy container at the end\n"
-            "    -W                             wait until container exits\n")
+    TDockerRunCmd(Porto::Connection *api)
+        : ICmd(api, "docker-run", 2, "[-P <place>] [-T] [-W] ... <container> <image> [properties]",
+               "create and start container with given properties",
+               "    -P <place>                     optional path to place\n"
+               "    -T                             forward terminal and destroy container at the end\n"
+               "    -W                             wait until container exits\n")
     {}
 
     std::string place;
@@ -3122,9 +3084,9 @@ public:
         TError error;
 
         const auto &args = env->GetOpts({
-            { 'P', true,  [&](const char *arg) { place = arg; } },
-            { 'T', false, [&](const char *) { terminal = true; } },
-            { 'W', false, [&](const char *) { launcher.WaitExit = true; } },
+            {'P', true, [&](const char *arg) { place = arg; }},
+            {'T', false, [&](const char *) { terminal = true; }},
+            {'W', false, [&](const char *) { launcher.WaitExit = true; }},
         });
 
         if (terminal) {

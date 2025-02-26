@@ -1,16 +1,18 @@
-#include "util/http.hpp"
-#include "util/log.hpp"
-#include "helpers.hpp"
-#include "common.hpp"
-#include "storage.hpp"
 #include "docker.hpp"
-#include "util/nlohmann-safe/json.hpp"
-#include "util/string.hpp"
 
 #include <fcntl.h>
+
 #include <fstream>
-#include <unordered_set>
 #include <thread>
+#include <unordered_set>
+
+#include "common.hpp"
+#include "helpers.hpp"
+#include "storage.hpp"
+#include "util/http.hpp"
+#include "util/log.hpp"
+#include "util/nlohmann-safe/json.hpp"
+#include "util/string.hpp"
 
 constexpr const char *DOCKER_IMAGES_FILE = "images.json";
 constexpr const char *DOCKER_LAYERS_DIR = "layers";
@@ -63,7 +65,6 @@ TError TDockerImage::TLayer::Remove(const TPath &place) const {
 
     return OK;
 }
-
 
 TError TDockerImage::GetAuthToken() {
     TError error;
@@ -194,7 +195,7 @@ TError TDockerImage::DetectDigestPath(const TPath &place) {
 
     unsigned int matchCount = 0;
     std::string prefix = Digest;
-    for (const auto& digest: digests)
+    for (const auto &digest: digests)
         if (StringStartsWith(digest, prefix)) {
             Digest = digest;
             matchCount++;
@@ -228,13 +229,13 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
 
     THttpClient::THeaders headers = {
         // docker
-        { "Accept", "application/vnd.docker.distribution.manifest.v2+json" },
-        { "Accept", "application/vnd.docker.distribution.manifest.list.v2+json" },
-        { "Accept", "application/vnd.docker.distribution.manifest.v1+json" },
+        {"Accept", "application/vnd.docker.distribution.manifest.v2+json"},
+        {"Accept", "application/vnd.docker.distribution.manifest.list.v2+json"},
+        {"Accept", "application/vnd.docker.distribution.manifest.v1+json"},
 
         // oci
-        { "Accept", "application/vnd.oci.image.manifest.v1+json" },
-        { "Accept", "application/vnd.oci.image.index.v1+json" },
+        {"Accept", "application/vnd.oci.image.manifest.v1+json"},
+        {"Accept", "application/vnd.oci.image.index.v1+json"},
     };
 
     if (!AuthToken.empty())
@@ -254,8 +255,7 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
                     return error;
 
                 if (!AuthToken.empty()) {
-                    auto it = find_if(headers.begin(),
-                                      headers.end(),
+                    auto it = find_if(headers.begin(), headers.end(),
                                       [](const THttpClient::THeader &h) { return h.first == "Authorization"; });
                     if (it != headers.end())
                         it->second = AuthToken;
@@ -530,7 +530,8 @@ TError TDockerImage::ParseConfig() {
     return OK;
 }
 
-void TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url, const std::string &token) {
+void TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url,
+                                 const std::string &token) {
     TError error;
     TPath archivePath = layer.ArchivePath(place);
 
@@ -559,7 +560,7 @@ void TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClien
     error = DownloadFile(url, archivePath);
     if (error && !token.empty()) {
         // retry if registry api expects to receive token and we received code 401
-        error = DownloadFile(url, archivePath, { "Authorization: " + token });
+        error = DownloadFile(url, archivePath, {"Authorization: " + token});
         if (error) {
             L_ERR("Cannot download layer: {}", error);
             return;
@@ -574,13 +575,11 @@ void TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClien
         return;
     }
 
-
     error = portoLayer.ImportArchive(archivePath, PORTO_HELPERS_CGROUP);
     if (error) {
         L_ERR("Cannot import archive: {}", error);
         return;
     }
-
 
     error = TStorage::SanitizeLayer(portoLayer.Path);
     if (error) {
@@ -594,7 +593,8 @@ TError TDockerImage::DownloadLayers(const TPath &place) const {
 
     // download layers using threads
     for (const auto &layer: Layers)
-        threads.emplace_back(TDockerImage::DownloadLayer, place, layer, std::ref(CL), fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest)), AuthToken);
+        threads.emplace_back(TDockerImage::DownloadLayer, place, layer, std::ref(CL),
+                             fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest)), AuthToken);
 
     // waiting all downloads
     for (auto &t: threads)
@@ -661,7 +661,7 @@ TError TDockerImage::LinkTag(const TPath &place) const {
                 if (error)
                     return error;
             }
-        } // else ignore symlink
+        }  // else ignore symlink
 
         // clean current tag
         error = tagPath.Unlink();
@@ -698,7 +698,8 @@ TError TDockerImage::SaveImages(const TPath &place) const {
     return SaveImages(DigestPath(place) / DOCKER_IMAGES_FILE, Images);
 }
 
-TError TDockerImage::SaveImages(const TPath &imagesPath, const std::unordered_map<std::string, std::unordered_set<std::string>> &images) const {
+TError TDockerImage::SaveImages(const TPath &imagesPath,
+                                const std::unordered_map<std::string, std::unordered_set<std::string>> &images) const {
     TError error;
     std::ofstream file(imagesPath.ToString());
     TJson imagesJson;
@@ -715,7 +716,8 @@ TError TDockerImage::LoadImages(const TPath &place) {
     return LoadImages(DigestPath(place) / DOCKER_IMAGES_FILE, Images);
 }
 
-TError TDockerImage::LoadImages(const TPath &imagesPath, std::unordered_map<std::string, std::unordered_set<std::string>> &images) const {
+TError TDockerImage::LoadImages(const TPath &imagesPath,
+                                std::unordered_map<std::string, std::unordered_set<std::string>> &images) const {
     TError error;
     std::ifstream file(imagesPath.ToString());
 
@@ -737,7 +739,7 @@ TError TDockerImage::LoadImages(const TPath &imagesPath, std::unordered_map<std:
 TError TDockerImage::Save(const TPath &place) const {
     TError error;
     TPath digestPath = DigestPath(place);
-    TPath layersPath =  digestPath / DOCKER_LAYERS_DIR;
+    TPath layersPath = digestPath / DOCKER_LAYERS_DIR;
 
     error = TPath(digestPath / "manifest.json").CreateAndWriteAll(Manifest);
     if (error)
@@ -803,7 +805,6 @@ TError TDockerImage::Load(const TPath &place) {
     return OK;
 }
 
-
 TError TDockerImage::InitStorage(const TPath &place, unsigned perms) {
     TError error;
     TPath dockerPath = place / PORTO_DOCKER;
@@ -815,7 +816,7 @@ TError TDockerImage::InitStorage(const TPath &place, unsigned perms) {
         return error;
 
     // Create internal directories
-    for (const auto& path: {PORTO_DOCKER_TAGS, PORTO_DOCKER_IMAGES, PORTO_DOCKER_LAYERS}) {
+    for (const auto &path: {PORTO_DOCKER_TAGS, PORTO_DOCKER_IMAGES, PORTO_DOCKER_LAYERS}) {
         error = TPath(place / path).MkdirAll(perms);
         if (error)
             return error;
@@ -855,8 +856,8 @@ TError TDockerImage::List(const TPath &place, std::vector<TDockerImage> &images,
 
         if (!mask.empty()) {
             bool found = false;
-            for (const auto& it: image.Images) {
-                for (const auto& tag: it.second) {
+            for (const auto &it: image.Images) {
+                for (const auto &tag: it.second) {
                     if (StringMatch(it.first + ":" + tag, mask, false, false)) {
                         found = true;
                         break;

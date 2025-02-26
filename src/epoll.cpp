@@ -1,7 +1,8 @@
 #include "epoll.hpp"
+
 #include "config.hpp"
-#include "util/unix.hpp"
 #include "util/log.hpp"
+#include "util/unix.hpp"
 
 extern "C" {
 #include <unistd.h>
@@ -91,8 +92,7 @@ void TEpollLoop::RemoveSource(int fd) {
         L_ERR("Invalid epoll fd {}", fd);
 
     if (epoll_ctl(EpollFd, EPOLL_CTL_DEL, fd, nullptr) < 0)
-        L_ERR("Cannot remove epoll {} : {}", fd,
-              TError::System("epoll_ctl"));
+        L_ERR("Cannot remove epoll {} : {}", fd, TError::System("epoll_ctl"));
 }
 
 TError TEpollLoop::ModifySourceEvents(int fd, uint32_t events) const {

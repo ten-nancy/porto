@@ -1,29 +1,30 @@
+#include "task.hpp"
+
 #include <csignal>
 
-#include "task.hpp"
+#include "config.hpp"
 #include "container.hpp"
 #include "device.hpp"
-#include "config.hpp"
 #include "network.hpp"
-#include "util/log.hpp"
-#include "util/string.hpp"
-#include "util/signal.hpp"
-#include "util/unix.hpp"
 #include "util/cred.hpp"
+#include "util/log.hpp"
 #include "util/netlink.hpp"
+#include "util/signal.hpp"
+#include "util/string.hpp"
+#include "util/unix.hpp"
 
 extern "C" {
-#include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <sys/ptrace.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <linux/sched.h>
+#include <net/if.h>
+#include <string.h>
+#include <sys/ptrace.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <wordexp.h>
-#include <grp.h>
-#include <net/if.h>
-#include <linux/sched.h>
 }
 
 std::list<std::string> IpcSysctls = {
@@ -107,7 +108,7 @@ void TTaskEnv::Abort(const TError &error) {
 }
 
 static int ChildFn(void *arg) {
-    TTaskEnv *task = static_cast<TTaskEnv*>(arg);
+    TTaskEnv *task = static_cast<TTaskEnv *>(arg);
     task->StartChild();
     return EXIT_FAILURE;
 }
@@ -185,7 +186,6 @@ TError TTaskEnv::OpenNamespaces(TContainer &ct) {
 }
 
 TError TTaskEnv::ChildExec() {
-
     /* set environment for wordexp */
     TError error = Env.Apply();
 
@@ -216,7 +216,8 @@ TError TTaskEnv::ChildExec() {
         int ret = wordexp(CT->Command.c_str(), &result, WRDE_NOCMD | WRDE_UNDEF);
         switch (ret) {
         case WRDE_BADCHAR:
-            return TError(EError::InvalidCommand, "wordexp(): illegal occurrence of newline or one of |, &, ;, <, >, (, ), {{, }}");
+            return TError(EError::InvalidCommand,
+                          "wordexp(): illegal occurrence of newline or one of |, &, ;, <, >, (, ), {{, }}");
         case WRDE_BADVAL:
             return TError(EError::InvalidCommand, "wordexp(): undefined shell variable was referenced");
         case WRDE_CMDSUB:
@@ -248,8 +249,7 @@ TError TTaskEnv::ChildExec() {
     PortoInit.Close();
 
     /* https://bugs.launchpad.net/upstart/+bug/1582199 */
-    if (CT->Command == "/sbin/init" && CT->OsMode &&
-            !(CT->Controllers & CGROUP_SYSTEMD)) {
+    if (CT->Command == "/sbin/init" && CT->OsMode && !(CT->Controllers & CGROUP_SYSTEMD)) {
         L_VERBOSE("Reserve fd 9 for upstart JOB_PROCESS_SCRIPT_FD");
         dup2(open("/dev/null", O_RDWR | O_CLOEXEC), 9);
     }
@@ -288,8 +288,7 @@ TError TTaskEnv::WriteResolvConf() {
     if (CT->HasProp(EProperty::RESOLV_CONF) ? !CT->ResolvConf.size() : CT->Root == "/")
         return OK;
     L_ACT("Write resolv.conf for CT{}:{}", CT->Id, CT->Name);
-    return TPath("/etc/resolv.conf").WritePrivate(
-            CT->ResolvConf.size() ? CT->ResolvConf : RootContainer->ResolvConf);
+    return TPath("/etc/resolv.conf").WritePrivate(CT->ResolvConf.size() ? CT->ResolvConf : RootContainer->ResolvConf);
 }
 
 TError TTaskEnv::SetHostname() {
@@ -400,8 +399,8 @@ TError TTaskEnv::ConfigureChild() {
     /* Closing before directory changing for security.
      * More info: PORTO-925
      */
-    TFile::CloseAllExcept({0, 1, 2, Sock.GetFd(), Sock2.GetFd(), MasterSock.GetFd(), MasterSock2.GetFd(),
-                           LogFile.Fd, PortoInit.Fd, UserFd.GetFd()});
+    TFile::CloseAllExcept({0, 1, 2, Sock.GetFd(), Sock2.GetFd(), MasterSock.GetFd(), MasterSock2.GetFd(), LogFile.Fd,
+                           PortoInit.Fd, UserFd.GetFd()});
     error = Mnt.Cwd.Chdir();
     if (error)
         return error;
@@ -679,7 +678,6 @@ TError TTaskEnv::Start() {
 
                 SetProcessName("portod-TRACER");
 
-
                 TracerLoop(traceePid);
             }
 
@@ -703,16 +701,16 @@ TError TTaskEnv::Start() {
 
         /* FIXME try to replace clone() with  unshare() */
 #if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
-        char stack[8192*4] __attribute__ ((aligned (16)));
+        char stack[8192 * 4] __attribute__((aligned(16)));
 #else
-        char stack[8192] __attribute__ ((aligned (16)));
+        char stack[8192] __attribute__((aligned(16)));
 #endif
 
         (void)setsid();
 
         L("Attach to cgroups");
         // move to target cgroups
-        for (auto& cg : Cgroups) {
+        for (auto &cg: Cgroups) {
             error = cg->Attach(GetPid());
             if (error)
                 Abort(error);
@@ -850,9 +848,7 @@ TError TTaskEnv::Start() {
         pid_t clonePid = clone(ChildFn, stack + sizeof(stack), cloneFlags, this);
 
         if (clonePid < 0) {
-            TError error(errno == ENOMEM ?
-                         EError::ResourceNotAvailable :
-                         EError::Unknown, errno, "clone()");
+            TError error(errno == ENOMEM ? EError::ResourceNotAvailable : EError::Unknown, errno, "clone()");
             Abort(error);
         }
 
@@ -975,13 +971,8 @@ kill_all:
 
 void TTaskEnv::ExecPortoinit(pid_t pid) {
     auto pid_ = std::to_string(pid);
-    const char * argv[] = {
-        "portoinit",
-        "--container",
-        CT->Name.c_str(),
-        "--wait",
-        pid_.c_str(),
-        NULL,
+    const char *argv[] = {
+        "portoinit", "--container", CT->Name.c_str(), "--wait", pid_.c_str(), NULL,
     };
     auto envp = Env.Envp();
 

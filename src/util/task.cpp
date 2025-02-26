@@ -1,19 +1,20 @@
+#include "task.hpp"
+
 #include <condition_variable>
 #include <mutex>
 
-#include "task.hpp"
-#include "unix.hpp"
 #include "log.hpp"
 #include "namespace.hpp"
+#include "unix.hpp"
 
 extern "C" {
-#include <unistd.h>
-#include <sys/wait.h>
 #include <sys/prctl.h>
+#include <sys/wait.h>
+#include <unistd.h>
 }
 
 #ifndef PR_TRANSLATE_PID
-#define PR_TRANSLATE_PID    0x59410001
+#define PR_TRANSLATE_PID 0x59410001
 #endif
 
 bool TTask::Exists() const {
@@ -98,9 +99,7 @@ TError TTask::Fork(bool detach) {
     return OK;
 }
 
-TError TTask::Wait(bool interruptible,
-                   const std::atomic_bool &stop,
-                   const std::atomic_bool &disconnected) {
+TError TTask::Wait(bool interruptible, const std::atomic_bool &stop, const std::atomic_bool &disconnected) {
     TError error;
     auto lock = std::unique_lock<std::mutex>(ForkLock);
     if (Running) {
@@ -128,7 +127,7 @@ TError TTask::Wait(bool interruptible,
                 }
             }
 
-            usleep(100 * 1000); // sleep 100 ms
+            usleep(100 * 1000);  // sleep 100 ms
         }
 
         if (pid_ == pid)

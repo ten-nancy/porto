@@ -14,12 +14,17 @@ struct TContainerReport {
     std::string Label, Value;
     time_t When;
 
-    TContainerReport(const std::string &name, const std::string &state, time_t when,
-                     const std::string &label, const std::string &value):
-        Name(name), State(state), Label(label), Value(value), When(when) {}
+    TContainerReport(const std::string &name, const std::string &state, time_t when, const std::string &label,
+                     const std::string &value)
+        : Name(name),
+          State(state),
+          Label(label),
+          Value(value),
+          When(when)
+    {}
 };
 
-class TContainerWaiter : public std::enable_shared_from_this<TContainerWaiter> {
+class TContainerWaiter: public std::enable_shared_from_this<TContainerWaiter> {
 public:
     std::weak_ptr<TClient> Client;
     std::vector<std::string> Names;
@@ -29,7 +34,9 @@ public:
     bool Async;
     bool Active = false;
 
-    TContainerWaiter(bool async) : Async(async) { }
+    TContainerWaiter(bool async)
+        : Async(async)
+    {}
     ~TContainerWaiter();
 
     bool operator==(const TContainerWaiter &waiter) const;

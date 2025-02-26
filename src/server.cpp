@@ -1,39 +1,39 @@
-#include <vector>
-#include <string>
 #include <iostream>
+#include <string>
+#include <vector>
 
-#include "version.hpp"
-#include "kvalue.hpp"
-#include "rpc.hpp"
 #include "cgroup.hpp"
-#include "config.hpp"
-#include "event.hpp"
-#include "network.hpp"
-#include "nbd.hpp"
 #include "client.hpp"
-#include "epoll.hpp"
+#include "config.hpp"
 #include "container.hpp"
-#include "volume.hpp"
-#include "storage.hpp"
+#include "epoll.hpp"
+#include "event.hpp"
 #include "helpers.hpp"
+#include "kvalue.hpp"
+#include "libporto.hpp"
+#include "nbd.hpp"
+#include "netlimitsoft.hpp"
+#include "network.hpp"
+#include "portod.hpp"
+#include "property.hpp"
+#include "rpc.hpp"
+#include "storage.hpp"
 #include "util/log.hpp"
 #include "util/signal.hpp"
-#include "util/unix.hpp"
 #include "util/string.hpp"
-#include "property.hpp"
-#include "portod.hpp"
-#include "libporto.hpp"
-#include "netlimitsoft.hpp"
+#include "util/unix.hpp"
+#include "version.hpp"
+#include "volume.hpp"
 
 extern "C" {
 #include <fcntl.h>
-#include <unistd.h>
-#include <sys/un.h>
-#include <sys/epoll.h>
 #include <poll.h>
-#include <sys/types.h>
+#include <sys/epoll.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <unistd.h>
 }
 
 TPidFile ServerPidFile(PORTO_PIDFILE, PORTOD_NAME, "portod-slave");
@@ -63,7 +63,6 @@ extern std::unordered_set<std::string> SupportedExtraProperties;
 
 static uint64_t ShutdownStart = 0;
 static uint64_t ShutdownDeadline = 0;
-
 
 void AckExitStatus(int pid) {
     if (!pid)
@@ -99,7 +98,7 @@ static int RecvExitEvents(int fd) {
             L_ERR("Failed read exit pid: {}", TError::System("read"));
             return 0;
         }
-retry:
+    retry:
         if (read(fd, &status, sizeof(status)) != sizeof(status)) {
             if (errno == EAGAIN)
                 goto retry;
@@ -139,9 +138,7 @@ static TError DropIdleClient(std::shared_ptr<TContainer> from = nullptr) {
     }
 
     if (!victim)
-        return TError(EError::ResourceNotAvailable,
-                      "All client slots are active: " +
-                      (from ? from->Name : "globally"));
+        return TError(EError::ResourceNotAvailable, "All client slots are active: " + (from ? from->Name : "globally"));
 
     L_SYS("Kick client {} idle={} ms", victim->Id, idle);
     Clients.erase(victim->Fd);
@@ -156,8 +153,7 @@ static TError AcceptConnection(int listenFd) {
     int clientFd;
 
     peer_addr_size = sizeof(struct sockaddr_un);
-    clientFd = accept4(listenFd, (struct sockaddr *) &peer_addr,
-                       &peer_addr_size, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    clientFd = accept4(listenFd, (struct sockaddr *)&peer_addr, &peer_addr_size, SOCK_NONBLOCK | SOCK_CLOEXEC);
     if (clientFd < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return OK; /* client already gone */
@@ -210,7 +206,7 @@ static void StartShutdown() {
     EpollLoop->RemoveSource(PORTO_SK_FD);
 
     /* Kick idle clients */
-    for (auto it = Clients.begin(); it != Clients.end(); ) {
+    for (auto it = Clients.begin(); it != Clients.end();) {
         auto client = it->second;
 
         if (client->IsBlockShutdown()) {
@@ -278,7 +274,7 @@ static void ServerLoop() {
         if (RecvExitEvents(REAP_EVT_FD))
             goto exit;
 
-        for (auto ev : events) {
+        for (auto ev: events) {
             auto source = EpollLoop->GetSource(ev.data.fd);
             if (!source)
                 continue;
@@ -292,37 +288,37 @@ static void ServerLoop() {
                 }
 
                 switch (sigInfo.ssi_signo) {
-                    case SIGINT:
-                        DiscardState = true;
-                        L_SYS("Shutdown...");
-                        StartShutdown();
-                        break;
-                    case SIGTERM:
-                        L_SYS("Shutdown...");
-                        StartShutdown();
-                        break;
-                    case SIGHUP:
-                        L_SYS("Updating...");
-                        StartShutdown();
-                        break;
-                    case SIGUSR1:
-                        OpenLog(PORTO_LOG);
-                        break;
-                    case SIGUSR2:
-                        DumpMallocInfo();
-                        TContainer::DumpLocks();
-                        break;
-                    case SIGCHLD:
-                        if (!TTask::Deliver(sigInfo.ssi_pid, sigInfo.ssi_code, sigInfo.ssi_status)) {
-                            TEvent e(EEventType::ChildExit);
-                            e.Exit.Pid = sigInfo.ssi_pid;
-                            e.Exit.Status = sigInfo.ssi_status;
-                            EventQueue->Add(0, e);
-                        }
-                        break;
-                    default:
-                        L_WRN("Unexpected signal: {}", sigInfo.ssi_signo);
-                        break;
+                case SIGINT:
+                    DiscardState = true;
+                    L_SYS("Shutdown...");
+                    StartShutdown();
+                    break;
+                case SIGTERM:
+                    L_SYS("Shutdown...");
+                    StartShutdown();
+                    break;
+                case SIGHUP:
+                    L_SYS("Updating...");
+                    StartShutdown();
+                    break;
+                case SIGUSR1:
+                    OpenLog(PORTO_LOG);
+                    break;
+                case SIGUSR2:
+                    DumpMallocInfo();
+                    TContainer::DumpLocks();
+                    break;
+                case SIGCHLD:
+                    if (!TTask::Deliver(sigInfo.ssi_pid, sigInfo.ssi_code, sigInfo.ssi_status)) {
+                        TEvent e(EEventType::ChildExit);
+                        e.Exit.Pid = sigInfo.ssi_pid;
+                        e.Exit.Status = sigInfo.ssi_status;
+                        EventQueue->Add(0, e);
+                    }
+                    break;
+                default:
+                    L_WRN("Unexpected signal: {}", sigInfo.ssi_signo);
+                    break;
                 }
             } else if (source->Fd == PORTO_SK_FD) {
                 error = AcceptConnection(source->Fd);
@@ -373,7 +369,7 @@ static void ServerLoop() {
 
 exit:
 
-    for (auto c : Clients)
+    for (auto c: Clients)
         c.second->CloseConnection(true);
     Clients.clear();
     NeedStopHelpers = true;
@@ -420,15 +416,11 @@ static TError TuneLimits() {
      * one for each client
      * plus some extra
      */
-    int maxFd = config().container().max_total() * 2 +
-                NR_SUPERUSER_CONTAINERS * 2 +
-                (config().daemon().ro_threads() +
-                 config().daemon().rw_threads() +
-                 config().daemon().io_threads() +
-                 config().daemon().vl_threads()) * 10 +
-                config().daemon().max_clients() +
-                NR_SUPERUSER_CLIENTS +
-                1000;
+    int maxFd = config().container().max_total() * 2 + NR_SUPERUSER_CONTAINERS * 2 +
+                (config().daemon().ro_threads() + config().daemon().rw_threads() + config().daemon().io_threads() +
+                 config().daemon().vl_threads()) *
+                    10 +
+                config().daemon().max_clients() + NR_SUPERUSER_CLIENTS + 1000;
 
     L_SYS("Estimated portod file descriptor limit: {}", maxFd);
 
@@ -475,8 +467,8 @@ static TError CreateRootContainer() {
 
     uint64_t pids_max, threads_max;
     std::string str;
-    if (!GetSysctl("kernel.pid_max", str) && !StringToUint64(str, pids_max) &&
-            !GetSysctl("kernel.threads-max", str) && !StringToUint64(str, threads_max)) {
+    if (!GetSysctl("kernel.pid_max", str) && !StringToUint64(str, pids_max) && !GetSysctl("kernel.threads-max", str) &&
+        !StringToUint64(str, threads_max)) {
         uint64_t lim = std::min(pids_max, threads_max) / 2;
         L_SYS("Default nproc ulimit: {}", lim);
         RootContainer->Ulimit.Set(TUlimit::GetType("nproc"), lim, lim, false);
@@ -520,8 +512,7 @@ static void CleanupWorkdir() {
 
     for (auto &name: list) {
         auto it = Containers.find(name);
-        if (it != Containers.end() &&
-                it->second->State != EContainerState::Stopped)
+        if (it != Containers.end() && it->second->State != EContainerState::Stopped)
             continue;
         TPath path = temp / name;
         error = path.RemoveAll();
@@ -550,10 +541,11 @@ static void DestroyContainers(bool weak) {
     TVolume::DestroyUnlinked(unlinked);
 }
 
-
 static void NetLimitSoftInitialize() {
     if (config().network().network_limit_soft_bpf_elf_path().empty()) {
-        L_SYS("Setting up netlimit soft... no `network {{ network_limit_soft_bpf_elf_path: <value> }}` set in the portod config");
+        L_SYS(
+            "Setting up netlimit soft... no `network {{ network_limit_soft_bpf_elf_path: <value> }}` set in the portod "
+            "config");
         return;
     }
 
@@ -587,7 +579,7 @@ void PrepareServer() {
 
     ReadConfigs();
 
-    for (const auto &seccompProfile : config().container().seccomp_profiles()) {
+    for (const auto &seccompProfile: config().container().seccomp_profiles()) {
         TSeccompProfile p;
         auto error = p.Parse(seccompProfile.profile());
         if (error) {
@@ -605,14 +597,14 @@ void PrepareServer() {
     }
     RequestHandlingDelayMs = config().daemon().request_handling_delay_ms();
 
-    for (const auto &extraProp : config().container().extra_properties()) {
+    for (const auto &extraProp: config().container().extra_properties()) {
         ExtraProperty properties;
         properties.Filter = extraProp.filter();
 
-        for (const auto &prop : extraProp.properties()) {
+        for (const auto &prop: extraProp.properties()) {
             const auto &propName = prop.name();
             // the second condition allows checking indexed properties, e.g. capabilitiesj
-            if (SupportedExtraProperties.find(propName)                               == SupportedExtraProperties.end() &&
+            if (SupportedExtraProperties.find(propName) == SupportedExtraProperties.end() &&
                 SupportedExtraProperties.find(propName.substr(0, propName.find('['))) == SupportedExtraProperties.end())
             {
                 L_ERR("Extra property {} not supported", propName);
@@ -727,16 +719,15 @@ void PrepareServer() {
             FatalError("Cannot create tmp_dir", error);
     }
 
-
     NetLimitSoftInitialize();
 }
 
-class TRestoreWorker : public TWorker<TKeyValue*> {
+class TRestoreWorker: public TWorker<TKeyValue *> {
     std::atomic<size_t> WorkSize;
-    std::unordered_map< std::string, std::vector<TKeyValue*> > ChildMap;
+    std::unordered_map<std::string, std::vector<TKeyValue *>> ChildMap;
 
 protected:
-    bool Handle(TKeyValue*& node) override {
+    bool Handle(TKeyValue *&node) override {
         TClient client("<restore>");
         client.ClientContainer = RootContainer;
         client.StartRequest();
@@ -750,12 +741,11 @@ protected:
         }
         client.FinishRequest();
 
-
         // If k is not presented in map than map[k] is write operation.
         // Use find here to avoid write to map from multiple threads.
         auto it = ChildMap.find(node->Name);
         if (it != ChildMap.end()) {
-            for (auto child : it->second)
+            for (auto child: it->second)
                 Push(std::move(child));
         }
         if (!--WorkSize)
@@ -764,24 +754,25 @@ protected:
         return true;
     }
 
-    TKeyValue* Pop() override {
+    TKeyValue *Pop() override {
         auto node = Queue.front();
         Queue.pop();
         return node;
     }
 
 public:
-    TRestoreWorker(size_t workers, std::unordered_map< std::string, std::vector<TKeyValue*> > childMap)
+    TRestoreWorker(size_t workers, std::unordered_map<std::string, std::vector<TKeyValue *>> childMap)
         : TWorker("portod-RS", workers),
           WorkSize(0),
-          ChildMap(childMap) { }
+          ChildMap(childMap)
+    {}
 
     void Execute() {
         Start();
         Join();
     }
 
-    void Push(TKeyValue*&& node) override {
+    void Push(TKeyValue *&&node) override {
         ++WorkSize;
         TWorker::Push(std::move(node));
     }
@@ -795,15 +786,14 @@ static void RestoreContainers() {
     if (error)
         FatalError("Cannot list container kv", error);
 
-    for (auto node = nodes.begin(); node != nodes.end(); ) {
+    for (auto node = nodes.begin(); node != nodes.end();) {
         error = node->Load();
         if (!error) {
             if (!node->Has(P_RAW_ID))
                 error = TError("id not found");
             if (!node->Has(P_RAW_NAME))
                 error = TError("name not found");
-            if (!error && (StringToInt(node->Get(P_RAW_ID), node->Id) ||
-                           (node->Id > 3 && ids.GetAt(node->Id))))
+            if (!error && (StringToInt(node->Get(P_RAW_ID), node->Id) || (node->Id > 3 && ids.GetAt(node->Id))))
                 node->Id = 0;
         }
         if (error) {
@@ -817,9 +807,9 @@ static void RestoreContainers() {
         ++node;
     }
 
-    std::unordered_map< std::string, std::vector<TKeyValue*> > childMap;
+    std::unordered_map<std::string, std::vector<TKeyValue *>> childMap;
 
-    for (auto &node : nodes) {
+    for (auto &node: nodes) {
         if (node.Name[0] != '/' && !node.Id) {
             error = ids.Get(node.Id);
             if (!error) {
@@ -848,9 +838,9 @@ static void RestoreContainers() {
     if (slots.empty())
         return;
 
-    TRestoreWorker restoreQueue(std::max(1, get_nprocs()/4), childMap);
+    TRestoreWorker restoreQueue(std::max(1, get_nprocs() / 4), childMap);
 
-    for (auto node : slots) {
+    for (auto node: slots) {
         restoreQueue.Push(std::move(node));
     }
     restoreQueue.Execute();

@@ -1,26 +1,26 @@
 #include "util/cred.hpp"
+
+#include "common.hpp"
+#include "config.hpp"
 #include "util/log.hpp"
 #include "util/unix.hpp"
-#include "config.hpp"
-#include "common.hpp"
 
 extern "C" {
 #include <grp.h>
+#include <linux/capability.h>
+#include <linux/magic.h>
+#include <linux/securebits.h>
 #include <pwd.h>
-#include <unistd.h>
 #include <sys/prctl.h>
-#include <sys/syscall.h>
 #include <sys/statfs.h>
 #include <sys/statvfs.h>
-#include <linux/magic.h>
-#include <linux/capability.h>
-#include <linux/securebits.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 }
 
 gid_t PortoGroup;
 
-static size_t PwdBufSize = sysconf(_SC_GETPW_R_SIZE_MAX) > 0 ?
-                           sysconf(_SC_GETPW_R_SIZE_MAX) : 16384;
+static size_t PwdBufSize = sysconf(_SC_GETPW_R_SIZE_MAX) > 0 ? sysconf(_SC_GETPW_R_SIZE_MAX) : 16384;
 
 TError FindUser(const std::string &user, uid_t &uid, gid_t &gid) {
     struct passwd pwd, *ptr;
@@ -113,8 +113,7 @@ std::string UserName(uid_t uid) {
     return std::string(pwd.pw_name);
 }
 
-static size_t GrpBufSize = sysconf(_SC_GETGR_R_SIZE_MAX) > 0 ?
-                           sysconf(_SC_GETGR_R_SIZE_MAX) : 16384;
+static size_t GrpBufSize = sysconf(_SC_GETGR_R_SIZE_MAX) > 0 ? sysconf(_SC_GETGR_R_SIZE_MAX) : 16384;
 
 TError GroupId(const std::string &group, gid_t &gid) {
     struct group grp, *ptr;
@@ -384,55 +383,55 @@ void InitPortoGroups() {
 #endif
 
 #ifndef PR_CAP_AMBIENT
-#define PR_CAP_AMBIENT              47
-# define PR_CAP_AMBIENT_IS_SET      1
-# define PR_CAP_AMBIENT_RAISE       2
-# define PR_CAP_AMBIENT_LOWER       3
-# define PR_CAP_AMBIENT_CLEAR_ALL   4
+#define PR_CAP_AMBIENT           47
+#define PR_CAP_AMBIENT_IS_SET    1
+#define PR_CAP_AMBIENT_RAISE     2
+#define PR_CAP_AMBIENT_LOWER     3
+#define PR_CAP_AMBIENT_CLEAR_ALL 4
 #endif
 
 static const TFlagsNames CapNames = {
-    { BIT(CAP_CHOWN),              "CHOWN" },
-    { BIT(CAP_DAC_OVERRIDE),       "DAC_OVERRIDE" },
-    { BIT(CAP_DAC_READ_SEARCH),    "DAC_READ_SEARCH" },
-    { BIT(CAP_FOWNER),             "FOWNER" },
-    { BIT(CAP_FSETID),             "FSETID" },
-    { BIT(CAP_KILL),               "KILL" },
-    { BIT(CAP_SETGID),             "SETGID" },
-    { BIT(CAP_SETUID),             "SETUID" },
-    { BIT(CAP_SETPCAP),            "SETPCAP" },
-    { BIT(CAP_LINUX_IMMUTABLE),    "LINUX_IMMUTABLE" },
-    { BIT(CAP_NET_BIND_SERVICE),   "NET_BIND_SERVICE" },
-    { BIT(CAP_NET_BROADCAST),      "NET_BROADCAST" },
-    { BIT(CAP_NET_ADMIN),          "NET_ADMIN" },
-    { BIT(CAP_NET_RAW),            "NET_RAW" },
-    { BIT(CAP_IPC_LOCK),           "IPC_LOCK" },
-    { BIT(CAP_IPC_OWNER),          "IPC_OWNER" },
-    { BIT(CAP_SYS_MODULE),         "SYS_MODULE" },
-    { BIT(CAP_SYS_RAWIO),          "SYS_RAWIO" },
-    { BIT(CAP_SYS_CHROOT),         "SYS_CHROOT" },
-    { BIT(CAP_SYS_PTRACE),         "SYS_PTRACE" },
-    { BIT(CAP_SYS_PACCT),          "SYS_PACCT" },
-    { BIT(CAP_SYS_ADMIN),          "SYS_ADMIN" },
-    { BIT(CAP_SYS_BOOT),           "SYS_BOOT" },
-    { BIT(CAP_SYS_NICE),           "SYS_NICE" },
-    { BIT(CAP_SYS_RESOURCE),       "SYS_RESOURCE" },
-    { BIT(CAP_SYS_TIME),           "SYS_TIME" },
-    { BIT(CAP_SYS_TTY_CONFIG),     "SYS_TTY_CONFIG" },
-    { BIT(CAP_MKNOD),              "MKNOD" },
-    { BIT(CAP_LEASE),              "LEASE" },
-    { BIT(CAP_AUDIT_WRITE),        "AUDIT_WRITE" },
-    { BIT(CAP_AUDIT_CONTROL),      "AUDIT_CONTROL" },
-    { BIT(CAP_SETFCAP),            "SETFCAP" },
-    { BIT(CAP_MAC_OVERRIDE),       "MAC_OVERRIDE" },
-    { BIT(CAP_MAC_ADMIN),          "MAC_ADMIN" },
-    { BIT(CAP_SYSLOG),             "SYSLOG" },
-    { BIT(CAP_WAKE_ALARM),         "WAKE_ALARM" },
-    { BIT(CAP_BLOCK_SUSPEND),      "BLOCK_SUSPEND" },
-    { BIT(CAP_AUDIT_READ),         "AUDIT_READ" },
-    { BIT(CAP_PERFMON),            "PERFMON" },
-    { BIT(CAP_BPF),                "BPF" },
-    { BIT(CAP_CHECKPOINT_RESTORE), "CHECKPOINT_RESTORE" },
+    {BIT(CAP_CHOWN), "CHOWN"},
+    {BIT(CAP_DAC_OVERRIDE), "DAC_OVERRIDE"},
+    {BIT(CAP_DAC_READ_SEARCH), "DAC_READ_SEARCH"},
+    {BIT(CAP_FOWNER), "FOWNER"},
+    {BIT(CAP_FSETID), "FSETID"},
+    {BIT(CAP_KILL), "KILL"},
+    {BIT(CAP_SETGID), "SETGID"},
+    {BIT(CAP_SETUID), "SETUID"},
+    {BIT(CAP_SETPCAP), "SETPCAP"},
+    {BIT(CAP_LINUX_IMMUTABLE), "LINUX_IMMUTABLE"},
+    {BIT(CAP_NET_BIND_SERVICE), "NET_BIND_SERVICE"},
+    {BIT(CAP_NET_BROADCAST), "NET_BROADCAST"},
+    {BIT(CAP_NET_ADMIN), "NET_ADMIN"},
+    {BIT(CAP_NET_RAW), "NET_RAW"},
+    {BIT(CAP_IPC_LOCK), "IPC_LOCK"},
+    {BIT(CAP_IPC_OWNER), "IPC_OWNER"},
+    {BIT(CAP_SYS_MODULE), "SYS_MODULE"},
+    {BIT(CAP_SYS_RAWIO), "SYS_RAWIO"},
+    {BIT(CAP_SYS_CHROOT), "SYS_CHROOT"},
+    {BIT(CAP_SYS_PTRACE), "SYS_PTRACE"},
+    {BIT(CAP_SYS_PACCT), "SYS_PACCT"},
+    {BIT(CAP_SYS_ADMIN), "SYS_ADMIN"},
+    {BIT(CAP_SYS_BOOT), "SYS_BOOT"},
+    {BIT(CAP_SYS_NICE), "SYS_NICE"},
+    {BIT(CAP_SYS_RESOURCE), "SYS_RESOURCE"},
+    {BIT(CAP_SYS_TIME), "SYS_TIME"},
+    {BIT(CAP_SYS_TTY_CONFIG), "SYS_TTY_CONFIG"},
+    {BIT(CAP_MKNOD), "MKNOD"},
+    {BIT(CAP_LEASE), "LEASE"},
+    {BIT(CAP_AUDIT_WRITE), "AUDIT_WRITE"},
+    {BIT(CAP_AUDIT_CONTROL), "AUDIT_CONTROL"},
+    {BIT(CAP_SETFCAP), "SETFCAP"},
+    {BIT(CAP_MAC_OVERRIDE), "MAC_OVERRIDE"},
+    {BIT(CAP_MAC_ADMIN), "MAC_ADMIN"},
+    {BIT(CAP_SYSLOG), "SYSLOG"},
+    {BIT(CAP_WAKE_ALARM), "WAKE_ALARM"},
+    {BIT(CAP_BLOCK_SUSPEND), "BLOCK_SUSPEND"},
+    {BIT(CAP_AUDIT_READ), "AUDIT_READ"},
+    {BIT(CAP_PERFMON), "PERFMON"},
+    {BIT(CAP_BPF), "BPF"},
+    {BIT(CAP_CHECKPOINT_RESTORE), "CHECKPOINT_RESTORE"},
 };
 
 static int LastCapability;
@@ -489,9 +488,15 @@ TError TCapabilities::Get(pid_t pid, int type) {
         return TError::System("capget " + Format());
 
     switch (type) {
-        case 0: Permitted = data[0].effective | (uint64_t)data[1].effective << 32; break;
-        case 1: Permitted = data[0].permitted | (uint64_t)data[1].permitted << 32; break;
-        case 2: Permitted = data[0].inheritable | (uint64_t)data[1].inheritable << 32; break;
+    case 0:
+        Permitted = data[0].effective | (uint64_t)data[1].effective << 32;
+        break;
+    case 1:
+        Permitted = data[0].permitted | (uint64_t)data[1].permitted << 32;
+        break;
+    case 2:
+        Permitted = data[0].inheritable | (uint64_t)data[1].inheritable << 32;
+        break;
     }
 
     return OK;
@@ -537,15 +542,11 @@ TError TCapabilities::Apply(int mask) const {
 
 TError TCapabilities::ApplyLimit() const {
     for (int cap = 0; cap <= LastCapability; cap++) {
-        if (!(Permitted & BIT(cap)) && cap != CAP_SETPCAP &&
-                prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) < 0)
-            return TError(EError::Unknown, errno,
-                    "prctl(PR_CAPBSET_DROP, " + std::to_string(cap) + ")");
-
+        if (!(Permitted & BIT(cap)) && cap != CAP_SETPCAP && prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) < 0)
+            return TError(EError::Unknown, errno, "prctl(PR_CAPBSET_DROP, " + std::to_string(cap) + ")");
     }
 
-    if (!(Permitted & BIT(CAP_SETPCAP)) &&
-            prctl(PR_CAPBSET_DROP, CAP_SETPCAP, 0, 0, 0) < 0)
+    if (!(Permitted & BIT(CAP_SETPCAP)) && prctl(PR_CAPBSET_DROP, CAP_SETPCAP, 0, 0, 0) < 0)
         return TError::System("prctl(PR_CAPBSET_DROP, CAP_SETPCAP)");
 
     return OK;
@@ -562,13 +563,11 @@ TError TCapabilities::ApplyAmbient() const {
     for (int cap = 0; cap <= LastCapability; cap++) {
         if (Permitted & BIT(cap)) {
             if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, cap, 0, 0)) {
-                return TError(EError::Unknown, errno,
-                        "prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE)");
+                return TError(EError::Unknown, errno, "prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE)");
             }
         } else {
             if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, cap, 0, 0))
-                return TError(EError::Unknown, errno,
-                        "prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER)");
+                return TError(EError::Unknown, errno, "prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER)");
         }
     }
 
@@ -603,52 +602,29 @@ void InitCapabilities() {
             LastCapability = CAP_AUDIT_READ;
     }
 
-    HasAmbientCapabilities = prctl(PR_CAP_AMBIENT,
-                                   PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) == 0;
+    HasAmbientCapabilities = prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) == 0;
     NoCapabilities = 0;
     PortoInitCapabilities = BIT(CAP_KILL);
     AllCapabilities = BIT(LastCapability + 1) - 1;
 
     /* requires memory limit */
-    MemCgCapabilities =
-        BIT(CAP_IPC_LOCK);
+    MemCgCapabilities = BIT(CAP_IPC_LOCK);
 
     /* requires pid-namespace */
-    PidNsCapabilities =
-        BIT(CAP_KILL) |
-        BIT(CAP_SYS_PTRACE);
+    PidNsCapabilities = BIT(CAP_KILL) | BIT(CAP_SYS_PTRACE);
 
     /* requires net-namespace */
-    NetNsCapabilities =
-        BIT(CAP_NET_ADMIN);
+    NetNsCapabilities = BIT(CAP_NET_ADMIN);
 
     /* default set for CapLimit (previously ChrootCapBound) */
-    DefaultCapabilities =
-        MemCgCapabilities |
-        PidNsCapabilities |
-        NetNsCapabilities |
-        BIT(CAP_NET_BIND_SERVICE) |
-        BIT(CAP_NET_RAW) |
-        BIT(CAP_SETPCAP) |
-        BIT(CAP_SETFCAP) |
-        BIT(CAP_CHOWN) |
-        BIT(CAP_DAC_OVERRIDE) |
-        BIT(CAP_FOWNER) |
-        BIT(CAP_FSETID) |
-        BIT(CAP_SETGID) |
-        BIT(CAP_SETUID) |
-        BIT(CAP_SYS_CHROOT) |
-        BIT(CAP_MKNOD) |
-        BIT(CAP_AUDIT_WRITE);
+    DefaultCapabilities = MemCgCapabilities | PidNsCapabilities | NetNsCapabilities | BIT(CAP_NET_BIND_SERVICE) |
+                          BIT(CAP_NET_RAW) | BIT(CAP_SETPCAP) | BIT(CAP_SETFCAP) | BIT(CAP_CHOWN) |
+                          BIT(CAP_DAC_OVERRIDE) | BIT(CAP_FOWNER) | BIT(CAP_FSETID) | BIT(CAP_SETGID) |
+                          BIT(CAP_SETUID) | BIT(CAP_SYS_CHROOT) | BIT(CAP_MKNOD) | BIT(CAP_AUDIT_WRITE);
 
     /* root set (previously HostCapBound) */
-    RootCapabilities =
-        DefaultCapabilities |
-        BIT(CAP_SYS_ADMIN) |
-        BIT(CAP_SYS_NICE) |
-        BIT(CAP_LINUX_IMMUTABLE) |
-        BIT(CAP_SYS_BOOT) |
-        BIT(CAP_SYS_RESOURCE);
+    RootCapabilities = DefaultCapabilities | BIT(CAP_SYS_ADMIN) | BIT(CAP_SYS_NICE) | BIT(CAP_LINUX_IMMUTABLE) |
+                       BIT(CAP_SYS_BOOT) | BIT(CAP_SYS_RESOURCE);
 
     /* helper sets */
     HelperCapabilities = RootCapabilities & ~BIT(CAP_SYS_RESOURCE);
@@ -664,8 +640,7 @@ bool TFile::Access(const struct stat &st, const TCred &cred, enum AccessMode mod
     return cred.IsRootUser() || (st.st_mode & mask) == mask;
 }
 
-TError TFile::Access(const TPath &root, const TCred &cred,
-                     std::function<TError(const TCred&)> check) const {
+TError TFile::Access(const TPath &root, const TCred &cred, std::function<TError(const TCred &)> check) const {
     if (!root.IsRoot()) {
         /* Check that real path is inside chroot */
         auto path = RealPath();

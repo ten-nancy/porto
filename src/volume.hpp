@@ -1,14 +1,15 @@
 #pragma once
 
 #include <memory>
-#include <string>
-#include <set>
 #include <mutex>
+#include <set>
+#include <string>
+
 #include "common.hpp"
-#include "util/path.hpp"
+#include "storage.hpp"
 #include "util/log.hpp"
 #include "util/mutex.hpp"
-#include "storage.hpp"
+#include "util/path.hpp"
 
 constexpr const char *V_ID = "id";
 constexpr const char *V_PATH = "path";
@@ -75,9 +76,9 @@ public:
     TVolume *Volume;
     virtual TError Configure(void);
     virtual TError Restore(void);
-    virtual TError Build(void) =0;
-    virtual TError Destroy(void) =0;
-    virtual TError StatFS(TStatFS &result) =0;
+    virtual TError Build(void) = 0;
+    virtual TError Destroy(void) = 0;
+    virtual TError StatFS(TStatFS &result) = 0;
     virtual TError Resize(uint64_t space_limit, uint64_t inode_limit);
     virtual TError Check(std::string &message);
     virtual std::string ClaimPlace();
@@ -87,13 +88,16 @@ class TVolumeLink {
 public:
     std::shared_ptr<TVolume> Volume;
     std::shared_ptr<TContainer> Container;
-    TPath Target;           /* path in container namespace */
-    TPath HostTarget;       /* mounted path in host namespace */
+    TPath Target;     /* path in container namespace */
+    TPath HostTarget; /* mounted path in host namespace */
     bool ReadOnly = false;
     bool Required = false;
     bool Busy = false;
 
-    TVolumeLink(std::shared_ptr<TVolume> v, std::shared_ptr<TContainer> c) : Volume(v), Container(c) {
+    TVolumeLink(std::shared_ptr<TVolume> v, std::shared_ptr<TContainer> c)
+        : Volume(v),
+          Container(c)
+    {
         Statistics->VolumeLinks++;
     }
     ~TVolumeLink() {
@@ -101,9 +105,7 @@ public:
     }
 };
 
-class TVolume : public std::enable_shared_from_this<TVolume>,
-                public TNonCopyable {
-
+class TVolume: public std::enable_shared_from_this<TVolume>, public TNonCopyable {
     std::mutex InternalMutex;
     TError OpenBackend();
     void CacheQuotaFile();
@@ -124,7 +126,7 @@ public:
     TPath StoragePath;
     TFile StorageFd; /* during build */
     bool KeepStorage = false;
-    bool NeedCow = false; // MOO
+    bool NeedCow = false;  // MOO
 
     std::string BackendType;
     std::string Id;
@@ -174,8 +176,7 @@ public:
     static TError VerifyConfig(const TStringMap &cfg);
     static TError ParseConfig(const TStringMap &cfg, rpc::TVolumeSpec &spec);
 
-    static TError Create(const rpc::TVolumeSpec &spec,
-                         std::shared_ptr<TVolume> &volume);
+    static TError Create(const rpc::TVolumeSpec &spec, std::shared_ptr<TVolume> &volume);
 
     /* link target path */
     static std::shared_ptr<TVolumeLink> ResolveLinkLocked(const TPath &path);
@@ -219,22 +220,16 @@ public:
 
     TError MountLink(std::shared_ptr<TVolumeLink> link);
 
-    TError UmountLink(std::shared_ptr<TVolumeLink> link,
-                      std::list<std::shared_ptr<TVolume>> &unlinked,
+    TError UmountLink(std::shared_ptr<TVolumeLink> link, std::list<std::shared_ptr<TVolume>> &unlinked,
                       bool strict = false);
 
-    TError LinkVolume(std::shared_ptr<TContainer> container,
-                      const TPath &target = "",
-                      bool read_only = false,
+    TError LinkVolume(std::shared_ptr<TContainer> container, const TPath &target = "", bool read_only = false,
                       bool required = false);
 
-    TError UnlinkVolume(std::shared_ptr<TContainer> container,
-                        const TPath &target,
-                        std::list<std::shared_ptr<TVolume>> &unlinked,
-                        bool strict = false);
+    TError UnlinkVolume(std::shared_ptr<TContainer> container, const TPath &target,
+                        std::list<std::shared_ptr<TVolume>> &unlinked, bool strict = false);
 
-    static void UnlinkAllVolumes(std::shared_ptr<TContainer> container,
-                                 std::list<std::shared_ptr<TVolume>> &unlinked);
+    static void UnlinkAllVolumes(std::shared_ptr<TContainer> container, std::list<std::shared_ptr<TVolume>> &unlinked);
     static void DestroyUnlinked(std::list<std::shared_ptr<TVolume>> &unlinked);
 
     static TError CheckRequired(TContainer &ct);
@@ -265,13 +260,8 @@ public:
 
     /* They do not keep data in StoragePath */
     bool RemoteStorage(void) const {
-        return BackendType == "rbd" ||
-               BackendType == "nbd" ||
-               BackendType == "lvm" ||
-               BackendType == "tmpfs" ||
-               BackendType == "hugetmpfs" ||
-               BackendType == "dir" ||
-               BackendType == "quota";
+        return BackendType == "rbd" || BackendType == "nbd" || BackendType == "lvm" || BackendType == "tmpfs" ||
+               BackendType == "hugetmpfs" || BackendType == "dir" || BackendType == "quota";
     }
 
     bool Ephemeral(void) const {
@@ -284,10 +274,8 @@ public:
     }
 
     bool BindFileStorage(void) const {
-        return BackendType == "bind" && (StoragePath.IsRegularFollow() ||
-                StoragePath.IsSocketFollow() ||
-                StoragePath.IsCharFollow() ||
-                StoragePath.IsBlockFollow());
+        return BackendType == "bind" && (StoragePath.IsRegularFollow() || StoragePath.IsSocketFollow() ||
+                                         StoragePath.IsCharFollow() || StoragePath.IsBlockFollow());
     }
 
     bool HaveLayers(void) const {
@@ -303,8 +291,7 @@ public:
         return std::unique_lock<std::mutex>(InternalMutex);
     }
 
-    friend bool operator<(const std::shared_ptr<TVolume> &lhs,
-                          const std::shared_ptr<TVolume> &rhs) {
+    friend bool operator<(const std::shared_ptr<TVolume> &lhs, const std::shared_ptr<TVolume> &rhs) {
         return lhs->Path < rhs->Path;
     }
 };

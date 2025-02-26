@@ -1,37 +1,38 @@
-#include <string>
-#include <sstream>
-#include <algorithm>
-#include <iomanip>
-#include <chrono>
-
-#include "util/string.hpp"
-#include "util/cred.hpp"
-#include "util/path.hpp"
-#include "util/log.hpp"
-#include "util/proc.hpp"
 #include "unix.hpp"
 
+#include <algorithm>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <string>
+
+#include "util/cred.hpp"
+#include "util/log.hpp"
+#include "util/path.hpp"
+#include "util/proc.hpp"
+#include "util/string.hpp"
+
 extern "C" {
-#include <malloc.h>
-#include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
-#include <time.h>
-#include <string.h>
-#include <sys/sysinfo.h>
-#include <sys/prctl.h>
-#include <poll.h>
-#include <linux/capability.h>
-#include <sys/syscall.h>
 #include <fcntl.h>
-#include <sys/wait.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/ioctl.h>
+#include <linux/capability.h>
 #include <linux/fs.h>
+#include <malloc.h>
+#include <poll.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/prctl.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <sys/sysinfo.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
 }
 
 #ifndef PR_SET_DUMPABLE_INIT_NS
@@ -47,7 +48,9 @@ uint64_t TaskHandledSignals(pid_t pid) {
     file = fopen(path.c_str(), "r");
     if (!file)
         return 0;
-    res = fscanf(file, "%*d (%*[^)]) %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %*u %*u %*d %*d %*d %*d %*d %*d %*u %*u %*d %*u %*u %*u %*u %*u %*u %*u %*u %*u %lu", &mask);
+    res = fscanf(file,
+                 "%*d (%*[^)]) %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %*u %*u %*d %*d %*d %*d %*d %*d %*u %*u %*d "
+                 "%*u %*u %*u %*u %*u %*u %*u %*u %*u %lu", &mask);
     fclose(file);
     return res == 1 ? mask : 0;
 }
@@ -85,8 +88,7 @@ TError GetTaskChildrens(pid_t pid, std::vector<pid_t> &childrens) {
         goto full_scan;
 
     while ((de = readdir(dir))) {
-        file = fopen(("/proc/" + std::to_string(pid) + "/task/" +
-                      std::string(de->d_name) + "/children").c_str(), "r");
+        file = fopen(("/proc/" + std::to_string(pid) + "/task/" + std::string(de->d_name) + "/children").c_str(), "r");
         if (!file) {
             if (atoi(de->d_name) != pid)
                 continue;
@@ -112,8 +114,7 @@ full_scan:
         if (!file)
             continue;
 
-        if (fscanf(file, "%d (%*[^)]) %*c %d", &child_pid, &parent_pid) == 2 &&
-                parent_pid == pid)
+        if (fscanf(file, "%d (%*[^)]) %*c %d", &child_pid, &parent_pid) == 2 && parent_pid == pid)
             childrens.push_back(child_pid);
         fclose(file);
     }
@@ -216,7 +217,7 @@ TError GetTaskCgroups(const int pid, std::map<std::string, std::string> &cgmap) 
         return error;
 
     std::vector<std::string> tokens;
-    for (auto l : lines) {
+    for (auto l: lines) {
         tokens = SplitString(l, ':', 3);
         if (tokens.size() > 2)
             cgmap[tokens[1]] = tokens[2];
@@ -252,9 +253,8 @@ TError SetCoredumpFilter(uint32_t value) {
 
 std::string FormatExitStatus(int status) {
     if (WIFSIGNALED(status))
-        return StringFormat("exit signal: %d (%s)%s", WTERMSIG(status),
-                            strsignal(WTERMSIG(status)),
-                            WCOREDUMP(status) ? " (Core dumped)": "");
+        return StringFormat("exit signal: %d (%s)%s", WTERMSIG(status), strsignal(WTERMSIG(status)),
+                            WCOREDUMP(status) ? " (Core dumped)" : "");
     return StringFormat("exit code: %d", WEXITSTATUS(status));
 }
 
@@ -283,13 +283,13 @@ void DumpMallocInfo() {
     L("Total non-mapped bytes (arena):\t{}", mi.arena);
     L("# of free chunks (ordblks):\t{}", mi.ordblks);
     L("# of free fastbin blocks (smblks):\t{}", mi.smblks);
-    L("# of mapped regions (hblks):\t{}",  mi.hblks);
-    L("Bytes in mapped regions (hblkhd):\t{}",  mi.hblkhd);
-    L("Max. total allocated space (usmblks):\t{}",  mi.usmblks);
-    L("Free bytes held in fastbins (fsmblks):\t{}",  mi.fsmblks);
-    L("Total allocated space (uordblks):\t{}",  mi.uordblks);
-    L("Total free space (fordblks):\t{}",  mi.fordblks);
-    L("Topmost releasable block (keepcost):\t{}",  mi.keepcost);
+    L("# of mapped regions (hblks):\t{}", mi.hblks);
+    L("Bytes in mapped regions (hblkhd):\t{}", mi.hblkhd);
+    L("Max. total allocated space (usmblks):\t{}", mi.usmblks);
+    L("Free bytes held in fastbins (fsmblks):\t{}", mi.fsmblks);
+    L("Total allocated space (uordblks):\t{}", mi.uordblks);
+    L("Total free space (fordblks):\t{}", mi.fordblks);
+    L("Topmost releasable block (keepcost):\t{}", mi.keepcost);
 }
 
 void TUnixSocket::Close() {
@@ -303,7 +303,7 @@ void TUnixSocket::operator=(int sock) {
     SockFd = sock;
 }
 
-TUnixSocket& TUnixSocket::operator=(TUnixSocket&& Sock) {
+TUnixSocket &TUnixSocket::operator=(TUnixSocket &&Sock) {
     Close();
     SockFd = Sock.SockFd;
     Sock.SockFd = -1;
@@ -455,7 +455,7 @@ TError TUnixSocket::SendFd(int fd) const {
     cmsg->cmsg_level = SOL_SOCKET;
     cmsg->cmsg_type = SCM_RIGHTS;
     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-    *((int*)CMSG_DATA(cmsg)) = fd;
+    *((int *)CMSG_DATA(cmsg)) = fd;
 
     ssize_t ret = sendmsg(SockFd, &msghdr, 0);
 
@@ -495,12 +495,9 @@ TError TUnixSocket::RecvFd(int &fd) const {
     if (ret != sizeof(data))
         return TError("partial recvmsg: {}", ret);
 
-    for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msghdr); cmsg;
-         cmsg = CMSG_NXTHDR(&msghdr, cmsg)) {
-
-        if ((cmsg->cmsg_level == SOL_SOCKET) &&
-            (cmsg->cmsg_type == SCM_RIGHTS)) {
-            fd = *((int*) CMSG_DATA(cmsg));
+    for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msghdr); cmsg; cmsg = CMSG_NXTHDR(&msghdr, cmsg)) {
+        if ((cmsg->cmsg_level == SOL_SOCKET) && (cmsg->cmsg_type == SCM_RIGHTS)) {
+            fd = *((int *)CMSG_DATA(cmsg));
             return OK;
         }
     }
@@ -551,7 +548,6 @@ TError SetSysctlAt(const TFile &proc_sys, const std::string &name, const std::st
 
     return file.WriteAll(value);
 }
-
 
 bool PostFork = false;
 time_t ForkTime;

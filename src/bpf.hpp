@@ -1,10 +1,10 @@
 #pragma once
 
 #include <array>
-#include <vector>
 #include <string>
-#include <utility>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "common.hpp"
 #include "util/error.hpp"
@@ -13,16 +13,18 @@
 struct bpf_prog_info;
 struct bpf_map_info;
 
-class TBpfObject : public TNonCopyable {
+class TBpfObject: public TNonCopyable {
 public:
     uint32_t Id;
     TFile File;
 
-    TBpfObject() : Id(0) { }
+    TBpfObject()
+        : Id(0)
+    {}
 
     virtual ~TBpfObject() = default;
 
-    TBpfObject(TBpfObject&& other) noexcept {
+    TBpfObject(TBpfObject &&other) noexcept {
         Id = other.Id;
         File.Close();
         File.SetFd = other.File.Fd;
@@ -30,7 +32,7 @@ public:
         other.File.SetFd = -1;
     }
 
-    TBpfObject& operator=(TBpfObject&& other) noexcept {
+    TBpfObject &operator=(TBpfObject &&other) noexcept {
         Id = other.Id;
         File.Close();
         File.SetFd = other.File.Fd;
@@ -40,7 +42,7 @@ public:
     }
 };
 
-class TBpfMap : public TBpfObject {
+class TBpfMap: public TBpfObject {
 public:
     using TBufferView = std::pair<const void *, const uint32_t>;
     using TMutableBufferView = std::pair<void *, const uint32_t>;
@@ -63,7 +65,7 @@ public:
     TError Get(TBufferView key, TMutableBufferView value);
     TError Del(TBufferView key);
 
-    template<typename TKey, typename TValue>
+    template <typename TKey, typename TValue>
     TError Set(const TKey &key, const TValue &value) {
         static_assert(std::is_standard_layout<TKey>::value, "Key must be a standard-layout type");
         static_assert(std::is_standard_layout<TValue>::value, "Value must be a standard-layout type");
@@ -72,7 +74,7 @@ public:
         return Set(k, v);
     }
 
-    template<typename TKey, typename TValue>
+    template <typename TKey, typename TValue>
     TError Get(const TKey &key, TValue &value) {
         static_assert(std::is_standard_layout<TKey>::value, "Key must be a standard-layout type");
         static_assert(std::is_standard_layout<TValue>::value, "Value must be a standard-layout type");
@@ -81,7 +83,7 @@ public:
         return Get(k, v);
     }
 
-    template<typename TKey>
+    template <typename TKey>
     TError Del(const TKey &key) {
         static_assert(std::is_standard_layout<TKey>::value, "Key must be a standard-layout type");
         TBufferView k(reinterpret_cast<const void *>(&key), sizeof(TKey));
@@ -92,7 +94,7 @@ private:
     TError Prepare();
 };
 
-class TBpfProgram : public TBpfObject {
+class TBpfProgram: public TBpfObject {
 public:
     std::string Name;
     std::array<uint8_t, 8> Tag;
@@ -110,4 +112,3 @@ public:
 private:
     TError Prepare();
 };
-

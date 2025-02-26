@@ -15,20 +15,32 @@ constexpr int EPOLL_EVENT_OOM = 1;
 class TContainer;
 class TEpollLoop;
 
-class TEpollSource : public TNonCopyable {
+class TEpollSource: public TNonCopyable {
 public:
     int Fd;
     int Flags;
     uint32_t Events = EPOLLIN | EPOLLHUP;
     std::weak_ptr<TContainer> Container;
 
-    TEpollSource(int fd, int flags, uint32_t events, std::weak_ptr<TContainer> container) :
-        Fd(fd), Flags(flags), Events(events), Container(container) {}
-    TEpollSource(int fd) : Fd(fd), Flags(0), Container() {}
-    TEpollSource() : Fd(-1), Flags(0), Container() {}
+    TEpollSource(int fd, int flags, uint32_t events, std::weak_ptr<TContainer> container)
+        : Fd(fd),
+          Flags(flags),
+          Events(events),
+          Container(container)
+    {}
+    TEpollSource(int fd)
+        : Fd(fd),
+          Flags(0),
+          Container()
+    {}
+    TEpollSource()
+        : Fd(-1),
+          Flags(0),
+          Container()
+    {}
 };
 
-class TEpollLoop : public TLockable, public TNonCopyable {
+class TEpollLoop: public TLockable, public TNonCopyable {
     int EpollFd = -1;
 
     size_t MaxEvents = 0;
