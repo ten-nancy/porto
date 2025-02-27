@@ -165,11 +165,10 @@ TError TNetLimitSoftOfNet::BakeBpfProgCode(uint64_t key, std::vector<uint8_t> &p
         replaces++;
     }
 
-    if (replaces != 2)
+    if (replaces == 0)
         return TError(EError::Unknown,
                       "Failed to set network soft limit in TNetLimitSoftOfNet::BakeBpfProgCode({}) -- there should be "
-                      "exactly two places of 0xDEADBEEFCAFEBABE to be replaced with key but there are {}", key,
-                      replaces);
+                      "some places with 0xDEADBEEFCAFEBABE to be replaced with key but there are none", key);
 
     return OK;
 }

@@ -904,8 +904,8 @@ TError TNetwork::SetupShaper(TNetDevice &dev) {
 
     error = SetupNetLimitSoftInterface(dev.Index);
     if (error) {
-        L_ERR("Cannot setup network soft limit: {}", error);
-        return error;
+        L_ERR("Cannot setup network soft limit: {}, proceeding without", error);
+        // not that fatal of error to warrant failing container setup, so no "return error"
     }
 
     return OK;
