@@ -626,6 +626,10 @@ public:
 
 class TCgroupDriver: public TNonCopyable {
     bool Cgroup2Hierarchy = false;
+    bool Initialized = false;
+
+    TError InitializeCgroups();
+    TError InitializeDaemonCgroups();
 
 public:
     // constructors and destructor
@@ -653,9 +657,10 @@ public:
 
     uint64_t DefaultControllers;
 
-    TError InitializeCgroups();
-    TError InitializeDaemonCgroups();
     bool UseCgroup2() const;
+    bool IsInitialized() const;
+
+    TError Initialize();
     void CleanupCgroups();
 
     TError CgroupSubtree(const TCgroup &cg, std::list<std::unique_ptr<const TCgroup>> &cgroups, bool all = false) const;

@@ -652,13 +652,9 @@ void PrepareServer() {
     if (error)
         FatalError("Can't adjust OOM score", error);
 
-    error = CgroupDriver.InitializeCgroups();
+    error = CgroupDriver.Initialize();
     if (error)
-        FatalError("Cannot initalize cgroups", error);
-
-    error = CgroupDriver.InitializeDaemonCgroups();
-    if (error)
-        FatalError("Cannot initalize daemon cgroups", error);
+        FatalError("Cannot initalize cgroup driver", error);
 
     InitContainerProperties();
     TStorage::Init();

@@ -2313,42 +2313,6 @@ TError TSystemdSubsystem::InitializeSubsystem() {
 
 // Cgroup Driver
 
-TCgroupDriver::TCgroupDriver() {
-    MemorySubsystem = std::unique_ptr<TMemorySubsystem>(new TMemorySubsystem());
-    FreezerSubsystem = std::unique_ptr<TFreezerSubsystem>(new TFreezerSubsystem());
-    CpuSubsystem = std::unique_ptr<TCpuSubsystem>(new TCpuSubsystem());
-    CpuacctSubsystem = std::unique_ptr<TCpuacctSubsystem>(new TCpuacctSubsystem());
-    CpusetSubsystem = std::unique_ptr<TCpusetSubsystem>(new TCpusetSubsystem());
-    NetclsSubsystem = std::unique_ptr<TNetclsSubsystem>(new TNetclsSubsystem());
-    BlkioSubsystem = std::unique_ptr<TBlkioSubsystem>(new TBlkioSubsystem());
-    DevicesSubsystem = std::unique_ptr<TDevicesSubsystem>(new TDevicesSubsystem());
-    HugetlbSubsystem = std::unique_ptr<THugetlbSubsystem>(new THugetlbSubsystem());
-    PidsSubsystem = std::unique_ptr<TPidsSubsystem>(new TPidsSubsystem());
-    PerfSubsystem = std::unique_ptr<TPerfSubsystem>(new TPerfSubsystem());
-    SystemdSubsystem = std::unique_ptr<TSystemdSubsystem>(new TSystemdSubsystem());
-    Cgroup2Subsystem = std::unique_ptr<TCgroup2Subsystem>(new TCgroup2Subsystem());
-
-    AllSubsystems.push_back(MemorySubsystem.get());
-    AllSubsystems.push_back(FreezerSubsystem.get());
-    AllSubsystems.push_back(CpuSubsystem.get());
-    AllSubsystems.push_back(CpuacctSubsystem.get());
-    AllSubsystems.push_back(CpusetSubsystem.get());
-    AllSubsystems.push_back(NetclsSubsystem.get());
-    AllSubsystems.push_back(BlkioSubsystem.get());
-    AllSubsystems.push_back(DevicesSubsystem.get());
-    AllSubsystems.push_back(HugetlbSubsystem.get());
-    AllSubsystems.push_back(PidsSubsystem.get());
-    AllSubsystems.push_back(PerfSubsystem.get());
-    AllSubsystems.push_back(SystemdSubsystem.get());
-    AllSubsystems.push_back(Cgroup2Subsystem.get());
-
-    Cgroup2Subsystems.push_back(MemorySubsystem.get());
-    Cgroup2Subsystems.push_back(CpuSubsystem.get());
-    Cgroup2Subsystems.push_back(CpusetSubsystem.get());
-    Cgroup2Subsystems.push_back(BlkioSubsystem.get());
-    Cgroup2Subsystems.push_back(PidsSubsystem.get());
-}
-
 TError TCgroupDriver::InitializeCgroups() {
     TPath root("/sys/fs/cgroup");
     std::vector<TMount> mounts;
@@ -2583,8 +2547,64 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
     return OK;
 }
 
+TCgroupDriver::TCgroupDriver() {
+    MemorySubsystem = std::unique_ptr<TMemorySubsystem>(new TMemorySubsystem());
+    FreezerSubsystem = std::unique_ptr<TFreezerSubsystem>(new TFreezerSubsystem());
+    CpuSubsystem = std::unique_ptr<TCpuSubsystem>(new TCpuSubsystem());
+    CpuacctSubsystem = std::unique_ptr<TCpuacctSubsystem>(new TCpuacctSubsystem());
+    CpusetSubsystem = std::unique_ptr<TCpusetSubsystem>(new TCpusetSubsystem());
+    NetclsSubsystem = std::unique_ptr<TNetclsSubsystem>(new TNetclsSubsystem());
+    BlkioSubsystem = std::unique_ptr<TBlkioSubsystem>(new TBlkioSubsystem());
+    DevicesSubsystem = std::unique_ptr<TDevicesSubsystem>(new TDevicesSubsystem());
+    HugetlbSubsystem = std::unique_ptr<THugetlbSubsystem>(new THugetlbSubsystem());
+    PidsSubsystem = std::unique_ptr<TPidsSubsystem>(new TPidsSubsystem());
+    PerfSubsystem = std::unique_ptr<TPerfSubsystem>(new TPerfSubsystem());
+    SystemdSubsystem = std::unique_ptr<TSystemdSubsystem>(new TSystemdSubsystem());
+    Cgroup2Subsystem = std::unique_ptr<TCgroup2Subsystem>(new TCgroup2Subsystem());
+
+    AllSubsystems.push_back(MemorySubsystem.get());
+    AllSubsystems.push_back(FreezerSubsystem.get());
+    AllSubsystems.push_back(CpuSubsystem.get());
+    AllSubsystems.push_back(CpuacctSubsystem.get());
+    AllSubsystems.push_back(CpusetSubsystem.get());
+    AllSubsystems.push_back(NetclsSubsystem.get());
+    AllSubsystems.push_back(BlkioSubsystem.get());
+    AllSubsystems.push_back(DevicesSubsystem.get());
+    AllSubsystems.push_back(HugetlbSubsystem.get());
+    AllSubsystems.push_back(PidsSubsystem.get());
+    AllSubsystems.push_back(PerfSubsystem.get());
+    AllSubsystems.push_back(SystemdSubsystem.get());
+    AllSubsystems.push_back(Cgroup2Subsystem.get());
+
+    Cgroup2Subsystems.push_back(MemorySubsystem.get());
+    Cgroup2Subsystems.push_back(CpuSubsystem.get());
+    Cgroup2Subsystems.push_back(CpusetSubsystem.get());
+    Cgroup2Subsystems.push_back(BlkioSubsystem.get());
+    Cgroup2Subsystems.push_back(PidsSubsystem.get());
+}
+
 bool TCgroupDriver::UseCgroup2() const {
     return Cgroup2Hierarchy;
+}
+
+bool TCgroupDriver::IsInitialized() const {
+    return Initialized;
+}
+
+TError TCgroupDriver::Initialize() {
+    TError error;
+
+    error = CgroupDriver.InitializeCgroups();
+    if (error)
+        return TError("Cannot initialize cgroups: {}", error);
+
+    error = CgroupDriver.InitializeDaemonCgroups();
+    if (error)
+        return TError("Cannot initialize daemon cgroups: {}", error);
+
+    Initialized = true;
+
+    return OK;
 }
 
 void TCgroupDriver::CleanupCgroups() {
