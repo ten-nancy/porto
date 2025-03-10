@@ -1461,6 +1461,9 @@ TError TContainer::ApplySchedPolicy() {
     int schedPolicy = ExtSchedIdle ? SCHED_OTHER : SchedPolicy;
     taskAffinity.FillCpuSet(&taskMask);
 
+    int retries = 0;
+    const int MAX_RETRIES = 10;
+
     do {
         error = cg->GetTasks(pids);
         retry = false;
@@ -1484,15 +1487,21 @@ TError TContainer::ApplySchedPolicy() {
                 // some io uring threads do not allow changing affinity
                 // TODO(ovov): remove this after fixes in kernel
                 std::string comm;
-                auto error = TPath("/proc/{}/comm").ReadAll(comm);
+                auto error = TPath(fmt::format("/proc/{}/comm", pid)).ReadAll(comm);
                 if (error.Errno != ESRCH && error.Errno != ENOENT && !StringStartsWith(comm, "iou-"))
                     return TError::System("sched_setaffinity({}, {})", pid, comm, taskAffinity.Format());
+                continue;
             }
-
             retry = true;
         }
+        if (retry)
+            ++retries;
         prev = pids;
-    } while (retry);
+    } while (retry && retries < MAX_RETRIES);
+
+    if (retries >= MAX_RETRIES) {
+        return TError::System("failed to restore container affinity in {} tries", retries);
+    }
 
     return OK;
 }
