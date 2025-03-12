@@ -2310,6 +2310,9 @@ void TNetwork::UpdateNetSoftLimitStats() {
         if (net->NetUsers.empty() || net->IsHost())
             continue;
 
+        if (net->NetLimitSoftValue == 0)
+            continue;
+
         auto pprog = net->NetLimitSoftProgram;
         if (!pprog)
             continue;
