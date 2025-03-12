@@ -1417,11 +1417,19 @@ void TContainer::ChooseSchedPolicy() {
 }
 
 // check that srcset1 is subset of srcset2
-static bool CPU_SUBSET(cpu_set_t *srcset1, cpu_set_t *srcset2)
-{
+static bool CPU_SUBSET(cpu_set_t *srcset1, cpu_set_t *srcset2) {
     cpu_set_t tmp;
     CPU_AND(&tmp, srcset1, srcset2);
     return CPU_EQUAL(&tmp, srcset1);
+}
+
+// TODO(ovov): crutch, remove it
+static bool SkipIoUringThread(int pid) {
+    std::string comm;
+    auto error = TPath(fmt::format("/proc/{}/comm", pid)).ReadAll(comm);
+    if (error.Errno != ESRCH && error.Errno != ENOENT && !StringStartsWith(comm, "iou-"))
+        return false;
+    return true;
 }
 
 TError TContainer::ApplySchedPolicy() {
@@ -1461,9 +1469,6 @@ TError TContainer::ApplySchedPolicy() {
     int schedPolicy = ExtSchedIdle ? SCHED_OTHER : SchedPolicy;
     taskAffinity.FillCpuSet(&taskMask);
 
-    int retries = 0;
-    const int MAX_RETRIES = 10;
-
     do {
         error = cg->GetTasks(pids);
         retry = false;
@@ -1472,9 +1477,12 @@ TError TContainer::ApplySchedPolicy() {
             cpu_set_t current;
 
             if (std::find(prev.begin(), prev.end(), pid) != prev.end()) {
+                // some io uring threads do not allow changing affinity
+                // TODO(ovov): remove this after fixes in kernel
                 if (!sched_getaffinity(pid, sizeof(current), &current) &&
                     // PORTO-993#627a4d9fcd10ac4784266ff7
-                    CPU_SUBSET(&current, &taskMask) && sched_getscheduler(pid) == schedPolicy) {
+                    (CPU_SUBSET(&current, &taskMask) || SkipIoUringThread(pid)) &&
+                    sched_getscheduler(pid) == schedPolicy) {
                     continue;
                 }
             }
@@ -1483,25 +1491,12 @@ TError TContainer::ApplySchedPolicy() {
                 return TError::System("setpriority");
             if (sched_setscheduler(pid, schedPolicy, &param) && errno != ESRCH)
                 return TError::System("sched_setscheduler");
-            if (sched_setaffinity(pid, sizeof(taskMask), &taskMask) && errno != ESRCH) {
-                // some io uring threads do not allow changing affinity
-                // TODO(ovov): remove this after fixes in kernel
-                std::string comm;
-                auto error = TPath(fmt::format("/proc/{}/comm", pid)).ReadAll(comm);
-                if (error.Errno != ESRCH && error.Errno != ENOENT && !StringStartsWith(comm, "iou-"))
-                    return TError::System("sched_setaffinity({}, {})", pid, comm, taskAffinity.Format());
-                continue;
-            }
+            if (sched_setaffinity(pid, sizeof(taskMask), &taskMask) && errno != ESRCH && !SkipIoUringThread(pid))
+                return TError::System("sched_setaffinity({}, {})", pid, taskAffinity.Format());
             retry = true;
         }
-        if (retry)
-            ++retries;
         prev = pids;
-    } while (retry && retries < MAX_RETRIES);
-
-    if (retries >= MAX_RETRIES) {
-        return TError::System("failed to restore container affinity in {} tries", retries);
-    }
+    } while (retry);
 
     return OK;
 }
