@@ -132,7 +132,7 @@ static void DefaultConfig() {
     container->set_use_os_mode_cgroupns(false);
     container->set_enable_rw_cgroupfs(false);
 
-    container->set_enable_docker_mode(false);
+    container->set_enable_docker_mode(false);  // deprecated
 
     container->set_min_memory_limit(1ull << 20); /* 1Mb */
 

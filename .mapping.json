@@ -267,7 +267,6 @@
   "test/test-devices.py":"infra/porto/porto/test/test-devices.py",
   "test/test-dirty-limit.py":"infra/porto/porto/test/test-dirty-limit.py",
   "test/test-docker-images.py":"infra/porto/porto/test/test-docker-images.py",
-  "test/test-docker.py":"infra/porto/porto/test/test-docker.py",
   "test/test-extra_properties.py":"infra/porto/porto/test/test-extra_properties.py",
   "test/test-freezer.py":"infra/porto/porto/test/test-freezer.py",
   "test/test-hijack.py":"infra/porto/porto/test/test-hijack.py",

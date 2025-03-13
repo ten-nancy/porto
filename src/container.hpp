@@ -175,7 +175,6 @@ public:
     bool OsMode = false;   /* Start as init process */
     bool HostMode = false; /* Preserve host capabilites */
     bool JobMode = false;  /* Process group */
-    bool DockerMode = false;
     bool UserNs = false;
     TCred UserNsCred;
     bool UnshareOnExec = false;

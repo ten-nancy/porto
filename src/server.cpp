@@ -53,7 +53,6 @@ std::atomic_bool NeedStopHelpers(false);
 bool SupportCgroupNs = false;
 bool EnableOsModeCgroupNs = false;
 bool EnableRwCgroupFs = false;
-bool EnableDockerMode = false;
 uint32_t RequestHandlingDelayMs = 0;
 
 TNetLimitSoft NetLimitSoft;
@@ -593,7 +592,6 @@ void PrepareServer() {
     if (SupportCgroupNs) {
         EnableRwCgroupFs = config().container().enable_rw_cgroupfs();
         EnableOsModeCgroupNs = EnableRwCgroupFs || config().container().use_os_mode_cgroupns();
-        EnableDockerMode = config().container().enable_docker_mode() && EnableOsModeCgroupNs;
     }
     RequestHandlingDelayMs = config().daemon().request_handling_delay_ms();
 
@@ -654,7 +652,7 @@ void PrepareServer() {
 
     error = CgroupDriver.Initialize();
     if (error)
-        FatalError("Cannot initalize cgroup driver", error);
+        FatalError("Cannot initalize cgroup driver: {}", error);
 
     InitContainerProperties();
     TStorage::Init();

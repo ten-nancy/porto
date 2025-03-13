@@ -78,8 +78,6 @@ static std::vector<unsigned>
 
 static TError CommitSubtreeCpus(const TCgroup &root, std::list<std::shared_ptr<TContainer>> &subtree);
 
-extern bool EnableDockerMode;
-
 /* return true if index specified for property */
 static bool ParsePropertyName(std::string &name, std::string &idx) {
     if (name.size() && name.back() == ']') {
@@ -2662,8 +2660,7 @@ TError TContainer::ApplyDeviceConf() {
 
     TDevices devices = EffectiveDevices();
 
-    // Case for DockerMode is dirty-dirty hack
-    bool unrestricted = HostMode || (EnableDockerMode && TaskCred.IsRootUser());
+    bool unrestricted = HostMode;
     if ((Controllers & CGROUP_DEVICES) && !unrestricted) {
         auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.DevicesSubsystem.get());
         auto error = devices.Apply(*cg);
@@ -2789,8 +2786,8 @@ TError TContainer::PrepareCgroups(bool onRestore) {
     }
 
     if ((Controllers & CGROUP_DEVICES) && !onRestore) {
-        // Case for DockerMode and OsMode+Root is dirty-dirty hack
-        bool unrestricted = HostMode || (EnableDockerMode && TaskCred.IsRootUser());
+        // Case for OsMode+Root is dirty-dirty hack
+        bool unrestricted = HostMode;
         if (!unrestricted) {
             auto devcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.DevicesSubsystem.get());
             // We need to reset a *:* rwm before its too late:
@@ -3302,10 +3299,8 @@ TError TContainer::PrepareStart() {
     if (HasProp(EProperty::USERNS)) {
         if (UserNs && (HostMode || JobMode))
             return TError(EError::InvalidValue, "userns=true incompatible with virt_mode");
-        else if (!UserNs && DockerMode)
-            return TError(EError::InvalidValue, "userns=false incompatible with virt_mode");
         // TODO: perhaps remove Fuse here later
-    } else if (DockerMode || Fuse) {
+    } else if (Fuse) {
         LockStateWrite();
         UserNs = true;
         UnshareOnExec = true;
@@ -3372,19 +3367,6 @@ TError TContainer::PrepareStart() {
 
 TError TContainer::Start() {
     TError error;
-
-    if (DockerMode) {
-        if (!Parent && !Parent->OsMode && Root.empty())
-            return TError(EError::Permission,
-                          "Container {} with virt_mode=docker must have parent with virt_mode=os and chroot", Name);
-
-        if (!OwnerCred.IsRootUser())
-            return TError(EError::Permission, "Container {} with virt_mode=docker must be started by root", Name);
-
-        if (TaskCred.IsRootUser() || TaskCred.IsRootGroup())
-            return TError(EError::Permission, "Command in container {} with virt_mode=docker must not be run by root",
-                          Name);
-    }
 
     if (State != EContainerState::Stopped)
         return TError(EError::InvalidState, "Cannot start container {} in state {}", Name, StateName(State));

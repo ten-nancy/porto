@@ -264,7 +264,7 @@ message TConfig {
         optional bool enable_cgroup2 = 56;
         optional bool use_os_mode_cgroupns = 57; //[deprecated=true] use cgroupfs container option
         optional bool enable_rw_cgroupfs = 59;
-        optional bool enable_docker_mode = 58;
+        optional bool enable_docker_mode = 58 [deprecated=true];
 
         message TSysctl {
             required string key = 1;

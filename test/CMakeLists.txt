@@ -71,7 +71,6 @@ ADD_PYTHON3_TEST(import-layer-cgroup)
 ADD_PYTHON_TEST(userns)
 ADD_PYTHON_TEST(extra_properties)
 ADD_PYTHON_TEST(jobs)
-ADD_PYTHON_TEST(docker)
 ADD_PYTHON3_TEST(docker-images)
 ADD_PYTHON3_TEST(storage)
 

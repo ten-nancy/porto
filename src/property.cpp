@@ -29,7 +29,6 @@ extern "C" {
 extern bool SupportCgroupNs;
 extern bool EnableOsModeCgroupNs;
 extern bool EnableRwCgroupFs;
-extern bool EnableDockerMode;
 
 thread_local std::shared_ptr<TContainer> CT = nullptr;
 std::map<std::string, TProperty *> ContainerProperties;
@@ -1079,8 +1078,6 @@ public:
         if (!CT->HasProp(EProperty::COMMAND)) {
             if (CT->OsMode)
                 CT->Command = "/sbin/init";
-            else if (CT->DockerMode)
-                CT->Command = "bash -c 'containerd& dockerd'";
         }
 
         return OK;
@@ -1341,21 +1338,19 @@ public:
     {}
 
     TError Get(std::string &value) const override {
-        value = CT->OsMode ? "os" : CT->JobMode ? "job" : CT->HostMode ? "host" : CT->DockerMode ? "docker" : "app";
+        value = CT->OsMode ? "os" : CT->JobMode ? "job" : CT->HostMode ? "host" : "app";
         return OK;
     }
 
     TError Set(const std::string &value) override {
-        if (value != "app" && value != "os" && value != "job" && (value != "docker" || !EnableDockerMode) &&
-            value != "host" &&
-            // TODO: remove this value later
-            value != "fuse")
+        if (value != "app" && value != "os" && value != "job" && value != "host" &&
+            // TODO: remove these values later
+            value != "docker" && value != "fuse")
             return TError(EError::InvalidValue, "Unknown: {}", value);
 
         CT->OsMode = false;
         CT->JobMode = false;
         CT->HostMode = false;
-        CT->DockerMode = false;
 
         if (value == "os")
             CT->OsMode = true;
@@ -1363,9 +1358,9 @@ public:
             CT->JobMode = true;
         else if (value == "host")
             CT->HostMode = true;
-        else if (value == "docker")
-            CT->DockerMode = true;
         // TODO: it needs to backward compability, remove it later
+        else if (value == "docker")
+            L_TAINT("virt_mode=docker is deprecated, virt_mode=app has set instead of it");
         else if (value == "fuse") {
             L_TAINT("virt_mode=fuse is deprecated. Please use devices property explicitly and enable_fuse property");
             if (!config().daemon().enable_fuse())
@@ -1416,8 +1411,6 @@ public:
     TError Set(bool value) {
         if (value && (CT->HostMode || CT->JobMode))
             return TError(EError::InvalidValue, "userns=true incompatible with virt_mode");
-        else if (!value && CT->DockerMode)
-            return TError(EError::InvalidValue, "userns=false incompatible with virt_mode");
         CT->UserNs = value;
         CT->SetProp(EProperty::USERNS);
         return OK;

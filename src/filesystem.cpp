@@ -18,8 +18,6 @@ extern "C" {
 #define TRACEFS_MAGIC 0x74726163
 #endif
 
-extern bool EnableDockerMode;
-
 static std::vector<TPath> SystemPaths = {
     "/bin",    "/boot", "/dev",  "/etc",  "/lib", "/lib32", "/lib64",
     "/libx32", "/proc", "/root", "/sbin", "/sys", "/usr",   "/var",
@@ -479,7 +477,7 @@ TError TMountNamespace::MountSystemd() {
 }
 
 TError TMountNamespace::MountCgroups(const TContainer &ct) {
-    bool rwCgroupFs = ct.DockerMode || ct.CgroupFs == ECgroupFs::Rw;
+    bool rwCgroupFs = ct.CgroupFs == ECgroupFs::Rw;
     TError error;
     TPath tmpfs = "sys/fs/cgroup";
 
@@ -628,9 +626,7 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
          {"mode=755", "size=" + std::to_string(config().container().dev_size())}},
         {"dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, {"newinstance", "ptmxmode=0666", "mode=620", "gid=5",
                                                       "max=" + std::to_string(config().container().devpts_max())}},
-        {"sys", "sysfs",
-         MS_NOSUID | MS_NOEXEC | MS_NODEV | (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : (uint64_t)MS_RDONLY),
-         {}},
+        {"sys", "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_RDONLY, {}},
     };
 
     for (auto &m: mounts) {
@@ -866,10 +862,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         if (error)
             return error;
 
-        error = sys.Mount("sysfs", "sysfs",
-                          (EnableDockerMode && ct.OwnerCred.IsRootUser() ? 0ul : (uint64_t)MS_RDONLY) | MS_NOSUID |
-                              MS_NOEXEC | MS_NODEV,
-                          {});
+        error = sys.Mount("sysfs", "sysfs", MS_RDONLY | MS_NOSUID | MS_NOEXEC | MS_NODEV, {});
         if (error)
             return error;
 
@@ -896,13 +889,11 @@ TError TMountNamespace::Setup(const TContainer &ct) {
     if (error)
         return error;
 
-    if (!EnableDockerMode || !ct.OwnerCred.IsRootUser() || !ct.DockerMode) {
-        error = ProtectProc();
-        if (error)
-            return error;
-    }
+    error = ProtectProc();
+    if (error)
+        return error;
 
-    if (ct.CgroupFs != ECgroupFs::None || ct.DockerMode)
+    if (ct.CgroupFs != ECgroupFs::None)
         error = MountCgroups(ct);
     else
         error = MountSystemd();

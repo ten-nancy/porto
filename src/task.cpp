@@ -47,7 +47,6 @@ std::list<std::string> IpcSysctls = {
 };
 
 extern bool SupportCgroupNs;
-extern bool EnableDockerMode;
 
 void InitIpcSysctl() {
     for (const auto &key: IpcSysctls) {
