@@ -1,3 +1,15 @@
+porto (5.3.47) unstable; urgency=low
+  [ kndrvt ]
+      ci: make package build on-demand
+      porto: remove virt_mode=docker
+  [ ovov ]
+      container: do not limit ApplySchedPolicy retry count
+  [ ivan42 ]
+      net: do not report softlimit statistics when softlimit is disabled
+  last commit: e058a6b791805dc1cca4e6530d5bacd64ad79dd0
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 17 Mar 2025 11:48:01 -0000
+
 porto (5.3.46) unstable; urgency=low
   [ warwish ]
       container: fix io_uring endless loop crutch
