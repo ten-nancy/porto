@@ -25,6 +25,8 @@ Porto requires Linux kernel 4.5 and optionally some offstream patches.
 
 ## Dependencies
 
+Ubuntu 22.04 dependencies as follows:
+
 ```bash
 sudo apt install -y \
     g++ \
@@ -57,6 +59,13 @@ sudo apt install -y \
     bash-completion
 ```
 
+In Ubuntu 24.04 libprotobuf-dev requires libtool-bin, but it
+should be installed manually
+
+```bash
+sudo apt install -y libtool-bin
+```
+
 ## Build
 
 ```bash
@@ -76,6 +85,21 @@ or
 # should install additional dependencies for deb package building
 ./dpkg-buildpackage -b
 sudo dpkg -i ../porto_*.deb
+```
+
+## Build in Docker
+
+To build in docker's container docker and docker-buildx should be installed
+
+```bash
+sudo apt install -y \
+    docker.io \
+    docker-buildx
+```
+The following command creates necessary binaries in build directory of porto source tree
+```bash
+docker build -t env_ubuntu22.04 -f scripts/Dockerfile .
+docker run -v $(pwd):/porto docker.io/library/env_ubuntu22.04 bash -c "mkdir /porto/build; cd /porto/build; cmake ..; make -j4"
 ```
 
 ## Run

@@ -65,6 +65,7 @@
   "layers/common-openssh.sh":"infra/porto/porto/layers/common-openssh.sh",
   "layers/common-timezone.sh":"infra/porto/porto/layers/common-timezone.sh",
   "layers/common-update.sh":"infra/porto/porto/layers/common-update.sh",
+  "scripts/Dockerfile":"infra/porto/porto/scripts/Dockerfile",
   "scripts/cleanup_test":"infra/porto/porto/scripts/cleanup_test",
   "scripts/prepare_test":"infra/porto/porto/scripts/prepare_test",
   "scripts/standalone_test":"infra/porto/porto/scripts/standalone_test",
