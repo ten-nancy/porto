@@ -246,6 +246,9 @@ inline void FatalError(const char *fmt, const Args &...args) {
 void porto_assert(const char *msg, const char *file, size_t line);
 void AccountErrorType(const TError &error);
 
+struct signalfd_siginfo;
+void PrintSignalInfo(const signalfd_siginfo &sigInfo);
+
 #define PORTO_ASSERT(EXPR)                           \
     do {                                             \
         if (!(EXPR))                                 \

@@ -16,6 +16,7 @@
 extern "C" {
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/epoll.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
@@ -358,6 +359,7 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
 
         while (read(sigFd, &sigInfo, sizeof sigInfo) == sizeof sigInfo) {
             int signo = sigInfo.ssi_signo;
+            PrintSignalInfo(sigInfo);
 
             switch (signo) {
             case SIGINT:

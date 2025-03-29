@@ -9,6 +9,7 @@ extern "C" {
 #include <execinfo.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/signal.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -290,4 +291,21 @@ void AccountErrorType(const TError &error) {
             break;
         }
     }
+}
+
+void PrintSignalInfo(const signalfd_siginfo &sigInfo) {
+    auto comm = GetTaskName(sigInfo.ssi_pid);
+
+    std::map<std::string, std::string> cgmap;
+    auto error = GetTaskCgroups(sigInfo.ssi_pid, cgmap);
+    if (error && error.Errno != ENOENT && error.Errno != ESRCH)
+        L_WRN("Get task cgroups: {}", error);
+
+    std::string cgroup = "???";
+    auto it = cgmap.find("");
+    if (it != cgmap.end())
+        cgroup = it->second;
+
+    L_SYS("Signal {} ({}) from {} ({}) cgroup {}", sigInfo.ssi_signo, strsignal(sigInfo.ssi_signo), sigInfo.ssi_pid,
+          comm, cgroup);
 }

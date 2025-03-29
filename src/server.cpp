@@ -286,6 +286,7 @@ static void ServerLoop() {
                     continue;
                 }
 
+                PrintSignalInfo(sigInfo);
                 switch (sigInfo.ssi_signo) {
                 case SIGINT:
                     DiscardState = true;
