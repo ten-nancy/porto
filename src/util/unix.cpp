@@ -20,6 +20,7 @@ extern "C" {
 #include <linux/fs.h>
 #include <malloc.h>
 #include <poll.h>
+#include <signal.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
@@ -618,6 +619,54 @@ std::string FormatTime(time_t t, const char *fmt) {
     return ss.str();
 }
 
+TError TPidFd::Open(pid_t pid) {
+    auto error = PidFd.OpenPid(pid);
+    if (error)
+        return error;
+    Pid = pid;
+    return OK;
+}
+
+bool TPidFd::Running() const {
+    struct pollfd pfd = {
+        .fd = PidFd.Fd,
+        .events = POLLIN,
+        .revents = 0,
+    };
+
+    return !poll(&pfd, 1, 0);
+}
+
+TError TPidFd::Wait(int timeoutMs) const {
+    struct pollfd pfd = {
+        .fd = PidFd.Fd,
+        .events = POLLIN,
+        .revents = 0,
+    };
+
+    int ret = poll(&pfd, 1, timeoutMs);
+    if (ret == 1)
+        return OK;
+
+    if (ret == 0)
+        return TError("timeout={}ms", timeoutMs);
+
+    return TError::System("poll");
+}
+
+TError TPidFd::Kill(int signo) const {
+    if (syscall(__NR_pidfd_send_signal, PidFd.Fd, signo, nullptr, 0) < 0)
+        return TError::System("pidfd_send_signal");
+    return OK;
+}
+
+TError TPidFd::KillWait(int signo, int timeoutMs) const {
+    auto error = Kill(signo);
+    if (error && error.Errno != ESRCH)
+        return error;
+    return Wait(timeoutMs);
+}
+
 TError TPidFile::Read() {
     std::string str;
     TError error;
@@ -637,6 +686,13 @@ TError TPidFile::Read() {
         return TError("Wrong task name: {} expected: {}", str, Name);
     Pid = pid;
     return OK;
+}
+
+TError TPidFile::ReadPidFd(TPidFd &pidFd) {
+    auto error = Read();
+    if (error)
+        return error;
+    return pidFd.Open(Pid);
 }
 
 bool TPidFile::Running() {

@@ -1349,6 +1349,15 @@ TError TFile::Open(const TPath &path, int flags) {
     return OK;
 }
 
+TError TFile::OpenPid(pid_t pid) {
+    if (Fd >= 0)
+        close(Fd);
+    SetFd = syscall(__NR_pidfd_open, pid, 0);
+    if (Fd < 0)
+        return TError::System("pid_fd_open({})", pid);
+    return OK;
+}
+
 TError TFile::OpenRead(const TPath &path) {
     return Open(path, O_RDONLY | O_CLOEXEC | O_NOCTTY);
 }

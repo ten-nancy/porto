@@ -167,60 +167,62 @@ int KillPortod() {
 }
 
 int StopPortod() {
-    TError error;
+    TPidFd master;
 
-    if (MasterPidFile.Read()) {
+    if (MasterPidFile.ReadPidFd(master)) {
         std::cerr << "portod already stopped" << std::endl;
         return EXIT_SUCCESS;
     }
 
-    uint64_t timeout = CmdTimeout >= 0 ? CmdTimeout : config().daemon().portod_stop_timeout();
-
-    pid_t pid = MasterPidFile.Pid;
-    if (timeout > 0 && CheckPortoAlive()) {
-        if (!kill(pid, SIGINT)) {
-            uint64_t deadline = GetCurrentTimeMs() + timeout * 1000;
-            do {
-                if (MasterPidFile.Read() || MasterPidFile.Pid != pid)
-                    return EXIT_SUCCESS;
-            } while (!WaitDeadline(deadline));
-        } else if (errno != ESRCH) {
-            std::cerr << "cannot stop portod: " << strerror(errno) << std::endl;
-            return EXIT_FAILURE;
-        }
+    uint64_t timeout = (CmdTimeout >= 0 ? CmdTimeout : config().daemon().portod_stop_timeout()) * 1000;
+    auto error = master.KillWait(SIGINT, timeout);
+    if (error) {
+        std::cerr << "cannot stop portod: " << error << std::endl;
+        std::cerr << "sending sigkill" << std::endl;
+        return KillPortod();
     }
-
-    std::cerr << "portod not responding. sending sigkill" << std::endl;
-    return KillPortod();
+    return EXIT_SUCCESS;
 }
 
-int ReexecPortod() {
-    if (MasterPidFile.Read() || ServerPidFile.Read()) {
+TError DoReloadPortod(const TPidFd &master, const TPidFd &server) {
+    uint64_t timeout = (CmdTimeout >= 0 ? CmdTimeout : config().daemon().portod_start_timeout()) * 1000;
+    uint64_t deadline = GetCurrentTimeMs() + timeout;
+
+    auto error = master.Kill(SIGHUP);
+    if (error)
+        return TError(error, "kill master");
+
+    error = server.Wait(timeout);
+    if (error)
+        return TError(error, "wait server");
+
+    do {
+        if (!master.Running())
+            return TError("master is not running");
+        if (CheckPortoAlive())
+            return OK;
+    } while (!WaitDeadline(deadline));
+
+    return TError("timeout exceeded");
+}
+
+int ReloadPortod() {
+    TPidFd master, server;
+    if (MasterPidFile.ReadPidFd(master) || ServerPidFile.ReadPidFd(server)) {
         std::cerr << "portod not running" << std::endl;
         return EXIT_FAILURE;
     }
 
-    if (kill(MasterPidFile.Pid, SIGHUP)) {
-        std::cerr << "cannot send signal" << std::endl;
+    auto error = DoReloadPortod(master, server);
+    if (error) {
+        std::cerr << "reload failed: " << error << std::endl;
         return EXIT_FAILURE;
     }
-
-    uint64_t timeout = CmdTimeout >= 0 ? CmdTimeout : config().daemon().portod_start_timeout();
-    uint64_t deadline = GetCurrentTimeMs() + timeout * 1000;
-    do {
-        if (!MasterPidFile.Running())
-            return EXIT_FAILURE;
-        if (CheckPortoAlive())
-            return EXIT_SUCCESS;
-    } while (!WaitDeadline(deadline));
-
-    std::cerr << "timeout exceeded" << std::endl;
-    return EXIT_FAILURE;
+    return EXIT_SUCCESS;
 }
 
 int UpgradePortod() {
     TPath symlink(PORTO_BINARY_PATH), procexe("/proc/self/exe"), update, backup;
-    uint64_t timeout, deadline;
     TError error;
 
     error = procexe.ReadLink(update);
@@ -229,20 +231,9 @@ int UpgradePortod() {
         return EXIT_FAILURE;
     }
 
-    error = MasterPidFile.Read();
-    if (error) {
+    TPidFd master, server;
+    if (MasterPidFile.ReadPidFd(master) || ServerPidFile.ReadPidFd(server)) {
         std::cerr << "portod not running" << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    if (!CheckPortoAlive()) {
-        std::cerr << "portod running but not responding" << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    error = ServerPidFile.Read();
-    if (error) {
-        std::cerr << "cannot find portod: " << error << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -273,34 +264,12 @@ int UpgradePortod() {
         }
     }
 
-    if (kill(MasterPidFile.Pid, SIGHUP)) {
-        std::cerr << "online upgrade failed: " << strerror(errno) << std::endl;
-        goto undo;
-    }
-
-    timeout = CmdTimeout >= 0 ? CmdTimeout : config().daemon().portod_start_timeout();
-    deadline = GetCurrentTimeMs() + timeout * 1000;
-    do {
-        if (!MasterPidFile.Running() || !ServerPidFile.Running())
-            break;
-    } while (!WaitDeadline(deadline));
-
-    error = MasterPidFile.Read();
+    error = DoReloadPortod(master, server);
     if (error) {
-        std::cerr << "online upgrade failed: " << error << std::endl;
+        std::cerr << "reload failed: " << error << std::endl;
         goto undo;
     }
-
-    do {
-        if (!MasterPidFile.Running())
-            return EXIT_FAILURE;
-        if (CheckPortoAlive()) {
-            PrintVersion();
-            return EXIT_SUCCESS;
-        }
-    } while (!WaitDeadline(deadline));
-
-    std::cerr << "timeout exceeded" << std::endl;
+    return EXIT_SUCCESS;
 
 undo:
     error = symlink.Unlink();
@@ -420,7 +389,7 @@ int main(int argc, char **argv) {
     }
 
     if (cmd == "reload")
-        return ReexecPortod();
+        return ReloadPortod();
 
     if (cmd == "upgrade")
         return UpgradePortod();

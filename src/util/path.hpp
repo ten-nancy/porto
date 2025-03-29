@@ -318,6 +318,7 @@ public:
         return Fd >= 0;
     }
     TError Open(const TPath &path, int flags);
+    TError OpenPid(pid_t pid);
     TError OpenRead(const TPath &path);
     TError OpenWrite(const TPath &path);
     TError OpenReadWrite(const TPath &path);

@@ -115,6 +115,21 @@ public:
     TError SetRecvTimeout(int timeout_ms) const;
 };
 
+class TPidFd {
+    TFile PidFd;
+
+public:
+    pid_t Pid = 0;
+
+    TError Open(pid_t pid);
+    // Check if process exists and is not zombie
+    bool Running() const;
+    // Wait process to terminate (but not to be reaped!, i.e. it can be zombie).
+    TError Wait(int timeoutMs) const;
+    TError Kill(int signo) const;
+    TError KillWait(int signo, int timeoutMs) const;
+};
+
 class TPidFile {
 public:
     TPath Path;
@@ -128,6 +143,7 @@ public:
           AltName(altname)
     {}
     TError Read();
+    TError ReadPidFd(TPidFd &pidFd);
     bool Running();
     TError Save(pid_t pid);
     TError Remove();
