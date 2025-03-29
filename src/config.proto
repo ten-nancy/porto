@@ -259,7 +259,7 @@ message TConfig {
         optional int64 dead_memory_soft_limit = 43;
         optional bool pressurize_on_death = 44;
         optional bool enable_blkio = 45;
-        optional bool ptrace_on_start = 54;
+        optional bool ptrace_on_start = 54 [deprecated=true];
         optional uint64 std_stream_read_limit = 55;
         optional bool enable_cgroup2 = 56;
         optional bool use_os_mode_cgroupns = 57; //[deprecated=true] use cgroupfs container option

@@ -24,30 +24,6 @@ void TaintPostFork(std::string message);
 pid_t GetPid();
 pid_t GetPPid();
 pid_t GetTid();
-pid_t Clone(unsigned long flags, void *child_stack = NULL, void *ptid = NULL, void *ctid = NULL);
-pid_t Fork(bool ptrace = false);
-inline pid_t PtracedVfork() __attribute__((always_inline));
-pid_t PtracedVfork() {
-    pid_t pid = -1;
-
-#ifdef __x86_64__
-    __asm__ __volatile__ (
-        "mov $" STRINGIFY(SYS_clone) ", %%rax;"
-        "mov $" STRINGIFY(CLONE_VM | CLONE_VFORK | CLONE_PTRACE | SIGCHLD) ", %%rdi;"
-        "mov $0, %%rsi;"
-        "mov $0, %%rdx;"
-        "mov $0, %%r10;"
-        "mov $0, %%r8;"
-        "syscall;"
-        "mov %%eax, %0"
-        : "=r" (pid)
-        :
-        : "rax", "rdi", "rsi", "rdx", "r10", "r8"
-    );
-#endif
-
-    return pid;
-}
 TError GetTaskChildrens(pid_t pid, std::vector<pid_t> &childrens);
 void PrintProc(const std::string &knob, pid_t pid, bool debug = true);
 inline void PrintStack(pid_t pid, bool debug = true) {

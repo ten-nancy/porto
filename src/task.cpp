@@ -19,7 +19,6 @@ extern "C" {
 #include <linux/sched.h>
 #include <net/if.h>
 #include <string.h>
-#include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -405,7 +404,7 @@ TError TTaskEnv::ConfigureChild() {
         return error;
 
     if (QuadroFork) {
-        pid_t pid = Fork(config().container().ptrace_on_start());
+        pid_t pid = fork();
         if (pid < 0)
             return TError::System("fork()");
 
@@ -573,65 +572,6 @@ void TTaskEnv::StartChild() {
     Abort(error);
 }
 
-void TTaskEnv::TracerLoop(pid_t traceePid) {
-    TError error;
-    pid_t pid;
-
-    unsigned int remainingExecs = 1;
-    if (TripleFork)
-        ++remainingExecs;
-    if (QuadroFork)
-        ++remainingExecs;
-
-    int status;
-    if (waitpid(traceePid, &status, 0) != traceePid) {
-        error = TError::System("waitpid()");
-        goto tracer_error;
-    }
-    if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGSTOP) {
-        error = TError::System("Child doesn't stopped");
-        goto tracer_error;
-    }
-    if (ptrace(PTRACE_SETOPTIONS, traceePid, 0, PTRACE_O_TRACEEXEC)) {
-        error = TError::System("ptrace(PTRACE_SETOPTIONS)");
-        goto tracer_error;
-    }
-    if (ptrace(PTRACE_CONT, traceePid, 0, 0)) {
-        error = TError::System("ptrace(PTRACE_CONT)");
-        goto tracer_error;
-    }
-
-    for (pid = wait(&status); pid > 0; pid = wait(&status)) {
-        if (status >> 8 == (SIGTRAP | (PTRACE_EVENT_EXEC << 8))) {
-            --remainingExecs;
-            if (ptrace(PTRACE_DETACH, pid, 0, 0))
-                error = TError::System("ptrace(PTRACE_DETACH)");
-        } else if (WIFSTOPPED(status)) {
-            if (ptrace(PTRACE_CONT, pid, 0, 0))
-                error = TError::System("ptrace(PTRACE_CONT)");
-        } else if (WIFSIGNALED(status)) {
-            error = TError::System("Child terminated by signal {}", WTERMSIG(status));
-        }
-
-        if (error)
-            goto tracer_error;
-
-        if (!remainingExecs)
-            break;
-    }
-    if (remainingExecs) {
-        error = TError::System("wait()");
-        goto tracer_error;
-    }
-
-    _exit(EXIT_SUCCESS);
-
-tracer_error:
-    L("Tracer failed: {}", error);
-    (void)kill(traceePid, SIGKILL);
-    _exit(EXIT_FAILURE);
-}
-
 TError TTaskEnv::Start() {
     /* Use third fork between entering into parent pid-namespace and
     cloning isolated child pid-namespace: porto keeps waiter task inside
@@ -664,27 +604,6 @@ TError TTaskEnv::Start() {
     }
 
     if (!task.Pid) {
-        if (config().container().ptrace_on_start()) {
-            pid_t traceePid = fork();
-            if (traceePid < 0)
-                Abort(TError::System("fork()"));
-
-            if (traceePid) {
-                Sock.Close();
-                MasterSock.Close();
-
-                SetDieOnParentExit(SIGKILL);
-
-                SetProcessName("portod-TRACER");
-
-                TracerLoop(traceePid);
-            }
-
-            if (ptrace(PTRACE_TRACEME, 0, 0, 0))
-                Abort(TError::System("ptrace(PTRACE_TRACEME)"));
-            raise(SIGSTOP);
-        }
-
         /* FIXME: this changes stable behaviour with starting child on reload
         MasterSock.Close(); */
 
@@ -693,8 +612,7 @@ TError TTaskEnv::Start() {
         /* Switch from signafd back to normal signal delivery */
         ResetBlockedSignals();
 
-        if (!config().container().ptrace_on_start())
-            SetDieOnParentExit(SIGKILL);
+        SetDieOnParentExit(SIGKILL);
 
         SetProcessName("portod-CT" + std::to_string(CT->Id));
 
@@ -801,17 +719,7 @@ TError TTaskEnv::Start() {
              * collide with parent pid outside. vfork() has no such problem.
              */
             L("vfork");
-            pid_t forkPid;
-            if (!config().container().ptrace_on_start())
-                forkPid = vfork();
-            else
-                /*
-                 * We can't use syscall() function from glibc
-                 * because child corrupts return address on the top of the shared stack.
-                 * We use inline assemlby here for clone(CLONE_VM | CLONE_VFORK | CLONE_PTRACE) syscall.
-                 */
-                forkPid = PtracedVfork();
-
+            pid_t forkPid = vfork();
             if (forkPid < 0)
                 Abort(TError::System("fork()"));
 
@@ -839,9 +747,6 @@ TError TTaskEnv::Start() {
         /* Create UTS namspace if hostname is changed or isolate=true */
         if (CT->Isolate || CT->Hostname != "")
             cloneFlags |= CLONE_NEWUTS;
-
-        if (config().container().ptrace_on_start())
-            cloneFlags |= CLONE_PTRACE;
 
         L("clone, flags: {}", cloneFlags);
         pid_t clonePid = clone(ChildFn, stack + sizeof(stack), cloneFlags, this);
@@ -904,8 +809,7 @@ TError TTaskEnv::Start() {
         goto kill_all;
     }
 
-    if (!config().container().ptrace_on_start())
-        error2 = task.Wait();
+    error2 = task.Wait();
 
     /* Task was alive, even if it already died we'll get zombie */
 
@@ -944,11 +848,7 @@ TError TTaskEnv::Start() {
         goto kill_all;
     }
 
-    if (config().container().ptrace_on_start()) {
-        error = task.Wait();
-        if (error)
-            goto kill_all;
-    } else if (!error && error2) {
+    if (!error && error2) {
         error = error2;
         goto kill_all;
     }
