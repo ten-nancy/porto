@@ -19,7 +19,7 @@ OPTION(ENABLE_GO "Enables building golang API" OFF)
 OPTION(ENABLE_PYTHON "Enables building python API" ON)
 OPTION(USE_SYSTEM_LIBNL "Use system libnl" ON)
 OPTION(USE_SYSTEM_LIBZ "Use system libz" ON)
-OPTION(USE_SYSTEM_LIBELF "Use system libelf" ON)
+OPTION(USE_SYSTEM_LIBELF "Use system libelf" OFF)
 OPTION(USE_SYSTEM_LIBBPF "Use system libbpf" OFF)
 OPTION(USE_SYSTEM_PROTOBUF "Use system protobuf" OFF)
 OPTION(USE_SYSTEM_OPENSSL "Use system openssl" OFF)
@@ -134,10 +134,13 @@ if(USE_SYSTEM_LIBELF)
 	find_path(LIBELF_INCLUDE_DIR NAMES libelf.h)
 	include_directories(${LIBELF_INCLUDE_DIR})
 else()
+	if(NOT LIBELF_TBZ_URL)
+		set(LIBELF_TBZ_URL "https://sourceware.org/elfutils/ftp/0.186/elfutils-0.186.tar.bz2")
+	endif()
 	ExternalProject_Add(elfutils
-	       URL https://sourceware.org/elfutils/ftp/0.186/elfutils-0.186.tar.bz2
+	       URL ${LIBELF_TBZ_URL}
 	       URL_MD5 2c095e31e35d6be7b3718477b6d52702
-	       CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR> --enable-static --disable-debuginfod
+	       CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR> --enable-static --disable-debuginfod --disable-libdebuginfod
 	       BUILD_COMMAND $(MAKE)
 	       INSTALL_COMMAND $(MAKE) install)
 	ExternalProject_Get_Property(elfutils INSTALL_DIR)

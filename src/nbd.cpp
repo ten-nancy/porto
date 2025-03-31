@@ -207,19 +207,22 @@ static TError negotiate(const TSocket &sock, uint64_t &size, uint16_t &flags, ui
     uint64_t magic;
     uint16_t global_flags;
 
-    if (error = sock.Read(&magic, sizeof(magic)))
+    error = sock.Read(&magic, sizeof(magic));
+    if (error)
         return SockError(error, "read magic failed");
 
     if (be64toh(magic) != nbd_magic)
         return TError(EError::NbdProtoError, "invalid magic: expected {}, got {}", nbd_magic, be64toh(magic));
 
-    if (error = sock.Read(&magic, sizeof(magic)))
+    error = sock.Read(&magic, sizeof(magic));
+    if (error)
         return SockError(error, "read opts magic failed");
 
     if (be64toh(magic) != opts_magic)
         return TError(EError::NbdProtoError, "invalid magic: expected {}, got {}", opts_magic, be64toh(magic));
 
-    if (error = sock.Read(&global_flags, sizeof(global_flags)))
+    error = sock.Read(&global_flags, sizeof(global_flags));
+    if (error)
         return SockError(error, "read global flags failed");
 
     global_flags = ntohs(global_flags);
@@ -229,26 +232,31 @@ static TError negotiate(const TSocket &sock, uint64_t &size, uint16_t &flags, ui
 
     client_flags = htonl(client_flags);
 
-    if (error = sock.Write(&client_flags, sizeof(client_flags)))
+    error = sock.Write(&client_flags, sizeof(client_flags));
+    if (error)
         return SockError(error, "write client flags failed");
 
-    if (error = sendExportname(sock, exportname))
+    error = sendExportname(sock, exportname);
+    if (error)
         return SockError(error, "send export name failed");
 
-    if (error = sock.Read(&size, sizeof(size))) {
+    error = sock.Read(&size, sizeof(size));
+    if (error) {
         if (error.Errno == ECONNRESET)
             return TError(EError::NbdUnkownExport, "unknown export '{}'", exportname);
         return SockError(error, "read export size failed");
     }
     size = be64toh(size);
 
-    if (error = sock.Read(&flags, sizeof(flags)))
+    error = sock.Read(&flags, sizeof(flags));
+    if (error)
         return SockError(error, "read export flags failed: {}");
     flags = ntohs(flags);
 
     if (!(global_flags & NBD_FLAG_NO_ZEROES)) {
         char buf[124];
-        if (error = sock.Read(buf, 124)) {
+        error = sock.Read(buf, 124);
+        if (error) {
             if (error.Errno == ECONNRESET)
                 return TError(EError::NbdProtoError, "failed read trailing zeroes");
             return SockError(error);

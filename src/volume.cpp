@@ -1574,17 +1574,22 @@ public:
         if (FsTypes.find(FilesystemType) == FsTypes.end())
             return TError(EError::InvalidValue, "Unsupported filesystem type: {}", FilesystemType);
 
-        if (error = parseOptionInt("timeout", NbdConnParams.BioTimeout, 5))
+        error = parseOptionInt("timeout", NbdConnParams.BioTimeout, 5);
+        if (error)
             return error;
-        if (error = parseOptionInt("conn-timeout", NbdConnParams.ConnTimeout, 5))
+        error = parseOptionInt("conn-timeout", NbdConnParams.ConnTimeout, 5);
+        if (error)
             return error;
-        if (error = parseOptionInt("reconn-timeout", NbdConnParams.ReconnTimeout, 5))
+        error = parseOptionInt("reconn-timeout", NbdConnParams.ReconnTimeout, 5);
+        if (error)
             return error;
-        if (error = parseOptionInt("blocksize", NbdConnParams.BlockSize, 512))
+        error = parseOptionInt("blocksize", NbdConnParams.BlockSize, 512);
+        if (error)
             return error;
         // before d970958b2d2 ("nbd: enable replace socket if only one connection is configured")
         // signle-connections nbds do not report sockets shutdown
-        if (error = parseOptionInt("num-connections", NbdConnParams.NumConnections, 1))
+        error = parseOptionInt("num-connections", NbdConnParams.NumConnections, 1);
+        if (error)
             return error;
 
         return OK;

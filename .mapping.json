@@ -31,7 +31,6 @@
   "debian/porto.postinst.in":"infra/porto/porto/debian/porto.postinst.in",
   "debian/porto.service.in":"infra/porto/porto/debian/porto.service.in",
   "debian/porto.upstart.in":"infra/porto/porto/debian/porto.upstart.in",
-  "debian/python-portopy.install":"infra/porto/porto/debian/python-portopy.install",
   "debian/python3-portopy.install":"infra/porto/porto/debian/python3-portopy.install",
   "debian/rules":"infra/porto/porto/debian/rules",
   "debian/source/format":"infra/porto/porto/debian/source/format",

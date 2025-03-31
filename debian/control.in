@@ -33,13 +33,6 @@ Description: Porto - linux container management system
  .
  Some features requires special kernel.
 
-Package: python-portopy
-Section: python
-Priority: optional
-Architecture: all
-Depends: python-protobuf, ${python:Depends}
-Description: Python API for porto
-
 Package: python3-portopy
 Section: python
 Priority: optional

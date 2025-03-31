@@ -523,9 +523,12 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
             return error;
 
         bool rw = rwCgroupFs && !(cg.Path == "net_cls,net_prio" && !config().container().enable_rw_net_cgroups());
-
-        error = cgroup.Mount(cg.Type, cg.Type, MS_NOSUID | MS_NOEXEC | MS_NODEV | (rw ? MS_ALLOW_WRITE : MS_RDONLY),
-                             cg.Options);
+        uint64_t flags = MS_NOSUID | MS_NOEXEC | MS_NODEV;
+        if (rw)
+            flags |= MS_ALLOW_WRITE;
+        else
+            flags |= MS_RDONLY;
+        error = cgroup.Mount(cg.Type, cg.Type, flags, cg.Options);
         if (error)
             return error;
 

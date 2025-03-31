@@ -22,5 +22,5 @@ if (Python2_EXECUTABLE)
 endif()
 
 if (Python3_EXECUTABLE)
-	install(CODE "execute_process(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} COMMAND ${Python3_EXECUTABLE} -uB setup.py install --root=\$ENV{DESTDIR} --prefix=\${CMAKE_INSTALL_PREFIX})")
+	install(CODE "execute_process(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} COMMAND ${Python3_EXECUTABLE} -uB setup.py install --root=\$ENV{DESTDIR} --install-lib=\${CMAKE_INSTALL_PREFIX}/lib/python3/dist-packages)")
 endif()
