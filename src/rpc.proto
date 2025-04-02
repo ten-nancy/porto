@@ -174,6 +174,8 @@ message TContainerRequest {
     optional TStorageImportRequest importStorage = 118;
     optional TStorageExportRequest exportStorage = 119;
 
+    optional TCleanupPlaceRequest CleanupPlace = 307;
+
     optional TMetaStorage CreateMetaStorage = 122;
     optional TMetaStorage ResizeMetaStorage = 123;
     optional TMetaStorage RemoveMetaStorage = 124;
@@ -1438,6 +1440,9 @@ message TStorageExportRequest {
     optional string compress = 4;
 }
 
+message TCleanupPlaceRequest {
+    required string place = 1;
+};
 
 // Docker
 

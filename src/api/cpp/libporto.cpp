@@ -925,6 +925,12 @@ int Connection::ExportStorage(const std::string &name, const std::string &archiv
     return Impl->Call(Impl->DiskTimeout);
 }
 
+int Connection::CleanupPlace(const std::string &place) {
+    auto req = Impl->Req.mutable_cleanupplace();
+    req->set_place(place);
+    return Impl->Call(Impl->DiskTimeout);
+}
+
 int Connection::ConvertPath(const std::string &path, const std::string &src, const std::string &dest,
                             std::string &res) {
     auto req = Impl->Req.mutable_convertpath();

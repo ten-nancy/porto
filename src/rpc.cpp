@@ -43,7 +43,7 @@ void TRequest::Classify() {
             Req.has_getvolume();
 
     IoReq = Req.has_checkvolume() || Req.has_importlayer() || Req.has_exportlayer() || Req.has_removelayer() ||
-            Req.has_importstorage() || Req.has_exportstorage() || Req.has_removestorage() ||
+            Req.has_importstorage() || Req.has_exportstorage() || Req.has_cleanupplace() || Req.has_removestorage() ||
             Req.has_createmetastorage() || Req.has_removemetastorage() || Req.has_dockerimagestatus() ||
             Req.has_listdockerimages() || Req.has_pulldockerimage() || Req.has_removedockerimage();
 
@@ -1817,6 +1817,25 @@ noinline TError ExportStorage(const rpc::TStorageExportRequest &req) {
     return storage.ExportArchive(CL->ResolvePath(req.tarball()), req.has_compress() ? req.compress() : "");
 }
 
+noinline TError CleanupPlace(const rpc::TCleanupPlaceRequest &req) {
+    TPath place = req.place();
+
+    auto error = CL->ClientContainer->ResolvePlace(place);
+    if (error)
+        return error;
+
+    for (auto type: {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
+        auto error = TStorage::Cleanup(place, type);
+        if (error) {
+            if (error.Errno != ENOENT) {
+                L_WRN("Cleanup place {} failed: {}", place, error);
+                return error;
+            }
+        }
+    }
+    return OK;
+}
+
 noinline TError CreateMetaStorage(const rpc::TMetaStorage &req) {
     TStorage storage;
     TError error;
@@ -2155,6 +2174,8 @@ void TRequest::Handle() {
         error = ImportStorage(Req.importstorage());
     else if (Req.has_exportstorage())
         error = ExportStorage(Req.exportstorage());
+    else if (Req.has_cleanupplace())
+        error = CleanupPlace(Req.cleanupplace());
     else if (Req.has_createmetastorage())
         error = CreateMetaStorage(Req.createmetastorage());
     else if (Req.has_resizemetastorage())

@@ -224,6 +224,8 @@ public:
     int ExportStorage(const std::string &name, const std::string &archive, const std::string &place = "",
                       const std::string &compression = "");
 
+    int CleanupPlace(const std::string &place);
+
     int ConvertPath(const std::string &path, const std::string &src, const std::string &dest, std::string &res);
 
     int AttachProcess(const std::string &name, int pid, const std::string &comm);

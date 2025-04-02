@@ -3,6 +3,7 @@ from test_common import *
 import shutil
 
 c = porto.Connection(timeout=30)
+print(porto.__file__)
 
 a = c.Run('a', place_limit="/place: 1G")
 ExpectEq(a['place_usage'], "")
@@ -59,3 +60,16 @@ except Exception as ex:
 
 finally:
     shutil.rmtree(USER_PLACE_PATH, ignore_errors=True)
+
+
+vol = c.CreateVolume()
+
+
+os.mkdir(os.path.join(vol.path, 'porto_storage'))
+c.CleanupPlace(vol.path)
+assert os.path.exists(os.path.join(vol.path, 'porto_storage'))
+os.mkdir(os.path.join(vol.path, 'porto_storage', '_remove_asdasd'))
+
+c.CleanupPlace(vol.path)
+assert os.path.exists(os.path.join(vol.path, 'porto_storage'))
+assert not os.path.exists(os.path.join(vol.path, 'porto_storage', '_remove_asdasd'))

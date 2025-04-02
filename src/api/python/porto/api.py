@@ -1235,6 +1235,11 @@ class Connection(object):
             request.exportStorage.place = place
         self.rpc.call(request, timeout or self.disk_timeout)
 
+    def CleanupPlace(self, place):
+        request = rpc_pb2.TContainerRequest()
+        request.CleanupPlace.place = place
+        return self.rpc.call(request)
+
     def CreateMetaStorage(self, name, place=None, private_value=None, space_limit=None, inode_limit=None):
         request = rpc_pb2.TContainerRequest()
         request.CreateMetaStorage.name = name

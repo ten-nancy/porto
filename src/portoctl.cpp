@@ -2055,6 +2055,26 @@ public:
     }
 };
 
+class TCleanupPlaceCmd final: public ICmd {
+public:
+    TCleanupPlaceCmd(Porto::Connection *api)
+        : ICmd(api, "pcleanup", 1, "<path>", "cleanup place of stale volumes/layers/storages")
+    {}
+
+    int Execute(TCommandEnviroment *env) final override {
+        const auto &args = env->GetArgs();
+        const auto path = TPath(args[0]).AbsolutePath().NormalPath().ToString();
+
+        int ret = Api->CleanupPlace(path);
+        if (ret) {
+            PrintError("Cannot cleanup place");
+            return ret;
+        }
+
+        return EXIT_SUCCESS;
+    }
+};
+
 class TStorageCmd final: public ICmd {
 public:
     TStorageCmd(Porto::Connection *api)
@@ -3180,6 +3200,7 @@ int main(int argc, char *argv[]) {
     handler.RegisterCommand<TListVolumesCmd>();
     handler.RegisterCommand<TTuneVolumeCmd>();
     handler.RegisterCommand<TCheckVolumeCmd>();
+    handler.RegisterCommand<TCleanupPlaceCmd>();
 
     handler.RegisterCommand<TLayerCmd>();
     handler.RegisterCommand<TBuildCmd>();
