@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import os
 import shutil
@@ -37,7 +37,7 @@ sleep 5
 tar "$@"
 """
     );
-    os.chmod(TAR_PATH, 0744)
+    os.chmod(TAR_PATH, 0o744)
 
     # shrink io-workers count and create delay on layer unpacking
     ConfigurePortod('test-volume_queue', """
@@ -92,7 +92,7 @@ ret = 0
 try:
     Test()
 except BaseException as e:
-    print traceback.format_exc()
+    print(traceback.format_exc())
     ret = 1
 
 ConfigurePortod('test-volume_queue', "")

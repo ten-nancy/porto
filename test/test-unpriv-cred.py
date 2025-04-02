@@ -19,7 +19,7 @@ assert Catch(r.Start) == porto.exceptions.PermissionError
 r.SetProperty("user", "porto-charlie")
 r.SetProperty("command", "ls")
 assert Catch(r.Start) == porto.exceptions.PermissionError
-print "%s OK!" %(Case)
+print("%s OK!" %(Case))
 r.Destroy()
 AsRoot()
 
@@ -37,7 +37,7 @@ r.SetProperty("user", "porto-david")
 r.SetProperty("group", "porto-david")
 r.SetProperty("command", "ls")
 assert Catch(r.Start) == porto.exceptions.PermissionError
-print "%s OK!" %(Case)
+print("%s OK!" %(Case))
 r.Destroy()
 AsRoot()
 
@@ -52,7 +52,7 @@ r.Start()
 assert r.Wait() == "test"
 assert r.GetProperty("user") == "porto-bob"
 assert r.GetProperty("group") == "porto-bob"
-print "%s OK!" %(Case)
+print("%s OK!" %(Case))
 r.Destroy()
 AsRoot()
 
@@ -66,7 +66,7 @@ r.SetProperty("command", "ls")
 r.SetProperty("user", "porto-bob")
 assert Catch(r.Start) == porto.exceptions.PermissionError
 r.Destroy()
-print "%s OK!" %(Case)
+print("%s OK!" %(Case))
 AsRoot()
 
 Case="Case 5: bob sets charlie and alice-group (charlie not in alice-group), catching exception"
@@ -78,7 +78,7 @@ r = c.Create("test")
 r.SetProperty("user", "porto-charlie")
 r.SetProperty("group", "porto-alice")
 assert Catch(r.Start) == porto.exceptions.PermissionError
-print "%s OK!" %(Case)
+print("%s OK!" %(Case))
 r.Destroy()
 AsRoot()
 
@@ -93,7 +93,7 @@ r.Start()
 assert r.Wait() == "test"
 assert r.GetProperty("user") == "porto-bob"
 assert r.GetProperty("group") == "porto-alice"
-print "%s OK!" %(Case)
+print("%s OK!" %(Case))
 r.Destroy()
 
 Case="Case 7: alice starts container created by bob (bob not in porto-containers and porto-alice-containers), catching exception"
@@ -119,5 +119,5 @@ assert r.Wait() == "test"
 assert r.GetProperty("user") == "porto-bob"
 assert r.GetProperty("group") == "porto-bob"
 r.Destroy()
-print "%s OK!" %(Case)
+print("%s OK!" %(Case))
 AsRoot()

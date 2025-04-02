@@ -24,15 +24,15 @@ def Run():
     ExpectEq(os.path.getsize(vol.path + '/test'), 100 << 20)
     ct.Stop()
 
-print '- write'
+print('- write')
 Run()
 
-print '- rewrite'
+print('- rewrite')
 Run()
 
 ct.SetProperty("memory_limit", "10M")
 
-print '- hit limit'
+print('- hit limit')
 Run()
 
 ct.Destroy()

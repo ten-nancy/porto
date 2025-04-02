@@ -6,7 +6,7 @@ c = porto.Connection(timeout=30)
 blksize = os.stat(__file__).st_blksize
 
 # write less than 'stdout_limit' and 'st_blksize' with various 'stdout_limit's
-a = c.Run('test', command="echo Hello", stdout_limit=blksize/10)
+a = c.Run('test', command="echo Hello", stdout_limit=blksize//10)
 a.Wait()
 assert a.GetProperty("stdout") == "Hello\n"
 a.Destroy()
@@ -25,11 +25,11 @@ a.Destroy()
 # write between 'stdout_limit' and 'st_blksize', with 'stdout_limit' lower than 'st_blksize'
 cmd = "echo "
 res = ""
-for i in range(0, blksize/4 * 3):
+for i in range(blksize//4 * 3):
     cmd += "a"
     res += "a"
 
-stdout_limit = blksize / 2
+stdout_limit = blksize // 2
 a = c.Run('test', command=cmd, stdout_limit=stdout_limit)
 a.Wait()
 

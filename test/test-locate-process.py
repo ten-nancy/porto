@@ -22,11 +22,12 @@ def Check(ct, value):
     os.close(ct.fd1)
     os.close(ct.fd2)
     ct.Wait()
+    ExpectEq(ct["exit_status"], "0")
     ExpectEq(ct.GetProperty("stdout"), value)
     ct.Stop()
 
 
-CMD = "bash -c \'read; python -c \"\n"\
+CMD = "bash -c \'read; python3 -c \"\n"\
       "import porto; import sys;\n"\
       "c = porto.Connection(timeout=30);\n"\
       "try:\n"\
@@ -43,7 +44,8 @@ Catch(conn.Destroy, CT_NAME("c"))
 ct = conn.Create(CT_NAME("a"))
 ct.Prepare = types.MethodType(SetPipe, ct)
 ct.Check = types.MethodType(Check, ct)
-ct.SetProperty("env", "PYTHONPATH={}".format(os.environ['PYTHONPATH']))
+ct.SetProperty("env", "PYTHONPATH={}".format(
+    os.getenv("PYTHONPATH", os.path.join(portosrc, "src/api/python"))))
 
 ct.Prepare()
 ct.SetProperty("command", CMD.format(2))

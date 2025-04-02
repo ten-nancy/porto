@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import porto
 import os
@@ -19,7 +19,7 @@ MEMORY_MAX_KNOB = "memory.max" if USE_CGROUP2 else "memory.max_usage_in_bytes"
 MEMORY_ANON_MAX_KNOB = "memory.anon.max_usage"
 
 if USE_CGROUP2:
-    print "\nuse {} hierarchy\n".format("cgroup2" if USE_CGROUP2 else "cgroup1")
+    print("\nuse {} hierarchy\n".format("cgroup2" if USE_CGROUP2 else "cgroup1"))
 
 def test_memory_limit_high(conn):
     ct = conn.Run("memory_high", cpu_limit='1c')
@@ -94,12 +94,12 @@ def CheckOOM(ct, expect_oom):
     assert ct.Wait(DURATION * 2) == ct.name, "container runtime twice exceeded"\
                                              " expected duration {}".format(DURATION)
 
-    print "{} max total usage: {}, anon usage: {}".format(ct,
-           ct.GetProperty(MEMORY_MAX_KNOB).rstrip(),\
-           ct.GetProperty(MEMORY_ANON_MAX_KNOB).rstrip() if not USE_CGROUP2 else "not supported")
+    print("{} max total usage: {}, anon usage: {}".format(
+        ct, ct.GetProperty(MEMORY_MAX_KNOB).rstrip(),
+        ct.GetProperty(MEMORY_ANON_MAX_KNOB).rstrip() if not USE_CGROUP2 else "not supported"))
 
     if expect_oom:
-        print "exit_code: {}".format(ct.GetProperty("exit_code"))
+        print("exit_code: {}".format(ct.GetProperty("exit_code")))
         if ct.GetProperty("exit_code") == "2":
             return
 
@@ -168,9 +168,9 @@ def Alloc(conn, suffix):
 conn = porto.Connection(timeout=30)
 conn.Alloc = types.MethodType(Alloc, conn)
 
-print "\nMemory limit test, SIZE: {}, EPS: {}\n".format(SIZE, EPS)
+print("\nMemory limit test, SIZE: {}, EPS: {}\n".format(SIZE, EPS))
 
-print "\nCheck limit can be achieved\n"
+print("\nCheck limit can be achieved\n")
 
 conn.Alloc("achieve_anon").Prepare(anon=SIZE, total=0, use_anon=SIZE, use_file=0)\
                           .Start()\
@@ -185,7 +185,7 @@ conn.Alloc("achieve_mixed").Prepare(anon=SIZE / 3, total=SIZE,\
                            .Start()\
                            .CheckOOM(False)
 
-print "\nCheck OOM triggering\n"
+print("\nCheck OOM triggering\n")
 
 conn.Alloc("oom_file").Prepare(anon=0, total=SIZE, use_anon=0, use_file=SIZE * 2)\
                       .Start()\
@@ -202,10 +202,10 @@ conn.Alloc("oom_anon_with_file").Prepare(anon=SIZE / 2, total=SIZE,\
                                 .CheckOOM(True)
 
 if USE_CGROUP2:
-    print "\nSkip hierarchical check\n"
+    print("\nSkip hierarchical check\n")
     exit(0)
 
-print "\nCheck hierarchical\n"
+print("\nCheck hierarchical\n")
 
 ct = conn.Alloc("meta").Prepare(anon=SIZE / 2, total=SIZE, meta=True)
 
@@ -237,5 +237,5 @@ ct1.Start(); ct1.WaitUsage();
 ct2.Start()
 ct2.CheckOOM(True); ct1.CheckOOM(True); ct.CheckOOM(True)
 
-print "\nCheck memory.high\n"
+print("\nCheck memory.high\n")
 test_memory_limit_high(conn)

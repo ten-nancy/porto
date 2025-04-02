@@ -1,9 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import os
 import porto
 import subprocess
 import time
+import tempfile
 
 from test_common import ConfigurePortod,Expect,ExpectException,ExpectLe
 
@@ -12,10 +13,10 @@ def veth_link_count():
 
 # Prepare
 
-script_path = os.tmpnam()
+script_path = tempfile.NamedTemporaryFile().name
 
 open(script_path,'w')
-os.chmod(script_path, 0755)
+os.chmod(script_path, 0o755)
 
 cwd = os.getcwd()
 portoctl_path = cwd + '/portoctl'
@@ -64,7 +65,7 @@ exit 1
 
 stale_count = veth_link_count()
 
-for i in xrange(0, 10):
+for i in range(10):
     ExpectException(ct.Start, porto.exceptions.Unknown)
 
 # Nets are cleared asynchronously

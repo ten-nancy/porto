@@ -106,10 +106,9 @@ ExpectEq(Catch(a.GetProperty, 'CORE.dumped'), porto.exceptions.LabelNotFound)
 a.Destroy()
 
 
-Expect(not os.path.exists('/tmp/core'))
+ExpectNotExists('/tmp/core')
 
-
-open('/tmp/suid_sleep', 'w').write(open('/bin/sleep').read())
+open('/tmp/suid_sleep', 'wb').write(open('/bin/sleep', 'rb').read())
 os.chmod('/tmp/suid_sleep', 0o6755)
 
 
@@ -123,9 +122,9 @@ conn = porto.Connection(timeout=30)
 a = conn.Run('a', command='/tmp/suid_sleep 100', ulimit='core: unlimited')
 a.Kill(3)
 a.Wait()
-Expect(not os.path.exists('/tmp/core'))
 ExpectProp(a, 'exit_code', '-3')
 ExpectProp(a, 'core_dumped', False)
+ExpectNotExists('/tmp/core')
 ExpectEq(Catch(a.GetProperty, 'CORE.total'), porto.exceptions.LabelNotFound)
 ExpectEq(Catch(a.GetProperty, 'CORE.dumped'), porto.exceptions.LabelNotFound)
 
@@ -215,7 +214,7 @@ w = conn.Create('w')
 v = conn.CreateVolume(layers=['ubuntu-xenial'], containers='w')
 AsRoot()
 os.unlink('/tmp/core')
-open(v.path + '/bin/suid_sleep', 'w').write(open(v.path + '/bin/sleep').read())
+open(v.path + '/bin/suid_sleep', 'wb').write(open(v.path + '/bin/sleep', 'rb').read())
 os.chmod(v.path + '/bin/suid_sleep', 0o6755)
 AsAlice()
 

@@ -6,7 +6,7 @@ import porto
 import subprocess
 
 def ExpectUlimit(a, key, val):
-    line = subprocess.check_output(['grep', key, "/proc/{}/limits".format(a['root_pid'])])
+    line = subprocess.check_output(['grep', key, "/proc/{}/limits".format(a['root_pid'])]).decode()
     ExpectEq(' '.join(line.split()), key + ' ' + val)
 
 c = porto.Connection(timeout=30)
@@ -48,7 +48,7 @@ b.Destroy()
 
 
 def check_core_ulimit(pid, unlimited_count):
-    pr = subprocess.check_output(['prlimit', '-p', pid, '--core'])
+    pr = subprocess.check_output(['prlimit', '-p', pid, '--core']).decode()
     assert unlimited_count == pr.count("unlimited")
 
 try:

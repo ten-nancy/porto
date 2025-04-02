@@ -1,12 +1,21 @@
 import subprocess
+import shlex
+import tempfile
 from test_common import *
 
-output = subprocess.check_output([portoctl, 'exec', 'test',
-                               'command=bash -c "' + portoctl + ' create self/test; ' +
-                               portoctl + ' set self/test isolate false; ' +
-                               portoctl + ' start self/test; bash -c \\"' +
-                               portoctl + ' get self absolute_name; ' +
-                               portoctl + ' attach self/test \\\$\\\$; ' +
-                               portoctl + ' get self absolute_name\\""'],
-                               stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-assert output == '/porto/test\n/porto/test/test\n', "unexpected output: " + output
+with tempfile.TemporaryDirectory() as tmp:
+    fname = os.path.join(tmp, 'script.sh')
+    with open(fname, 'w', 0o777) as f:
+        subcmd = '{portoctl} attach self/bar $$; {portoctl} get self absolute_name'.format(portoctl=portoctl)
+        f.write('''#!/bin/bash
+        {portoctl} create self/bar
+        {portoctl} set self/bar isolate false
+        {portoctl} start self/bar
+        {portoctl} get self absolute_name
+        bash -c {subcmd}
+        '''.format(portoctl=portoctl, subcmd=shlex.quote(subcmd)))
+        os.fchmod(f.fileno(), 0o777)
+
+    cmd = [portoctl, 'exec', 'foo', "command=bash -c {}".format(fname)]
+    output = subprocess.check_output(cmd, stdin=subprocess.PIPE).decode()
+    ExpectEq(output, '/porto/foo\n/porto/foo/bar\n')

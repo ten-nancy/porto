@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import os
 import time
@@ -40,7 +40,7 @@ def std_streams_escalation():
 
     f = open("/tmp/porto-tests/root-secret", "w")
     f.write("0123456789")
-    os.fchmod(f.fileno(), 0600)
+    os.fchmod(f.fileno(), 0o600)
     f.close()
 
     AsAlice()
@@ -75,12 +75,12 @@ def ns_escape_container():
     to_kill = int(sys.argv[3])
     try:
         f = open("/tmp/porto-tests/root-secret", "r")
-        print f.read()
+        print(f.read())
         f.close()
-        print "FAIL",
+        print("FAIL",)
     except IOError as e:
         if e[0] == errno.ENOENT:
-            print "OK",
+            print("OK",)
             sys.stdout.flush()
             if w > 0:
                 time.sleep(w)
@@ -89,9 +89,9 @@ def ns_escape_container():
                 pid = os.getpid()
                 os.kill(pid, 9)
         else:
-            print "FAIL",
+            print("FAIL",)
     except:
-        print "FAIL",
+        print("FAIL",)
 
     sys.stdout.flush()
 
@@ -104,7 +104,7 @@ def ns_escape(v):
     f = open("/tmp/porto-tests/root-secret","w")
     f.write("123456")
     f.close()
-    os.chmod("/tmp/porto-tests/root-secret", 0600)
+    os.chmod("/tmp/porto-tests/root-secret", 0o600)
 
     AsAlice()
 
@@ -112,13 +112,10 @@ def ns_escape(v):
 
     r = c.Create("parent")
     r.SetProperty("root", v.path)
-    r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
-    r.SetProperty("bind", "{} /porto ro".format(portosrc))
-    r.SetProperty("command", "python /porto/test/test-security.py ns_escape_container 2 1")
+    r.SetProperty("command", "python3 /porto/test/test-security.py ns_escape_container 2 1")
     r.SetProperty("porto_namespace", "parent")
 
     r = c.Create("parent/child")
-    r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
     #FIXME:
     #porto r.SetProperty("command","cat /porto/test/test-security.py") shows file contents, but
     #c.SetProperty("parent/child","command", "python /porto/test/test-security.py ns_escape_container 10 0") fails (file not found)
@@ -138,10 +135,10 @@ def ns_escape(v):
 
     c.Stop("parent")
 
-    c.SetProperty("parent", "command", "python /porto/test/test-security.py ns_escape_container 3 0")
+    c.SetProperty("parent", "command", "python3 /porto/test/test-security.py ns_escape_container 3 0")
     #Actually, on fail because of ns escape
     #we won't even find our python test, but anyway...
-    r.SetProperty("command", "python /porto/test/test-security.py ns_escape_container 0 1")
+    r.SetProperty("command", "python3 /porto/test/test-security.py ns_escape_container 0 1")
 
     r.Start()
 
@@ -159,13 +156,13 @@ def ns_escape(v):
 
 def read_shadow():
     f = open("/tmp/shadow", "r")
-    print f.read()
+    print(f.read())
     f.close()
 
 
 def append_sudoers():
     f = open("/tmp/sudoers", "a")
-    print "Opened sudoers for append..."
+    print("Opened sudoers for append...")
     sys.stdout.flush()
     #f.write("\tmax7255 (ALL) NOPASSWD: ALL")
     f.close()
@@ -174,7 +171,7 @@ def append_sudoers():
 def append_passwd():
     f = open("/tmp/passwd", "a")
     #f.write("joker:x:1980:1980:::/bin/false")
-    print "Opened passwd for append..."
+    print("Opened passwd for append...")
     sys.stdout.flush()
     f.close()
 
@@ -185,19 +182,17 @@ def binds_escalation(v):
     AsAlice()
     c = porto.Connection(timeout=30)
     r = c.Create("bind_file")
-    r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
-    r.SetProperty("bind", "{} /porto ro".format(portosrc))
     r.SetProperty("root", v.path)
     r.SetProperty("bind", "/etc/shadow /tmp/shadow ro")
-    r.SetProperty("command", "python /porto/test/test-security.py read_shadow")
+    r.SetProperty("command", "python3 /porto/test/test-security.py read_shadow")
     assert Catch(r.Start) == porto.exceptions.PermissionError
 
     r.SetProperty("bind", "/etc/passwd /tmp/passwd rw")
-    r.SetProperty("command", "python /porto/test/test-security.py append_passwd")
+    r.SetProperty("command", "python3 /porto/test/test-security.py append_passwd")
     assert Catch(r.Start) == porto.exceptions.PermissionError
 
     r.SetProperty("bind", "/etc/sudoers /tmp/sudoers rw")
-    r.SetProperty("command", "python /porto/test/test-security.py append_sudoers")
+    r.SetProperty("command", "python3 /porto/test/test-security.py append_sudoers")
     assert Catch(r.Start) == porto.exceptions.PermissionError
 
     r.SetProperty("bind", "/sbin /tmp/lol rw")
@@ -208,11 +203,11 @@ def binds_escalation(v):
     AsRoot()
 
     os.mkdir("/tmp/porto-tests/dir1")
-    os.chmod("/tmp/porto-tests/dir1", 0777)
+    os.chmod("/tmp/porto-tests/dir1", 0o777)
     os.mkdir("/tmp/porto-tests/mount1")
-    os.chmod("/tmp/porto-tests/mount1", 0555)
+    os.chmod("/tmp/porto-tests/mount1", 0o555)
     os.mkdir("/tmp/porto-tests/dir-bob")
-    os.chmod("/tmp/porto-tests/dir-bob", 0700)
+    os.chmod("/tmp/porto-tests/dir-bob", 0o700)
     os.chown("/tmp/porto-tests/dir-bob", bob_uid, bob_gid)
 
     AsAlice()
@@ -238,8 +233,9 @@ def binds_escalation(v):
 #privilege escalation for requests from inside the porto container w virt_mode=="os"
 
 def internal_escalation_container():
+    print('internal_escalation_container')
     c = porto.Connection(timeout=30)
-    r = c.Create("test_cont2")
+    r = c.Create("test_cont2", weak=False)
 
 
 def internal_escalation(v):
@@ -249,16 +245,19 @@ def internal_escalation(v):
     c = porto.Connection(timeout=30)
     r = c.Create("test_cont1")
     r.SetProperty("porto_namespace", "")
-    r.SetProperty("virt_mode", "os")
+    r.SetProperty("virt_mode", "app")
     r.SetProperty("root", v.path)
-    r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
-    r.SetProperty("bind", "{} /porto ro".format(portosrc))
-    r.SetProperty("command", "python /porto/test/test-security.py internal_escalation_container")
+    r.SetProperty("env", "PYTHON3PATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
+    r.SetProperty("command", "python3 /porto/test/test-security.py internal_escalation_container")
 
     r.Start()
     r.Wait()
 
-    assert c.GetProperty("test_cont2", "user") == "porto-alice"
+    print(r['stdout'])
+    print(r['stderr'])
+
+    ExpectEq(r['exit_status'], '0')
+    ExpectEq(c.GetProperty("test_cont2", "user"), "porto-alice")
 
     r.Destroy()
     c.Destroy("test_cont2")
@@ -278,10 +277,8 @@ def porto_namespace_escape(v):
     r = c.Create("test")
     r.SetProperty("porto_namespace", "test")
     r.SetProperty("root", v.path)
-    r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
-    r.SetProperty("bind", "{} /porto ro".format(portosrc))
-    r.SetProperty("command", \
-                  "python /porto/test/test-security.py porto_namespace_escape_container")
+    r.SetProperty("env", "PORTO_TEST_NO_RESTART=1;")
+    r.SetProperty("command", "python3 /porto/test/test-security.py porto_namespace_escape_container")
     r.Start()
     r.Wait()
 
@@ -350,12 +347,13 @@ def layer_escalation(v):
     c = porto.Connection(timeout=30)
     r = c.Create("test")
     r.SetProperty("root", v.path)
-    r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
-    r.SetProperty("bind", "{} /porto ro".format(portosrc))
-    r.SetProperty("command", "python /porto/test/test-security.py layer_escalation_container")
+    r.SetProperty("env", "PORTO_TEST_NO_RESTART=1")
+    r.SetProperty("command", "python3 /porto/test/test-security.py layer_escalation_container")
 
     r.Start()
     r.Wait()
+    print(r['stderr'])
+    ExpectEq(r['exit_code'], '0')
 
     assert Catch(open, "/tmp/porto-tests/evil_file", "r") == IOError
 
@@ -376,11 +374,11 @@ def layer_escalation(v):
 
 
     r.SetProperty("root", v.path)
-    r.SetProperty("env", "PYTHONPATH=/porto/src/api/python;PORTO_TEST_NO_RESTART=1;")
-    r.SetProperty("command", "python /porto/test/test-security.py layer_escalation_volume_container " + v.path)
+    r.SetProperty("env", "PORTO_TEST_NO_RESTART=1;")
+    r.SetProperty("command", "python3 /porto/test/test-security.py layer_escalation_volume_container " + v.path)
     r.SetProperty("stdout_path","/tmp/stdout")
     r.SetProperty("stderr_path","/tmp/stderr")
-    r.SetProperty("bind", "{} /porto ro; {} /portobin ro".format(portosrc, portobin))
+    r.SetProperty("bind", "{} /portobin ro".format(portobin))
 
     r.Start()
     r.Wait()
@@ -396,12 +394,32 @@ if len(sys.argv) > 1:
     exec(sys.argv[1]+"()")
     exit(0)
 
+def setup_volume(conn, vol):
+    ct = None
+    path = os.path.join(vol.path, "porto")
+    os.mkdir(path)
+
+    portosrc_vol = conn.CreateVolume(
+        path=path,
+        backend='overlay',
+        layers=[portosrc],
+    )
+    try:
+        cmd = 'apt-get update; apt-get install -y apt-utils protobuf-compiler python3-setuptools; cd /porto/src/api/python/; python3 ./setup.py install'
+        ct = c.Run(name='tmp', root=vol.path, command="bash -c '{}'".format(cmd), wait=30)
+        ExpectEq(ct['state'], 'dead')
+        ExpectEq(ct['exit_status'], '0')
+    finally:
+        if ct:
+            ct.Destroy()
+
 
 AsRoot()
 
 c = porto.Connection(timeout=120)
 
-v = c.CreateVolume(path=None, layers=["ubuntu-precise"])
+v = c.CreateVolume(path=None, layers=["jammy"])
+setup_volume(c, v)
 
 try:
     shutil.rmtree("/tmp/porto-tests")
@@ -409,7 +427,7 @@ except:
     pass
 
 os.mkdir("/tmp/porto-tests")
-os.chmod("/tmp/porto-tests", 0777)
+os.chmod("/tmp/porto-tests", 0o777)
 
 std_streams_escalation()
 binds_escalation(v)

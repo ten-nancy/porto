@@ -19,7 +19,7 @@ def init_instance(c, name, volume, target="/target", layers=["ubuntu-xenial"]):
     try:
         c.LinkVolume(volume, name, target="/target")
     except Exception as e:
-        print e
+        print(e)
         raise e
 
     return (r, root)
@@ -54,7 +54,7 @@ share = c.CreateVolume(None, **{"storage":STORAGE_NAME, "space_limit":"5G"})
 
 main_ct, root = init_instance(c, "test-volume_links-ct{}".format(CT_COUNT), share.path)
 
-print "mount count before: {}".format(len(open('/proc/self/mountinfo').readlines()))
+print("mount count before: {}".format(len(open('/proc/self/mountinfo').readlines())))
 
 main_ct.Start()
 
@@ -67,7 +67,7 @@ workers = [
             share.path,
             ctx
         )
-    ) for i in xrange(1, CT_COUNT)
+    ) for i in range(1, CT_COUNT)
 ]
 
 for w in workers:
@@ -78,7 +78,7 @@ timeout = False
 
 deadline = time.time() + RUN_TIMEOUT
 
-for i in xrange(0, ITER_COUNT):
+for i in range(ITER_COUNT):
     ctx.Cv.acquire()
     while ctx.Counter.value < CT_COUNT - 1:
         ctx.Cv.release()
@@ -108,13 +108,13 @@ exec_ct.SetProperty("command", 'cat /proc/self/mountinfo')
 exec_ct.Start()
 exec_ct.Wait()
 
-print "mount count after: {}".format(len(open('/proc/self/mountinfo').readlines()))
+print("mount count after: {}".format(len(open('/proc/self/mountinfo').readlines())))
 
 mounts = exec_ct.GetProperty("stdout").splitlines()
 
 targets = [line for line in mounts if "/target" in line]
 
-print "\n".join(targets)
+print("\n".join(targets))
 
 timeout = time.time() > deadline
 

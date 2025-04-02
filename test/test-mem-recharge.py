@@ -4,7 +4,7 @@ from test_common import *
 
 
 if not os.path.exists('/sys/fs/cgroup/memory/memory.recharge_on_pgfault'):
-    print "Test not applicable"
+    print("Test not applicable")
     sys.exit(0)
 
 may_not_recharge_orphan_locked = GetKernelVersion() < (4, 19)
@@ -26,7 +26,8 @@ ct2.SetProperty("command", "vmtouch -t test")
 
 size = 100 << 20
 delta = 10 << 20
-file(vol.path + "/test", 'w').truncate(size)
+with open(vol.path + "/test", 'w') as f:
+    f.truncate(size)
 
 def Run(ct):
     ct.Start()
@@ -37,11 +38,11 @@ def Run(ct):
 ExpectProp(ct, "recharge_on_pgfault", False)
 ExpectProp(ct2, "recharge_on_pgfault", False)
 
-print '- first touch'
+print('- first touch')
 Run(ct)
 ExpectPropGe(ct, "memory_usage", size)
 
-print '- second touch'
+print('- second touch')
 Run(ct2)
 ExpectPropGe(ct, "memory_usage", size)
 ExpectPropLe(ct2, "memory_usage", delta)
@@ -49,13 +50,13 @@ ct2.Stop()
 
 ct2.SetProperty("recharge_on_pgfault", True)
 
-print '- recharge'
+print('- recharge')
 Run(ct2)
 ExpectPropGe(ct2, "memory_usage", size)
 ExpectPropLe(ct, "memory_usage", delta)
 ct.Stop()
 
-print '- touch recharged'
+print('- touch recharged')
 Run(ct)
 ExpectPropGe(ct2, "memory_usage", size)
 ExpectPropLe(ct, "memory_usage", delta)
@@ -63,32 +64,32 @@ ct.Stop()
 
 ct.SetProperty("recharge_on_pgfault", True)
 
-print '- recharge recharged'
+print('- recharge recharged')
 Run(ct)
 if GetKernelVersion() > (3, 18):
     ExpectPropLe(ct, "memory_usage", delta)
     ExpectPropGe(ct2, "memory_usage", size)
 else:
-    print 'XFAIL old kernel'
+    print('XFAIL old kernel')
     ExpectPropLe(ct2, "memory_usage", delta)
     ExpectPropGe(ct, "memory_usage", size)
 ct.Stop()
 
 ct2.Stop()
 
-print '- first recharge orphan'
+print('- first recharge orphan')
 Run(ct)
 ExpectPropGe(ct, "memory_usage", size)
 ct.Stop()
 
-print '- second recharge orphan'
+print('- second recharge orphan')
 Run(ct2)
 ExpectPropGe(ct2, "memory_usage", size)
 ct2.Stop()
 
 ct.SetProperty("recharge_on_pgfault", False)
 
-print '- touch orphan'
+print('- touch orphan')
 Run(ct)
 if may_not_recharge_orphan_locked:
     ExpectPropLe(ct, "memory_usage", delta)
@@ -98,7 +99,7 @@ ct.Stop()
 
 ct2.SetProperty("recharge_on_pgfault", False)
 
-print '- second touch orphan'
+print('- second touch orphan')
 Run(ct2)
 if may_not_recharge_orphan_locked:
     ExpectPropLe(ct2, "memory_usage", delta)
@@ -111,14 +112,14 @@ ct.SetProperty("recharge_on_pgfault", True)
 
 ct.SetProperty("memory_limit", size)
 
-print '- hit limit'
+print('- hit limit')
 Run(ct)
 ExpectPropGe(ct, "memory_usage", size - delta)
 ct.Stop()
 
 ct.SetProperty("memory_limit", delta)
 
-print '- hit harder'
+print('- hit harder')
 Run(ct)
 ExpectPropLe(ct, "memory_usage", delta)
 ct.Stop()
@@ -130,7 +131,7 @@ ExpectPropGe(ct, "memory_usage", size)
 
 ct_mlock.SetProperty("memory_limit", size + delta)
 
-print '- mlock smaller'
+print('- mlock smaller')
 Run(ct_mlock)
 if may_not_recharge_orphan_locked:
     ExpectPropLe(ct_mlock, "memory_usage", delta)
@@ -142,25 +143,25 @@ ct_mlock.Stop()
 
 ct_mlock.SetProperty("memory_limit", size + delta * 3)
 
-print '- mlock bigger'
+print('- mlock bigger')
 Run(ct_mlock)
 ExpectPropGe(ct_mlock, "memory_usage", size)
 ExpectPropLe(ct, "memory_usage", delta)
 ct_mlock.Stop()
 ct.Stop()
 
-print '- mlock orphan'
+print('- mlock orphan')
 Run(ct_mlock)
 if GetKernelVersion() > (3, 18):
     ExpectPropGe(ct_mlock, "memory_usage", size)
 else:
-    print 'XFAIL old kernel'
+    print('XFAIL old kernel')
     ExpectPropLe(ct_mlock, "memory_usage", delta)
 ct_mlock.Stop()
 
 ct_mlock.SetProperty("recharge_on_pgfault", True)
 
-print '- recharge mlock orphan'
+print('- recharge mlock orphan')
 Run(ct_mlock)
 ExpectPropGe(ct_mlock, "memory_usage", size)
 ct_mlock.Stop()

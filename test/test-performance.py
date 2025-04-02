@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import subprocess
 import resource
@@ -303,8 +303,8 @@ def Check(conn_num, ctor, *args, **kwargs):
     return ctor.PostProcess([p.Ret for p in procs], *args, **kwargs)
 
 def PrintFormatted(name, stats):
-    print "{:>8}, {:4}, {:5}, {:10.6f}, {:10.6f}, "\
-          "{:10.6f}, {:10.6f}, {:10.6f}, {:10.6f}".format(name, *stats)
+    print("{:>8}, {:4}, {:5}, {:10.6f}, {:10.6f}, "\
+          "{:10.6f}, {:10.6f}, {:10.6f}, {:10.6f}".format(name, *stats))
 
 if __name__ == '__main__':
     resource.setrlimit(resource.RLIMIT_NOFILE, (32768, 32768))
@@ -312,11 +312,11 @@ if __name__ == '__main__':
     legend = "{:>8}, {:>4}, {:>5}, {:>10}, {:>10}, {:>10}, {:>10}, {:>10}, {:>10}"\
              .format("type", "num", "spwn", "avg", "min", "q50", "q90", "q99", "max")
 
-    print "Connection scaling:\n"
+    print("Connection scaling:\n")
 
     ex = SimpleExecutor
-    print "\nExecutor: {}".format(ex.ToString())
-    print legend
+    print("\nExecutor: {}".format(ex.ToString()))
+    print(legend)
 
     (s, d) = Check(1, ex, exec_time=300, to_spawn=32)
     PrintFormatted("spawn", s)
@@ -328,8 +328,8 @@ if __name__ == '__main__':
 
     for (coef, ex) in [(3, ChrootExecutor), (6, MetaChrootExecutor)]:
 
-        print "\nExecutor: {}".format(ex.ToString())
-        print legend
+        print("\nExecutor: {}".format(ex.ToString()))
+        print(legend)
 
         (s, d) = Check(1, ex, exec_time=300, to_spawn=16)
         PrintFormatted("spawn", s)
@@ -354,12 +354,12 @@ if __name__ == '__main__':
             ExpectLe(s[4], coef * simple_avg_create, "q50 create time above linear ")
             ExpectLe(d[4], coef * simple_avg_destroy, "q50 create time above linear ")
 
-    print "\nContainer regression\n"
+    print("\nContainer regression\n")
 
     for ex in [MetaNetChrootExecutor]:
 
-        print "\nExecutor: {}".format(ex.ToString())
-        print legend
+        print("\nExecutor: {}".format(ex.ToString()))
+        print(legend)
 
         prev_avg = (0.0, 0.0)
         regression_create = True
