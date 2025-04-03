@@ -159,7 +159,7 @@ check_numa_balance('0 4')
 c.Destroy("test")
 
 # numa balance enabled for contaienr with chroot and cpuset='node ...'
-r = c.Run('test', wait=0, command='sleep 10', root_volume={'layers': ['ubuntu-xenial']})
+r = c.Run('test', wait=0, command='sleep 10', root_volume={'layers': ['ubuntu-jammy']})
 check_numa_balance('0 4')
 r.SetProperty("cpu_set", "node 0")
 check_numa_balance('0 0')

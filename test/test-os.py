@@ -71,9 +71,9 @@ def CheckSystemd(ct):
         with RunContainer(conn, os.path.join(ct.name, 'child'), command='systemctl -a',
                           wait=10, private='portoctl shell', virt_mode='job') as r:
             if int(r['exit_code']) == 0:
+                ExpectNe(r['stdout'].strip().splitlines(), [])
+                ExpectEq(r['stderr'], '')
                 return
-            ExpectNe(r['stdout'].strip().splitlines(), [])
-            ExpectEq(r['stderr'], '')
         if i < 4:
             time.sleep(0.1)
 
@@ -86,7 +86,7 @@ try:
         use_os_mode_cgroupns : true
     }""")
 
-    a = conn.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-xenial"]})
+    a = conn.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-jammy"]})
     ExpectRunlevel(a, 'N 5')
     a.Stop()
     a.Start()
@@ -97,7 +97,7 @@ try:
     CheckCgroupHierarchy(a, True)
     a.Destroy()
 
-    m = conn.Run("m", root_volume={'layers': ["ubuntu-xenial"]})
+    m = conn.Run("m", root_volume={'layers': ["ubuntu-jammy"]})
     a = conn.Create("m/a")
     a.SetProperty('virt_mode', 'os')
     a.SetProperty('capabilities[SYS_ADMIN]', 'false')
@@ -111,7 +111,7 @@ try:
         use_os_mode_cgroupns : false
     }""")
 
-    m = conn.Run("m", root_volume={'layers': ["ubuntu-xenial"]})
+    m = conn.Run("m", root_volume={'layers': ["ubuntu-jammy"]})
     a = conn.Run("m/a", virt_mode='os')
     ExpectRunlevel(a, 'N 5')
     a.Stop()
@@ -121,7 +121,7 @@ try:
     ExpectRunlevel(a, 'N 5')
     m.Destroy()
 
-    m = conn.Run("m", root_volume={'layers': ["ubuntu-xenial"]})
+    m = conn.Run("m", root_volume={'layers': ["ubuntu-jammy"]})
     a = conn.Create("m/a")
     a.SetProperty('virt_mode', 'os')
     a.SetProperty('capabilities[SYS_ADMIN]', 'false')

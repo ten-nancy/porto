@@ -6,7 +6,7 @@ from test_common import *
 
 AsRoot()
 
-PREV_VERSION = "5.0.11"
+PREV_VERSION = "5.3.46"
 PREV_PORTOD = False
 
 TMPDIR = "/tmp/test-release-upgrade"
@@ -250,7 +250,7 @@ try:
     snap_app = SnapshotProps(r)
     r.Start()
 
-    v = c.CreateVolume(None, layers=["ubuntu-precise"])
+    v = c.CreateVolume(None, layers=["ubuntu-xenial"])
     r = c.Create("parent_os")
     SetProps(r, parent_knobs)
     VerifyProps(r, parent_knobs)
@@ -279,6 +279,8 @@ try:
     VerifyProps(r, os_knobs)
     snap_os = SnapshotProps(r)
     r.Start()
+    r.Wait(5000)
+    ExpectEq(r['state'], 'running')
 
     rt_parent_knobs = [
         ("private", "rt_parent"),
@@ -408,11 +410,11 @@ ExpectEq(ver, PREV_VERSION)
 CheckNetworkProblems()
 
 r = c.Find("test2")
-assert r.Wait() == "test2"
-assert r.GetProperty("stdout") == "456\n"
-assert r.GetProperty("exit_status") == "0"
+r.Wait()
+ExpectEq(r.GetProperty("stdout").strip(), "456")
+ExpectEq(r.GetProperty("exit_status"), "0")
 
-assert c.GetProperty("parent_os/os", "state") == "running"
+ExpectEq(c.GetProperty("parent_os/os", "state"), "running")
 
 r = c.Find("parent_app")
 VerifyProps(r, parent_knobs)

@@ -10,7 +10,7 @@ import random
 def vunlink():
     c = porto.Connection(timeout=30)
     try:
-        c.CreateVolume(layers=['ubuntu-precise'], backend='plain')
+        c.CreateVolume(layers=['ubuntu-jammy'], backend='plain')
     except Exception as e:
         return e
 

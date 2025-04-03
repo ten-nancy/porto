@@ -483,7 +483,7 @@ except:
      pass
 
 c = porto.Connection(timeout=30)
-v = c.CreateVolume(layers=['ubuntu-xenial'], backend='native')
+v = c.CreateVolume(layers=['ubuntu-jammy'], backend='native')
 subprocess.call(['timeout', '5', 'dd', 'if=/dev/urandom', 'of=' + str(v) + '/foo', 'bs=1M', 'count=2048'])
 
 portodReload = Thread(target=Reload)

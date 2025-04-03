@@ -88,7 +88,7 @@ ct.Destroy()
 # check fifo pipe for stdin
 ct = c.CreateWeakContainer('test')
 
-vol = c.CreateVolume(layers=['ubuntu-xenial'], containers='test')
+vol = c.CreateVolume(layers=['ubuntu-jammy'], containers='test')
 ct.SetProperty("root", vol.path)
 
 ct.Start()

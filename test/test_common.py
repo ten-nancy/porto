@@ -39,6 +39,10 @@ def Expect(a, message="condition does not hold"):
 def ExpectEq(a, b):
     assert a == b, "{} should be equal {}".format(a, b)
 
+def ExpectIn(x, xs):
+    assert x in xs, "{} should be in {}".format(x, xs)
+
+
 def ExpectNe(a, b):
     assert a != b, "{} should not be equal {}".format(a, b)
 
@@ -275,25 +279,38 @@ def GetKernelVersion():
 
 
 @contextlib.contextmanager
+def CreateContainer(conn, *args, **kwargs):
+    ct = conn.Create(*args, **kwargs)
+    try:
+        yield ct
+    finally:
+        try:
+            ct.Destroy()
+        except porto.exceptions.ContainerDoesNotExist:
+            pass
+
+
+@contextlib.contextmanager
+def RunContainer(conn, *args, **kwargs):
+    ct = conn.Run(*args, **kwargs)
+    try:
+        yield ct
+    finally:
+        try:
+            ct.Destroy()
+        except porto.exceptions.ContainerDoesNotExist:
+            pass
+
+
+@contextlib.contextmanager
 def CreateVolume(conn, *args, **kwargs):
     v = conn.CreateVolume(*args, **kwargs)
     try:
         yield v
     finally:
         try:
-            v.Unlink()
+            v.Unlink(container='***')
         except porto.exceptions.VolumeNotFound:
-            pass
-
-@contextlib.contextmanager
-def RunContainer(conn, *args, **kwargs):
-    v = conn.Run(*args, **kwargs)
-    try:
-        yield v
-    finally:
-        try:
-            v.Destroy()
-        except porto.exceptions.ContainerDoesNotExist:
             pass
 
 

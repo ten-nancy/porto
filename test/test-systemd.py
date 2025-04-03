@@ -13,14 +13,14 @@ if WithSystemd():
 else:
     ExpectEq(portod_cg, "/")
 
-a = c.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-precise"]}, **{"controllers[systemd]": True})
+a = c.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-jammy"]}, **{"controllers[systemd]": True})
 a_pid = a['root_pid']
 
 b = c.Run("b", command="sleep 1000")
 b_pid = b['root_pid']
 
 a_cg = GetSystemdCg(a_pid)
-ExpectEq(a_cg, "/porto%a")
+ExpectEq(a_cg, "/porto%a/init.scope")
 
 b_cg = GetSystemdCg(b_pid)
 ExpectEq(b_cg, portod_cg)

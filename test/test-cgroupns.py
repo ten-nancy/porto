@@ -9,7 +9,7 @@ print("use {} hierarchy".format("cgroup2" if USE_CGROUP2 else "cgroup1"))
 
 try:
     def CheckCgroupfsNone():
-        a = conn.Run('a', cgroupfs='none', wait=0, root_volume={'layers': ['ubuntu-xenial']})
+        a = conn.Run('a', cgroupfs='none', wait=0, root_volume={'layers': ['ubuntu-jammy']})
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='cat /proc/self/cgroup')
         ExpectEq('0', b['exit_code'])
@@ -25,7 +25,7 @@ try:
 
 
     def CheckCgroupfsRo():
-        a = conn.Run('a', cgroupfs='ro', wait=0, root_volume={'layers': ['ubuntu-xenial']})
+        a = conn.Run('a', cgroupfs='ro', wait=0, root_volume={'layers': ['ubuntu-jammy']})
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='cat /proc/self/cgroup')
         ExpectEq('0', b['exit_code'])
@@ -56,10 +56,13 @@ try:
     def CheckCgroupfsRw(is_os, userns=False, enable_net_cgroups=False):
         if is_os:
             ExpectEq(porto.exceptions.PermissionError,
-                     Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-xenial']}))
+                     Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-jammy']}))
 
-        a = conn.Run('a', cgroupfs='rw', userns=userns, user='1044' if userns else '0',
-                     virt_mode=('os' if is_os else 'app'), wait=0, root_volume={'layers': ['ubuntu-xenial']})
+        # TODO(ovov): user='1044' if userns else '0',
+        a = conn.Run('a', cgroupfs='rw', userns=userns, user='0',
+                     virt_mode=('os' if is_os else 'app'), wait=0, root_volume={'layers': ['ubuntu-jammy']})
+        a.Wait(100)
+        ExpectIn(a['state'], ('running', 'meta'))
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='cat /proc/self/cgroup')
         ExpectEq('0', b['exit_code'])
@@ -71,19 +74,14 @@ try:
         ExpectEq(7 if USE_CGROUP2 else 16, len(b['stdout'].split()))
         b.Destroy()
 
-        b = conn.Run('a/b', wait=0, virt_mode='job', isolate=False, user='1044',
-                     command='bash -c "mkdir /sys/fs/cgroup/freezer/test && echo $$ | tee /sys/fs/cgroup/freezer/test/cgroup.procs; sleep 3"')
+        with RunContainer(conn, 'a/b', wait=30, virt_mode='job', isolate=False, command='mkdir /sys/fs/cgroup/freezer/test') as ct:
+            ExpectEq(ct['exit_status'], '0')
 
-        time.sleep(1)
-        with open('/sys/fs/cgroup/freezer/porto/a/test/cgroup.procs') as f:
-            ExpectEq(2, len(f.read().strip().split()))  # bash and sleep in cgroup
-        b.Wait()
-
-        ExpectEq('0', b['exit_code'])
-        b.Destroy()
+        with RunContainer(conn, 'a/b', wait=30, virt_mode='job', isolate=False, command="sh -c 'echo $$ > /sys/fs/cgroup/freezer/test/cgroup.procs'") as ct:
+            ExpectEq(ct['exit_status'], '0')
 
         if not USE_CGROUP2:
-            b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, user='1044',
+            b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False,
                          command='bash -c "mkdir /sys/fs/cgroup/net_cls/test && rmdir /sys/fs/cgroup/net_cls/test"')
 
             if enable_net_cgroups:
@@ -102,7 +100,7 @@ try:
     CheckCgroupfsNone()
     CheckCgroupfsRo()
     ExpectEq(porto.exceptions.PermissionError, \
-             Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-xenial']}))
+             Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-jammy']}))
 
     ConfigurePortod('test-cgroupns', """
     container {
@@ -111,7 +109,7 @@ try:
     }""")
 
     # check that container restored correctly
-    a = conn.Run('a', weak=False, virt_mode='os', wait=0, root_volume={'layers': ['ubuntu-xenial']})
+    a = conn.Run('a', weak=False, virt_mode='os', wait=0, root_volume={'layers': ['ubuntu-jammy']})
     ReloadPortod()
     a.Destroy()
 

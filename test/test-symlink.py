@@ -31,7 +31,7 @@ ExpectEq(a['symlink'], "a/b: c/d; tmp: /foo; ")
 
 ExpectException(a.SetProperty, porto.exceptions.Permission, "symlink[/test]", "foo")
 
-v = c.CreateVolume(layers=["ubuntu-xenial"], containers="a")
+v = c.CreateVolume(layers=["ubuntu-jammy"], containers="a")
 a.Stop()
 a['symlink'] = "/foo/bar//../bar/baz: /xxx"
 a['symlink[a]'] = 'b'
@@ -53,14 +53,14 @@ ExpectEq(os.path.lexists(a['root'] + "/foo/bar/baz"), False)
 a.Destroy()
 
 m = c.Run("m")
-a = c.Run("m/a", root_volume={"layers": ["ubuntu-xenial"]})
+a = c.Run("m/a", root_volume={"layers": ["ubuntu-jammy"]})
 a["symlink"] = "/a: /b"
 ExpectEq(os.path.lexists(a['root'] + "/a"), True)
 a.Destroy()
 m.Destroy()
 
 
-a = c.Run("a", root_volume={"layers": ["ubuntu-xenial"]}, symlink="/usr/lib/tmp: /tmp", user=alice_uid, group=alice_gid)
+a = c.Run("a", root_volume={"layers": ["ubuntu-jammy"]}, symlink="/usr/lib/tmp: /tmp", user=alice_uid, group=alice_gid)
 a["symlink"] = "/usr/lib/tmp: /tmp"
 ExpectEq(a["symlink"], "/usr/lib/tmp: /tmp; ")
 

@@ -14,7 +14,7 @@ c = porto.Connection(timeout=30)
 r = c.CreateWeakContainer("test")
 r.SetProperty("porto_namespace", "")
 
-v = c.CreateVolume(None, layers=["ubuntu-precise"])
+v = c.CreateVolume(None, layers=["ubuntu-jammy"])
 v.Link(r.name)
 
 #Check virt_mode == os user handling

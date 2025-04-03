@@ -4,7 +4,7 @@ import subprocess
 
 conn = porto.Connection(timeout=30)
 w = conn.Create("w", weak=True)
-v = conn.CreateVolume(layers=["ubuntu-xenial"], containers='w')
+v = conn.CreateVolume(layers=["ubuntu-jammy"], containers='w')
 
 def test(enable_porto, command, stdout, **kwargs):
     exit_code = 0

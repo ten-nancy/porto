@@ -169,7 +169,7 @@ class Executor(object):
             ct.SetProperty("net", "L3 door")
 
         if self.HasChroot:
-            v = self.Conn.CreateVolume(None, layers=["ubuntu-precise"])
+            v = self.Conn.CreateVolume(None, layers=["ubuntu-jammy"])
             v.Link(ct.name)
             v.Unlink("/")
             ct.SetProperty("root", v.path)

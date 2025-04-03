@@ -810,7 +810,7 @@ def get_random_layers(conn, place=None):
 def select_layers(conn, place=None):
     return select_by_weight( [
         (10, []),
-        (8, ["ubuntu-precise"]),
+        (8, ["ubuntu-jammy"]),
         (5, get_random_layers(conn, place)),
     ] )
 
