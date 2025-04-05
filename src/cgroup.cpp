@@ -2480,12 +2480,33 @@ TError TCgroupDriver::InitializeCgroups() {
     /* This piece of code should never be executed. */
     TPath("/usr/sbin/cgclear").Chmod(0);
 
+    {
+        auto cg = FreezerSubsystem->Cgroup(PORTO_CGROUP_PREFIX);
+        if (!cg->Exists()) {
+            error = CreateCgroup(*cg);
+            if (error)
+                return error;
+        }
+    }
+
+    if (Cgroup2Subsystem->Supported) {
+        auto cg = Cgroup2Subsystem->Cgroup(PORTO_CGROUP_PREFIX);
+        if (!cg->Exists()) {
+            error = CreateCgroup(*cg);
+            if (error)
+                return error;
+        }
+    }
+
     return error;
 }
 
 TError TCgroupDriver::InitializeDaemonCgroups() {
     std::vector<const TSubsystem *> DaemonSubsystems = {FreezerSubsystem.get(), MemorySubsystem.get(),
                                                         CpuacctSubsystem.get(), PerfSubsystem.get()};
+
+    if (Cgroup2Subsystem->Supported)
+        DaemonSubsystems.push_back(Cgroup2Subsystem.get());
 
     for (auto subsys: DaemonSubsystems) {
         auto hy = subsys->Hierarchy;
@@ -2527,22 +2548,6 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
     error = MemorySubsystem->SetDirtyLimit(*cg, config().daemon().helpers_dirty_limit());
     if (error)
         L_ERR("Cannot set portod-helpers dirty limit: {}", error);
-
-    cg = FreezerSubsystem->Cgroup(PORTO_CGROUP_PREFIX);
-    if (!cg->Exists()) {
-        error = CreateCgroup(*cg);
-        if (error)
-            return error;
-    }
-
-    if (Cgroup2Subsystem->Supported) {
-        cg = Cgroup2Subsystem->Cgroup(PORTO_CGROUP_PREFIX);
-        if (!cg->Exists()) {
-            error = CreateCgroup(*cg);
-            if (error)
-                return error;
-        }
-    }
 
     return OK;
 }

@@ -188,7 +188,10 @@ TError TContainer::FindTaskContainer(pid_t pid, std::shared_ptr<TContainer> &ct,
     TError error;
     std::unique_ptr<const TCgroup> cg;
 
-    error = CgroupDriver.FreezerSubsystem->TaskCgroup(pid, cg);
+    if (CgroupDriver.Cgroup2Subsystem->IsDisabled())
+        error = CgroupDriver.FreezerSubsystem->TaskCgroup(pid, cg);
+    else
+        error = CgroupDriver.Cgroup2Subsystem->TaskCgroup(pid, cg);
     if (error)
         return error;
 
