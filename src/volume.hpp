@@ -53,7 +53,6 @@ constexpr const char *V_SPACE_AVAILABLE = "space_available";
 constexpr const char *V_INODE_AVAILABLE = "inode_available";
 
 constexpr const char *V_PLACE = "place";
-constexpr const char *V_PLACE_KEY = "place_key";
 constexpr const char *V_DEVICE_NAME = "device_name";
 
 class TVolume;
@@ -81,7 +80,6 @@ public:
     virtual TError StatFS(TStatFS &result) = 0;
     virtual TError Resize(uint64_t space_limit, uint64_t inode_limit);
     virtual TError Check(std::string &message);
-    virtual std::string ClaimPlace();
 };
 
 class TVolumeLink {
@@ -146,7 +144,6 @@ public:
     std::vector<std::string> Layers;
     std::list<std::shared_ptr<TVolumeLink>> Links;
 
-    uint64_t ClaimedSpace = 0;
     uint64_t SpaceLimit = 0;
     uint64_t SpaceGuarantee = 0;
     uint64_t InodeLimit = 0;
@@ -233,8 +230,6 @@ public:
     static void DestroyUnlinked(std::list<std::shared_ptr<TVolume>> &unlinked);
 
     static TError CheckRequired(TContainer &ct);
-
-    TError ClaimPlace(uint64_t size);
 
     TPath GetInternal(const std::string &type) const;
     unsigned long GetMountFlags(void) const;

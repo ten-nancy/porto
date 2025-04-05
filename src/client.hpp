@@ -51,10 +51,6 @@ public:
 
     bool IsSuperUser(void) const;
 
-    bool IsInternalUser(void) const {
-        return AccessLevel == EAccessLevel::Internal;
-    }
-
     bool IsBlockShutdown() const {
         return (Processing && !WaitRequest) || Offset;
     }

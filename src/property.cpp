@@ -3237,61 +3237,37 @@ public:
 class TPlaceLimit: public TProperty {
 public:
     TPlaceLimit()
-        : TProperty(P_PLACE_LIMIT, EProperty::PLACE_LIMIT,
-                    "Limits sum of volume space_limit: total|default|/place|tmpfs|lvm group|rbd: bytes;...")
-    {
-        IsDynamic = true;
+        : TProperty(
+              P_PLACE_LIMIT, EProperty::PLACE_LIMIT,
+              "Limits sum of volume space_limit: total|default|/place|tmpfs|lvm group|rbd: bytes;... [deprecated]")
+    {}
+    TError Get(std::string &) const override {
+        return OK;
     }
-    TError Get(std::string &value) const override {
-        auto lock = LockVolumes();
-        return UintMapToString(CT->PlaceLimit, value);
-    }
-    TError GetIndexed(const std::string &index, std::string &value) override {
-        auto lock = LockVolumes();
-        if (!CT->PlaceLimit.count(index))
-            return TError(EError::InvalidValue, "invalid index " + index);
-        value = std::to_string(CT->PlaceLimit.at(index));
+    TError GetIndexed(const std::string &, std::string &) override {
         return OK;
     }
 
-    TError Set(TUintMap &value) {
-        auto lock = LockVolumes();
-        CT->PlaceLimit = value;
-        CT->SetProp(EProperty::PLACE_LIMIT);
+    TError Set(TUintMap &) {
         return OK;
     }
 
-    TError Set(const std::string &value) override {
-        TUintMap val;
-        TError error = StringToUintMap(value, val);
-        if (error)
-            return error;
-        return Set(val);
+    TError Set(const std::string &) override {
+        return OK;
     }
 
-    TError SetIndexed(const std::string &index, const std::string &value) override {
-        auto lock = LockVolumes();
-        TUintMap val = CT->PlaceLimit;
-        TError error = StringToSize(value, val[index]);
-        if (!error) {
-            CT->PlaceLimit = val;
-            CT->SetProp(EProperty::PLACE_LIMIT);
-        }
-        return error;
+    TError SetIndexed(const std::string &, const std::string &) override {
+        return OK;
     }
 
-    void Dump(rpc::TContainerSpec &spec) const override {
-        DumpMap(CT->PlaceLimit, *spec.mutable_place_limit());
+    void Dump(rpc::TContainerSpec &) const override {}
+
+    bool Has(const rpc::TContainerSpec &) const override {
+        return false;
     }
 
-    bool Has(const rpc::TContainerSpec &spec) const override {
-        return spec.has_place_limit();
-    }
-
-    TError Load(const rpc::TContainerSpec &spec) override {
-        TUintMap map;
-        LoadMap(spec.place_limit(), CT->PlaceLimit, map);
-        return Set(map);
+    TError Load(const rpc::TContainerSpec &) override {
+        return OK;
     }
 } static PlaceLimit;
 
@@ -3299,25 +3275,18 @@ class TPlaceUsage: public TProperty {
 public:
     TPlaceUsage()
         : TProperty(P_PLACE_USAGE, EProperty::NONE,
-                    "Current sum of volume space_limit: total|/place|tmpfs|lvm group|rbd: bytes;...")
+                    "Current sum of volume space_limit: total|/place|tmpfs|lvm group|rbd: bytes;... [deprecated]")
     {
         IsReadOnly = true;
     }
-    TError Get(std::string &value) const override {
-        auto lock = LockVolumes();
-        return UintMapToString(CT->PlaceUsage, value);
+    TError Get(std::string &) const override {
+        return OK;
     }
-    TError GetIndexed(const std::string &index, std::string &value) override {
-        auto lock = LockVolumes();
-        if (!CT->PlaceUsage.count(index))
-            return TError(EError::InvalidValue, "invalid index " + index);
-        value = std::to_string(CT->PlaceUsage.at(index));
+    TError GetIndexed(const std::string &, std::string &) override {
         return OK;
     }
 
-    void Dump(rpc::TContainerStatus &spec) const override {
-        DumpMap(CT->PlaceUsage, *spec.mutable_place_usage());
-    }
+    void Dump(rpc::TContainerStatus &) const override {}
 } static PlaceUsage;
 
 class TOwnedVolumes: public TProperty {

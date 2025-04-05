@@ -323,24 +323,9 @@ try:
         assert places.find(place.place) != -1
     assert places.count(';') + 1 == len(dump.spec.place.cfg)
 
-    a.SetProperty('place_limit', "/place: 1G; ***: 2G")
-    CopyProps(a, b)
-    assert a.GetProperty('place_limit') == b.GetProperty('place_limit')
-    dump = a.Dump()
-
-    place_limits = a.GetProperty('place_limit')
-    for place_limit in dump.spec.place_limit.map:
-        assert place_limits.find('{}: {}'.format(place_limit.key, place_limit.val)) != -1
-    assert place_limits.count(';') + 1 == len(dump.spec.place_limit.map)
-
     v1 = c.CreateVolume(space_limit='400M', owner_container=container_name_a)
     v2 = c.CreateVolume(space_limit='500M', owner_container=container_name_a)
     dump = a.Dump()
-
-    place_usage = a.GetProperty('place_usage')
-    for place_usg in dump.status.place_usage.map:
-        assert place_usage.find('{}: {}'.format(place_usg.key, place_usg.val)) != -1
-    assert place_usage.count(';') + 1 == len(dump.status.place_usage.map)
 
     volumes_owned = a.GetProperty('volumes_owned')
     for volume_owned in dump.status.volumes_owned.volume:

@@ -520,7 +520,7 @@ message TContainerStatus {
     optional TUintMap io_time = 35;        // out, ns
     optional TUintMap io_pressure = 351;   // out
 
-    optional TUintMap place_usage = 36;
+    optional TUintMap place_usage = 36 [deprecated=true];
     optional uint64 memory_usage = 37;         // out, bytes
 
     optional uint64 memory_guarantee_total = 38;   // out
@@ -622,7 +622,7 @@ message TContainerSpec {
     optional TContainerDevices devices = 26;
     optional bool devices_explicit = 265;
     optional TContainerPlaceConfig place = 27;
-    optional TUintMap place_limit = 28;
+    optional TUintMap place_limit = 28 [deprecated=true];
 
     optional string cwd = 29;
     optional string stdin_path = 30;
@@ -787,7 +787,7 @@ message TVolumeSpec {
 
     optional TCred owner = 30;              // default: self owner
     optional string owner_container = 31;   // default: self
-    optional string place_key = 32;         // out
+    optional string place_key = 32 [deprecated=true];   // out
     optional string creator = 33;           // out
     optional bool auto_path = 34;           // out
     optional uint32 device_index = 35;      // out

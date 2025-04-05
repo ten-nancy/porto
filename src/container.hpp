@@ -326,10 +326,6 @@ public:
     TPath RootPath; /* path in host namespace */
     std::vector<std::string> PlacePolicy;
 
-    /* Pritected with VolumesMutex */
-    TUintMap PlaceLimit;
-    TUintMap PlaceUsage;
-
     TTask Task;
     pid_t TaskVPid;
     TTask WaitTask;

@@ -263,10 +263,6 @@ TError TVolumeBackend::Check(std::string &) {
     return OK;
 }
 
-std::string TVolumeBackend::ClaimPlace() {
-    return Volume->UserStorage() ? "" : Volume->Place.ToString();
-}
-
 /* TVolumeDirBackend - directory */
 
 class TVolumeDirBackend: public TVolumeBackend {
@@ -306,10 +302,6 @@ public:
 
     TError Build() override {
         return OK;
-    }
-
-    std::string ClaimPlace() override {
-        return "";
     }
 
     TError Destroy() override {
@@ -372,10 +364,6 @@ public:
         return Volume->InternalPath.BindRemount(Volume->StoragePath, Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
     }
 
-    std::string ClaimPlace() override {
-        return "";
-    }
-
     TError Destroy() override {
         return Volume->InternalPath.UmountAll();
     }
@@ -405,10 +393,6 @@ public:
     TError Build() override {
         return Volume->InternalPath.BindRemount(Volume->StoragePath,
                                                 Volume->GetMountFlags() | MS_REC | MS_SLAVE | MS_SHARED);
-    }
-
-    std::string ClaimPlace() override {
-        return "";
     }
 
     TError Destroy() override {
@@ -471,10 +455,6 @@ public:
                                           opts);
     }
 
-    std::string ClaimPlace() override {
-        return "tmpfs";
-    }
-
     TError Destroy() override {
         return Volume->InternalPath.UmountAll();
     }
@@ -529,10 +509,6 @@ public:
         quota.InodeLimit = Volume->InodeLimit;
         L_ACT("Creating project quota: {} bytes: {} inodes: {}", quota.Path, quota.SpaceLimit, quota.InodeLimit);
         return quota.Create();
-    }
-
-    std::string ClaimPlace() override {
-        return "";
     }
 
     TError Destroy() override {
@@ -1471,10 +1447,6 @@ public:
         return TError(EError::NotSupported, "rbd backend doesn't suppport resize");
     }
 
-    std::string ClaimPlace() override {
-        return "rbd";
-    }
-
     TError Restore() {
         if (!Volume->DeviceName.size())
             Volume->DeviceName = fmt::format("rbd{}", Volume->DeviceIndex);
@@ -1695,10 +1667,6 @@ public:
 
     TError Resize(uint64_t, uint64_t) override {
         return TError(EError::NotSupported, "nbd backend doesn't suppport resize");
-    }
-
-    std::string ClaimPlace() override {
-        return "nbd";
     }
 
     TError StatFS(TStatFS &result) override {
@@ -1962,10 +1930,6 @@ public:
                            Device}, TFile(), TFile(), TFile(), PrivilegedHelperCapabilities);
     }
 
-    std::string ClaimPlace() override {
-        return "lvm " + Group;
-    }
-
     TError StatFS(TStatFS &result) override {
         return Volume->InternalPath.StatFS(result);
     }
@@ -2200,58 +2164,6 @@ TError TVolume::CheckGuarantee(uint64_t space_guarantee, uint64_t inode_guarante
         return TError(EError::NoSpace,
                       "Not enough inodes for volume guarantee {}, avail {}, claimed {} of {}, our usage {}",
                       inode_guarantee, total.InodeAvail, inode_claimed, inode_guaranteed, current.InodeUsage);
-
-    return OK;
-}
-
-TError TVolume::ClaimPlace(uint64_t size) {
-    if (!VolumeOwnerContainer || !Backend)
-        return TError(EError::Busy, "Volume has no backend or owner");
-
-    auto place = Backend->ClaimPlace();
-    if (place == "")
-        return OK;
-
-    for (auto ct = VolumeOwnerContainer; ct; ct = ct->Parent) {
-        ct->LockStateWrite();
-
-        if ((!size || size > ClaimedSpace) && !CL->IsInternalUser() && State != EVolumeState::Destroying) {
-            uint64_t total_limit = ct->PlaceLimit.count("total") ? ct->PlaceLimit.at("total") : UINT64_MAX;
-            uint64_t place_limit = ct->PlaceLimit.count(place)       ? ct->PlaceLimit.at(place)
-                                   : ct->PlaceLimit.count("default") ? ct->PlaceLimit.at("default")
-                                                                     : UINT64_MAX;
-            uint64_t total_usage = ct->PlaceUsage.count("total") ? ct->PlaceUsage.at("total") : 0;
-            uint64_t place_usage = ct->PlaceUsage.count(place) ? ct->PlaceUsage.at(place) : 0;
-
-            if ((total_limit != UINT64_MAX && size == 0) || (place_limit != UINT64_MAX && size == 0) ||
-                (total_usage - ClaimedSpace > UINT64_MAX - size) || (total_limit < total_usage - ClaimedSpace + size) ||
-                (place_usage - ClaimedSpace > UINT64_MAX - size) || (place_limit < place_usage - ClaimedSpace + size)) {
-                ct->UnlockState();
-
-                // Undo
-                for (auto c = VolumeOwnerContainer; c && c != ct; c = c->Parent) {
-                    c->LockStateWrite();
-                    c->PlaceUsage["total"] -= size - ClaimedSpace;
-                    c->PlaceUsage[place] -= size - ClaimedSpace;
-                    c->UnlockState();
-                }
-
-                return TError(EError::ResourceNotAvailable,
-                              "Not enough place limit in {} for {} limit {}, total usage {} of {}, {} usage {} of {}",
-                              ct->Name, Path, StringFormatSize(size - ClaimedSpace), StringFormatSize(total_usage),
-                              StringFormatSize(total_limit), place, StringFormatSize(place_usage),
-                              StringFormatSize(place_limit));
-            }
-        }
-
-        ct->PlaceUsage["total"] += size - ClaimedSpace;
-        ct->PlaceUsage[place] += size - ClaimedSpace;
-
-        ct->UnlockState();
-    }
-
-    auto volumes_lock = LockVolumes();
-    ClaimedSpace = size;
 
     return OK;
 }
@@ -3306,10 +3218,6 @@ TError TVolume::Destroy() {
         if (error && !ret)
             ret = error;
 
-        error = volume->ClaimPlace(0);
-        if (error)
-            L_WRN("Cannot free claimed space: {}", error);
-
         volumes_lock.lock();
 
         for (auto &it: Volumes)
@@ -3479,23 +3387,11 @@ TError TVolume::Tune(const std::map<std::string, std::string> &properties) {
                 goto out;
         }
 
-        if (!spaceLimit || spaceLimit > SpaceLimit) {
-            error = ClaimPlace(spaceLimit);
-            if (error)
-                goto out;
-        }
-
         L_ACT("Resize volume: {} to bytes: {} inodes: {}", Path, spaceLimit, inodeLimit);
 
         error = Backend->Resize(spaceLimit, inodeLimit);
-        if (error) {
-            if (!spaceLimit || spaceLimit > SpaceLimit)
-                ClaimPlace(SpaceLimit);
+        if (error)
             goto out;
-        }
-
-        if (spaceLimit && spaceLimit < SpaceLimit)
-            ClaimPlace(spaceLimit);
 
         volumes_lock.lock();
         SpaceLimit = spaceLimit;
@@ -3819,9 +3715,6 @@ void TVolume::DumpDescription(TVolumeLink *link, const TPath &path, rpc::TVolume
     if (DeviceName.size())
         ret[V_DEVICE_NAME] = DeviceName;
 
-    if (Backend)
-        ret[V_PLACE_KEY] = Backend->ClaimPlace();
-
     /* common link is pinned by all links */
     if (!link || link->HostTarget == Path) {
         for (auto &link: Links) {
@@ -3995,10 +3888,6 @@ TError TVolume::Restore(const TKeyValue &node) {
     if (error)
         return error;
 
-    error = ClaimPlace(SpaceLimit);
-    if (error)
-        return error;
-
     if (!DeviceName.size() && StoragePath)
         TPath::GetDevName(StoragePath.GetDev(), DeviceName);
 
@@ -4104,7 +3993,6 @@ std::vector<TVolumeProperty> VolumeProperties = {
     {V_LAYERS, "top-layer;...;bottom-layer - overlayfs layers", false},
     {V_PLACE, "place for layers and default storage (optional)", false},
     {V_DEVICE_NAME, "name of backend disk device (ro)", true},
-    {V_PLACE_KEY, "key for charging place_limit for owner_container (ro)", true},
     {V_SPACE_LIMIT, "disk space limit (dynamic, default zero - unlimited)", false},
     {V_INODE_LIMIT, "disk inode limit (dynamic, default zero - unlimited)", false},
     {V_SPACE_GUARANTEE, "disk space guarantee (dynamic, default - zero)", false},
@@ -4247,8 +4135,6 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec, std::shared_ptr<TVolume> &v
     volume->SetState(EVolumeState::Building);
 
     volumes_lock.unlock();
-
-    error = volume->ClaimPlace(volume->SpaceLimit);
 
     /* release owner */
     CL->ReleaseContainer();
@@ -4838,9 +4724,6 @@ void TVolume::Dump(rpc::TVolumeSpec &spec, bool full) {
             path = CL->ComposePath(path);
         spec.add_layers(path.ToString());
     }
-
-    if (Backend)
-        spec.set_place_key(Backend->ClaimPlace());
 
     for (auto &link: Links) {
         auto l = spec.add_links();

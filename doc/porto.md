@@ -590,11 +590,11 @@ Write access to container requires any of these conditions:
 
     Container inherits policy from parent container and cannot surpass it.
 
-* **place\_limit** - limits sum of volume **space\_limit** owned by subtree
+* **place\_limit** - limits sum of volume **space\_limit** owned by subtree [deprecated]
 
     Format: total|default|\<place\>|tmpfs|lvm \<group\>|rbd: \<bytes\>;...
 
-* **place\_usage** - current sum of volume **space\_limit** owned by subtree
+* **place\_usage** - current sum of volume **space\_limit** owned by subtree [deprecated]
 
     Format is same as for **place\_limit**.
 

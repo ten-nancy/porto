@@ -7,26 +7,17 @@ import subprocess
 from test_common import *
 import random
 
-def vunlink():
-    c = porto.Connection(timeout=30)
-    try:
-        c.CreateVolume(layers=['ubuntu-jammy'], backend='plain')
-    except Exception as e:
-        return e
+conn = porto.Connection(timeout=30)
 
+# TODO: this test cannot reproduce race properly
 for i in range(10):
-    t = threading.Thread(target=vunlink)
+    t = threading.Thread(target=conn.CreateVolume, kwargs={'layers': ['ubuntu-jammy'], 'backend': 'plain'})
     t.start()
 
     time.sleep(0.5 + random.randint(-4, 4) * 0.05)
-    c = porto.Connection(timeout=30)
     try:
-        c.UnlinkVolume('/place/porto_volumes/%d/volume' % i, '***')
-
+        conn.UnlinkVolume('/place/porto_volumes/{}/volume'.format(i), '***')
     except (porto.exceptions.VolumeNotFound, porto.exceptions.VolumeNotReady):
         pass
-
-    except Exception as e:
-        raise e
 
     t.join()
