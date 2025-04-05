@@ -285,7 +285,7 @@ TError TTaskEnv::ChildExec() {
 TError TTaskEnv::WriteResolvConf() {
     if (CT->HasProp(EProperty::RESOLV_CONF) ? !CT->ResolvConf.size() : CT->Root == "/")
         return OK;
-    L_ACT("Write resolv.conf for CT{}:{}", CT->Id, CT->Name);
+    L_ACT("Write resolv.conf for {}", CT->Slug);
     return TPath("/etc/resolv.conf").WritePrivate(CT->ResolvConf.size() ? CT->ResolvConf : RootContainer->ResolvConf);
 }
 

@@ -222,11 +222,11 @@ TError TContainer::FindTaskContainer(pid_t pid, std::shared_ptr<TContainer> &ct,
 
 TError TContainer::LockAction(std::unique_lock<std::mutex> &containers_lock, bool shared) {
     LockTimer timer(LOCK_ACTION);
-    L_DBG("LockAction{} CT{}:{}", (shared ? "Shared" : ""), Id, Name);
+    L_DBG("LockAction{} {}", (shared ? "Shared" : ""), Slug);
 
     while (1) {
         if (State == EContainerState::Destroyed) {
-            L_DBG("Lock failed, CT{}:{} was destroyed", Id, Name);
+            L_DBG("Lock failed, {} was destroyed", Slug);
             return TError(EError::ContainerDoesNotExist, "Container was destroyed");
         }
         bool busy;
@@ -251,7 +251,7 @@ TError TContainer::LockAction(std::unique_lock<std::mutex> &containers_lock, boo
 }
 
 void TContainer::UnlockAction(bool containers_locked) {
-    L_DBG("UnlockAction{} CT{}:{}", (ActionLocked > 0 ? "Shared" : ""), Id, Name);
+    L_DBG("UnlockAction{} {}", (ActionLocked > 0 ? "Shared" : ""), Slug);
     if (!containers_locked)
         ContainersMutex.lock();
     for (auto ct = Parent.get(); ct; ct = ct->Parent.get()) {
@@ -277,7 +277,7 @@ void TContainer::DowngradeActionLock() {
     auto lock = LockContainers();
     PORTO_ASSERT(ActionLocked == -1);
 
-    L_DBG("Downgrading exclusive to shared CT{}:{}", Id, Name);
+    L_DBG("Downgrading exclusive to shared {}", Slug);
 
     ActionLocked = 1;
     ContainersCV.notify_all();
@@ -288,7 +288,7 @@ void TContainer::UpgradeActionLock() {
     LockTimer timer(UPGRADE_LOCK_ACTION);
     auto lock = LockContainers();
 
-    L_DBG("Upgrading shared back to exclusive CT{}:{}", Id, Name);
+    L_DBG("Upgrading shared back to exclusive {}", Slug);
 
     PendingWrite = true;
 
@@ -304,7 +304,7 @@ void TContainer::UpgradeActionLock() {
 void TContainer::LockStateRead() {
     LockTimer timer(LOCK_STATE_READ);
     auto lock = LockContainers();
-    L_DBG("LockStateRead CT{}:{}", Id, Name);
+    L_DBG("LockStateRead {}", Slug);
     while (StateLocked < 0)
         ContainersCV.wait(lock);
     StateLocked++;
@@ -314,7 +314,7 @@ void TContainer::LockStateRead() {
 void TContainer::LockStateWrite() {
     LockTimer timer(LOCK_STATE_WRITE);
     auto lock = LockContainers();
-    L_DBG("LockStateWrite CT{}:{}", Id, Name);
+    L_DBG("LockStateWrite {}", Slug);
     while (StateLocked < 0)
         ContainersCV.wait(lock);
     StateLocked = -1 - StateLocked;
@@ -325,7 +325,7 @@ void TContainer::LockStateWrite() {
 
 void TContainer::DowngradeStateLock() {
     auto lock = LockContainers();
-    L_DBG("DowngradeStateLock CT{}:{}", Id, Name);
+    L_DBG("DowngradeStateLock {}", Slug);
     PORTO_ASSERT(StateLocked == -1);
     StateLocked = 1;
     ContainersCV.notify_all();
@@ -333,7 +333,7 @@ void TContainer::DowngradeStateLock() {
 
 void TContainer::UnlockState() {
     auto lock = LockContainers();
-    L_DBG("UnlockState CT{}:{}", Id, Name);
+    L_DBG("UnlockState {}", Slug);
     PORTO_ASSERT(StateLocked);
     if (StateLocked > 0)
         --StateLocked;
@@ -346,8 +346,8 @@ void TContainer::DumpLocks() {
     for (auto &it: Containers) {
         auto &ct = it.second;
         if (ct->ActionLocked || ct->PendingWrite || ct->StateLocked || ct->SubtreeRead)
-            L_SYS("CT{}:{} StateLocked {} by {} ActionLocked {} by {} SubtreeRead {}{}", ct->Id, ct->Name,
-                  ct->StateLocked, ct->LastStatePid, ct->ActionLocked, ct->LastActionPid, ct->SubtreeRead,
+            L_SYS("{} StateLocked {} by {} ActionLocked {} by {} SubtreeRead {}{}", ct->Slug, ct->StateLocked,
+                  ct->LastStatePid, ct->ActionLocked, ct->LastActionPid, ct->SubtreeRead,
                   (ct->PendingWrite ? " PendingWrite" : ""));
     }
 }
@@ -368,7 +368,7 @@ void TContainer::Unregister() {
 
     TError error = ContainerIdMap.Put(Id);
     if (error)
-        L_WRN("Cannot put CT{}:{} id: {}", Id, Name, error);
+        L_WRN("Cannot put {} id: {}", Slug, error);
 
     PORTO_ASSERT(State == EContainerState::Stopped);
     State = EContainerState::Destroyed;
@@ -379,6 +379,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
       Level(parent ? parent->Level + 1 : 0),
       Id(id),
       Name(name),
+      Slug(fmt::format("CT{}:{}", id, name)),
       FirstName(!parent            ? ""
                 : parent->IsRoot() ? name
                                    : name.substr(parent->Name.length() + 1)),
@@ -604,9 +605,8 @@ TError TContainer::Create(const std::string &name, std::shared_ptr<TContainer> &
     if (error)
         goto err;
 
-    L_ACT("Create CT{}:{}", id, name);
-
     ct = std::make_shared<TContainer>(parent, id, name);
+    L_ACT("Create {}", ct->Slug);
 
     ct->OwnerCred = CL->Cred;
     ct->SetProp(EProperty::OWNER_USER);
@@ -1056,7 +1056,7 @@ void TContainer::SetState(EContainerState next) {
     if (State == next)
         return;
 
-    L_ACT("Change CT{}:{} state {} -> {}", Id, Name, StateName(State), StateName(next));
+    L_ACT("Change {} state {} -> {}", Slug, StateName(State), StateName(next));
 
     LockStateWrite();
 
@@ -1103,7 +1103,7 @@ void TContainer::SetState(EContainerState next) {
 TError TContainer::Destroy(std::list<std::shared_ptr<TVolume>> &unlinked) {
     TError error;
 
-    L_ACT("Destroy CT{}:{}", Id, Name);
+    L_ACT("Destroy {}", Slug);
 
     if (State != EContainerState::Stopped) {
         error = Stop(0);
@@ -1348,7 +1348,7 @@ void TContainer::PropagateDirtyMemLimit() {
     for (auto &child: children) {
         error = child->ChooseDirtyMemLimit();
         if (error && (child->Id == Id || (error.Errno != EINVAL && error.Errno != ENOENT)))
-            L_ERR("Cannot set {} CT{}:{}: {}", P_DIRTY_LIMIT, Id, Name, error);
+            L_ERR("Cannot set {} {}: {}", P_DIRTY_LIMIT, Slug, error);
     }
 }
 
@@ -1541,7 +1541,7 @@ TError TContainer::ApplyResolvConf() const {
     if (file.FsType() != TMPFS_MAGIC)
         return TError(EError::NotSupported, "resolv.conf not on tmpfs");
 
-    L_ACT("Apply resolv_conf for CT{}:{}", Id, Name);
+    L_ACT("Apply resolv_conf for {}", Slug);
     error = file.Truncate(0);
     if (!error)
         error = file.WriteAll(ResolvConf.size() ? ResolvConf : RootContainer->ResolvConf);
@@ -1614,14 +1614,13 @@ TError TContainer::JailCpus() {
     if (NewCpuJail) {
         for (auto ct = Parent.get(); ct; ct = ct->Parent.get()) {
             if (ct->CpuJail)
-                return TError(EError::ResourceNotAvailable, "Nested cpu jails are not supported for CT{}:{}", Id, Name);
+                return TError(EError::ResourceNotAvailable, "Nested cpu jails are not supported for {}", Slug);
         }
 
         for (auto &ct: Subtree()) {
             if (ct.get() != this) {
                 if (ct->CpuJail)
-                    return TError(EError::ResourceNotAvailable, "Nested cpu jails are not supported for CT{}:{}", Id,
-                                  Name);
+                    return TError(EError::ResourceNotAvailable, "Nested cpu jails are not supported for {}", Slug);
             }
         }
     }
@@ -1629,14 +1628,14 @@ TError TContainer::JailCpus() {
     /* check desired jail value */
     if (CpuSetType == ECpuSetType::Node) {
         if (!NumaNodes.Get(CpuSetArg))
-            return TError(EError::ResourceNotAvailable, "Numa node not found for CT{}:{}", Id, Name);
+            return TError(EError::ResourceNotAvailable, "Numa node not found for {}", Slug);
 
         if ((unsigned)NewCpuJail >= NodeThreads[0].Weight())
-            return TError(EError::ResourceNotAvailable, "Invalid jail with numa value {} (max {}) for CT{}:{}",
-                          NewCpuJail, NodeThreads[0].Weight() - 1, Id, Name);
+            return TError(EError::ResourceNotAvailable, "Invalid jail with numa value {} (max {}) for {}", NewCpuJail,
+                          NodeThreads[0].Weight() - 1, Slug);
     } else if ((unsigned)NewCpuJail >= JailCpuPermutation.size())
-        return TError(EError::ResourceNotAvailable, "Invalid jail value {} (max {}) for CT{}:{}", NewCpuJail,
-                      JailCpuPermutation.size() - 1, Id, Name);
+        return TError(EError::ResourceNotAvailable, "Invalid jail value {} (max {}) for {}", NewCpuJail,
+                      JailCpuPermutation.size() - 1, Slug);
 
     /* read current cpus from cgroup */
     auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get());
@@ -1770,7 +1769,7 @@ public:
 
             auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpusetSubsystem.get());
             if (!cg->Exists()) {
-                L_WRN(" CT{}:{} with cpuset controller does not have cpuset cgroup", ct->Id, ct->Name);
+                L_WRN("{} with cpuset controller does not have cpuset cgroup", ct->Slug);
                 continue;
             }
 
@@ -1996,13 +1995,12 @@ TError TContainer::ApplyCpuSet() {
             break;
         case ECpuSetType::Node:
             if (!NumaNodes.Get(ct->CpuSetArg))
-                return TError(EError::ResourceNotAvailable, "Numa node {} not found for CT{}:{}", ct->CpuSetArg, ct->Id,
-                              ct->Name);
+                return TError(EError::ResourceNotAvailable, "Numa node {} not found for {}", ct->CpuSetArg, ct->Slug);
             affinity = NodeThreads[ct->CpuSetArg];
             break;
         }
 
-        L_VERBOSE("Assign CPUs {} for CT{}:{}", affinity.Format(), ct->Id, ct->Name);
+        L_VERBOSE("Assign CPUs {} for {}", affinity.Format(), ct->Slug);
         ct->CpuAffinity = affinity;
     }
 
@@ -2031,7 +2029,7 @@ TError TContainer::ApplyCpuGuarantee() {
 
     auto cur = std::max(CpuGuarantee, CpuGuaranteeSum);
     if (!IsRoot() && (Controllers & CGROUP_CPU) && cur != CpuGuaranteeCur) {
-        L_ACT("Set cpu guarantee CT{}:{} {} -> {}", Id, Name, CpuPowerToString(CpuGuaranteeCur), CpuPowerToString(cur));
+        L_ACT("Set cpu guarantee {} {} -> {}", Slug, CpuPowerToString(CpuGuaranteeCur), CpuPowerToString(cur));
         auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
         error = CgroupDriver.CpuSubsystem->SetGuarantee(*cpucg, CpuPeriod, cur);
         if (error) {
@@ -2090,8 +2088,7 @@ void TContainer::PropagateCpuLimit() {
         if (sum == ct->CpuLimitSum)
             break;
 
-        L_DBG("Propagate total cpu limit CT{}:{} {} -> {}", ct->Id, ct->Name, CpuPowerToString(ct->CpuLimitSum),
-              CpuPowerToString(sum));
+        L_DBG("Propagate total cpu limit {} {} -> {}", Slug, CpuPowerToString(ct->CpuLimitSum), CpuPowerToString(sum));
 
         ct->CpuLimitSum = sum;
     }
@@ -2240,7 +2237,7 @@ TError TContainer::SetCpuLimit(uint64_t limit) {
     auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
     TError error;
 
-    L_ACT("Set cpu limit CT{}:{} {} -> {}", Id, Name, CpuPowerToString(CpuLimitCur), CpuPowerToString(limit));
+    L_ACT("Set cpu limit {} {} -> {}", Slug, CpuPowerToString(CpuLimitCur), CpuPowerToString(limit));
 
     error = CgroupDriver.CpuSubsystem->SetRtLimit(*cpucg, limit, CpuPeriod);
     if (error) {
@@ -2263,8 +2260,8 @@ TError TContainer::ApplyCpuLimit() {
 
     for (auto *p = Parent.get(); p; p = p->Parent.get()) {
         if (p->CpuLimit && p->CpuLimit <= limit) {
-            L_ACT("Disable cpu limit {} for CT{}:{} parent CT{}:{} has lower limit {}", CpuPowerToString(limit), Id,
-                  Name, p->Id, p->Name, CpuPowerToString(p->CpuLimit));
+            L_ACT("Disable cpu limit {} for {} parent {} has lower limit {}", CpuPowerToString(limit), Slug, p->Slug,
+                  CpuPowerToString(p->CpuLimit));
             limit = 0;
             break;
         }
@@ -2684,7 +2681,7 @@ TError TContainer::ApplyDeviceConf() {
             if (newPaths.find(path) != newPaths.end())
                 continue;
 
-            L_ACT("Remove CT{}:{} device node {}", Id, Name, path);
+            L_ACT("Remove {} device node {}", Slug, path);
             auto error = (root / path).Unlink();
             if (error && error.Errno != ENOENT)
                 return error;
@@ -2761,7 +2758,7 @@ TError TContainer::PrepareCgroups(bool onRestore) {
         TPath cmd = RootPath / Command;
         TPath dst;
         if (!cmd.ReadLink(dst) && dst.BaseName() == "systemd") {
-            L("Enable systemd cgroup for CT{}:{}", Id, Name);
+            L("Enable systemd cgroup for {}", Slug);
             Controllers |= CGROUP_SYSTEMD;
         }
     }
@@ -3212,7 +3209,7 @@ TError TContainer::PrepareStart() {
         std::shared_ptr<TVolume> vol;
         rpc::TVolumeSpec spec;
 
-        L("Emulate deprecated loop root={} for CT{}:{}", RootPath, Id, Name);
+        L("Emulate deprecated loop root={} for {}", RootPath, Slug);
         TaintFlags.RootOnLoop = true;
 
         spec.set_backend("loop");
@@ -3395,7 +3392,7 @@ TError TContainer::Start() {
         goto err_prepare;
     }
 
-    L_ACT("Start CT{}:{}", Id, Name);
+    L_ACT("Start {}", Slug);
 
     SetState(EContainerState::Starting);
 
@@ -3577,7 +3574,7 @@ TError TContainer::Kill(int sig) {
     if (State != EContainerState::Running)
         return TError(EError::InvalidState, "invalid container state={}", TContainer::StateName(State));
 
-    L_ACT("Kill task {} in CT{}:{}", Task.Pid, Id, Name);
+    L_ACT("Kill task {} in {}", Task.Pid, Slug);
     return Task.Kill(sig);
 }
 
@@ -3587,7 +3584,7 @@ TError TContainer::Terminate(uint64_t deadline) {
     if (IsRoot())
         return TError(EError::Permission, "Cannot terminate root container");
 
-    L_ACT("Terminate tasks in CT{}:{}", Id, Name);
+    L_ACT("Terminate tasks in {}", Slug);
 
     if (!(Controllers & CGROUP_FREEZER) && !JobMode) {
         if (Task.Pid)
@@ -3616,7 +3613,7 @@ TError TContainer::Terminate(uint64_t deadline) {
             else
                 error = Task.Kill(sig);
             if (!error) {
-                L_ACT("Wait task {} after signal {} in CT{}:{}", Task.Pid, sig, Id, Name);
+                L_ACT("Wait task {} after signal {} in {}", Task.Pid, sig, Slug);
                 while (Task.Exists() && !Task.IsZombie() && !WaitDeadline(deadline))
                     ;
             }
@@ -3691,14 +3688,14 @@ TError TContainer::Stop(uint64_t timeout) {
 
         error = ct->Terminate(deadline);
         if (error)
-            L_ERR("Cannot terminate tasks in CT{}:{}: {}", ct->Id, ct->Name, error);
+            L_ERR("Cannot terminate tasks in {}: {}", Slug, error);
 
         auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.FreezerSubsystem.get());
         if (CgroupDriver.FreezerSubsystem->IsSelfFreezing(*cg) && !JobMode) {
-            L_ACT("Thaw terminated paused CT{}:{}", ct->Id, ct->Name);
+            L_ACT("Thaw terminated paused {}", ct->Slug);
             error = CgroupDriver.FreezerSubsystem->Thaw(*cg, false);
             if (error)
-                L_ERR("Cannot thaw CT{}:{}: {}", ct->Id, ct->Name, error);
+                L_ERR("Cannot thaw {}: {}", ct->Slug, error);
         }
     }
 
@@ -3709,7 +3706,7 @@ TError TContainer::Stop(uint64_t timeout) {
         if (ct->State == EContainerState::Stopped)
             continue;
 
-        L_ACT("Stop CT{}:{}", Id, Name);
+        L_ACT("Stop {}", Slug);
 
         TNetwork::StopNetwork(*ct);
         ct->FreeRuntimeResources();
@@ -3765,7 +3762,7 @@ void TContainer::Reap(bool oomKilled) {
 
     error = Terminate(0);
     if (error)
-        L_WRN("Cannot terminate CT{}:{} : {}", Id, Name, error);
+        L_WRN("Cannot terminate {} : {}", Slug, error);
 
     LockStateWrite();
 
@@ -3812,7 +3809,7 @@ void TContainer::Exit(int status, bool oomKilled) {
         WEXITSTATUS(status) < 128 + SIGRTMIN * 2)
         status = WEXITSTATUS(status) - ((WEXITSTATUS(status) > 128 + SIGRTMIN) ? SIGRTMIN : 128);
 
-    L_EVT("Exit CT{}:{} {} {}", Id, Name, FormatExitStatus(status), (oomKilled ? "invoked by OOM" : ""));
+    L_EVT("Exit {} {} {}", Slug, FormatExitStatus(status), (oomKilled ? "invoked by OOM" : ""));
 
     LockStateWrite();
     ExitStatus = status;
@@ -3903,12 +3900,12 @@ TError TContainer::MayRespawn() {
 TError TContainer::ScheduleRespawn() {
     TError error = MayRespawn();
     if (!error) {
-        L_ACT("Change CT{}:{} state {} -> {}", Id, Name, StateName(State), StateName(EContainerState::Respawning));
+        L_ACT("Change {} state {} -> {}", Slug, StateName(State), StateName(EContainerState::Respawning));
         State = EContainerState::Respawning;
         if (Parent->State == EContainerState::Respawning) {
-            L_ACT("Respawn CT{}:{} after respawning parent", Id, Name);
+            L_ACT("Respawn {} after respawning parent", Slug);
         } else {
-            L_ACT("Respawn CT{}:{} after {} ms", Id, Name, RespawnDelay / 1000000);
+            L_ACT("Respawn {} after {} ms", Slug, RespawnDelay / 1000000);
             TEvent e(EEventType::Respawn, shared_from_this());
             EventQueue->Add(RespawnDelay / 1000000, e);
         }
@@ -3929,7 +3926,7 @@ TError TContainer::Respawn() {
     if (Parent->State == EContainerState::Respawning) {
         if (State != EContainerState::Respawning)
             SetState(EContainerState::Respawning);
-        L_ACT("Respawn CT{}:{} after respawning parent", Id, Name);
+        L_ACT("Respawn {} after respawning parent", Slug);
         return OK;
     }
 
@@ -3938,7 +3935,7 @@ TError TContainer::Respawn() {
     SetProp(EProperty::RESPAWN_COUNT);
     UnlockState();
 
-    L_ACT("Respawn CT{}:{} try {}", Id, Name, RespawnCount);
+    L_ACT("Respawn {} try {}", Slug, RespawnCount);
 
     TNetwork::StopNetwork(*this);
 
@@ -4005,7 +4002,7 @@ err_prepare:
     SetProp(EProperty::DEATH_TIME);
 
     Statistics->ContainersFailedStart++;
-    L("Cannot respawn CT{}:{} - {}", Id, Name, error);
+    L("Cannot respawn {} - {}", Slug, error);
     AccountErrorType(error);
     SetState(EContainerState::Dead);
     (void)Save();
@@ -4476,7 +4473,7 @@ void TContainer::SyncState() {
     std::unique_ptr<const TCgroup> taskCg;
     auto freezerCg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
 
-    L_ACT("Sync CT{}:{} state {}", Id, Name, StateName(State));
+    L_ACT("Sync {} state {}", Slug, StateName(State));
 
     if (!freezerCg->Exists()) {
         if (State != EContainerState::Stopped && State != EContainerState::Stopping)
@@ -4607,7 +4604,7 @@ bool TContainer::ReceiveOomEvents() {
         received = ReceiveOomEventsV1();
 
     if (received)
-        L_EVT("OOM Event in CT{}:{}", Id, Name);
+        L_EVT("OOM Event in {}", Slug);
 
     // in case of cgroup v2, event may be increased oom_kill,
     // so should collect it anyway

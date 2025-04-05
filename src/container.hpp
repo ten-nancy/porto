@@ -132,6 +132,7 @@ public:
     const int Level;  // 0 for root
     const int Id;
     const std::string Name;
+    const std::string Slug;
     const std::string FirstName;
 
     EContainerState State = EContainerState::Stopped;

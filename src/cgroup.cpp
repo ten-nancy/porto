@@ -2841,8 +2841,7 @@ TError TCgroupDriver::CreateContainerCgroups(TContainer &container, bool onResto
             return error;
 
         if (onRestore) {
-            L_WRN("There is no {} cgroup for CT{}:{}", TSubsystem::Format(hy->Controllers), container.Id,
-                  container.Name);
+            L_WRN("There is no {} cgroup for {}", TSubsystem::Format(hy->Controllers), container.Slug);
             if (hy->Controllers & CGROUP_FREEZER)
                 continue;
 

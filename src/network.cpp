@@ -2174,7 +2174,7 @@ TError TNetwork::SyncResolvConf() {
             ct->State != EContainerState::Stopped) {
             error = ct->ApplyResolvConf();
             if (error)
-                L_WRN("Cannot apply resolv_conf CT{}:{} : {}", ct->Id, ct->Name, error);
+                L_WRN("Cannot apply resolv_conf {} : {}", ct->Slug, error);
         }
     }
 
@@ -2214,7 +2214,7 @@ void TNetwork::UpdateSockDiag() {
         error = freezer->GetProcesses(pids);
 
         if (error) {
-            L_ERR("Cannot get pids for CT{}:{}: {}", ct->Id, ct->Name, error);
+            L_ERR("Cannot get pids for {}: {}", ct->Slug, error);
             continue;
         }
 
@@ -2222,7 +2222,7 @@ void TNetwork::UpdateSockDiag() {
         error = GetSockets(pids, sockets);
 
         if (error) {
-            L_ERR("Cannot get sockets for CT{}:{}: {}", ct->Id, ct->Name, error);
+            L_ERR("Cannot get sockets for {}: {}", ct->Slug, error);
             continue;
         }
 
@@ -2811,8 +2811,7 @@ void TNetwork::StopNetwork(TContainer &ct) {
             for (int cs = 0; cs < NR_TC_CLASSES; cs++) {
                 error = HostNetwork->DeleteClass(dev, ct.NetClass, cs);
                 if (error)
-                    L_NET("Cannot delete network {} class CT{}:{} CS{} {}", HostNetwork->NetName, ct.Id, ct.Name, cs,
-                          error);
+                    L_NET("Cannot delete network {} class {} CS{} {}", HostNetwork->NetName, ct.Slug, cs, error);
             }
         }
     }

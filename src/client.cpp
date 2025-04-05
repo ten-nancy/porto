@@ -168,7 +168,7 @@ TError TClient::IdentifyClient() {
             AccessLevel = EAccessLevel::ReadOnly;
     }
 
-    Id = fmt::format("CL{}:{}({}) CT{}:{}", Fd, Comm, Pid, ct->Id, ct->Name);
+    Id = fmt::format("CL{}:{}({}) {}", Fd, Comm, Pid, ct->Slug);
 
     if (AccessLevel <= EAccessLevel::ReadOnly || Verbose) {
         L("Connected {} cred={} tcred={} access={} ns={} wns={}", Id, Cred.ToString(), TaskCred.ToString(),
@@ -269,7 +269,7 @@ TError TClient::ReadContainer(const std::string &relative_name, std::shared_ptr<
     if (error)
         return error;
     if (LockedContainer) {
-        L_WRN("Stale locked container CT{}:{}", LockedContainer->Id, LockedContainer->Name);
+        L_WRN("Stale locked container {}", LockedContainer->Slug);
         ReleaseContainer(true);
     }
     return OK;
@@ -286,7 +286,7 @@ TError TClient::WriteContainer(const std::string &relative_name, std::shared_ptr
     if (error)
         return error;
     if (LockedContainer) {
-        L_WRN("Stale locked container CT{}:{}", LockedContainer->Id, LockedContainer->Name);
+        L_WRN("Stale locked container {}", LockedContainer->Slug);
         ReleaseContainer(true);
     }
     error = ct->LockAction(lock);
@@ -299,7 +299,7 @@ TError TClient::WriteContainer(const std::string &relative_name, std::shared_ptr
 TError TClient::LockContainer(std::shared_ptr<TContainer> &ct) {
     auto lock = LockContainers();
     if (LockedContainer) {
-        L_WRN("Stale locked container CT{}:{}", LockedContainer->Id, LockedContainer->Name);
+        L_WRN("Stale locked container {}", LockedContainer->Slug);
         ReleaseContainer(true);
     }
     TError error = ct->LockAction(lock);

@@ -2983,8 +2983,7 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
 
     volumes_lock.unlock();
 
-    L_ACT("Mount volume {} link {} for CT{}:{} target {}", Path, host_target, link->Container->Id,
-          link->Container->Name, link->Target);
+    L_ACT("Mount volume {} link {} for {} target {}", Path, host_target, link->Container->Slug, link->Target);
     Statistics->VolumeLinksMounted++;
 
     TFile target_dir;
@@ -3133,12 +3132,12 @@ TError TVolume::UmountLink(std::shared_ptr<TVolumeLink> link, std::list<std::sha
     TPath host_target = link->HostTarget;
     volumes_lock.unlock();
 
-    L_ACT("Umount volume {} link {} for CT{}:{}", Path, host_target, link->Container->Id, link->Container->Name);
+    L_ACT("Umount volume {} link {} for {}", Path, host_target, link->Container->Slug);
 
     error = host_target.Umount(UMOUNT_NOFOLLOW | (strict ? 0 : MNT_DETACH));
     if (error) {
-        error = TError(error, "Cannot umount volume {} link {} for CT{}:{} target {}", Path, host_target,
-                       link->Container->Id, link->Container->Name, link->Target);
+        error = TError(error, "Cannot umount volume {} link {} for {} target {}", Path, host_target,
+                       link->Container->Slug, link->Target);
         if (error.Error == EError::NotFound)
             L("{}", error.Text);
         else if (strict)
@@ -3156,14 +3155,14 @@ TError TVolume::UmountLink(std::shared_ptr<TVolumeLink> link, std::list<std::sha
         if (link->HostTarget != it->first)
             L_WRN("Volume link out of sync: {} != {}", link->HostTarget, it->first);
 
-        L_ACT("Del volume {} link {} for CT{}:{}", vol->Path, link->Target, link->Container->Id, link->Container->Name);
+        L_ACT("Del volume {} link {} for {}", vol->Path, link->Target, link->Container->Slug);
 
         link->Container->VolumeLinks.remove(link);
         vol->Links.remove(link);
 
         if (link->HostTarget != host_target)
-            L_ACT("Umount nested volume {} link {} for CT{}:{}", link->Volume->Path, link->HostTarget,
-                  link->Container->Id, link->Container->Name);
+            L_ACT("Umount nested volume {} link {} for {}", link->Volume->Path, link->HostTarget,
+                  link->Container->Slug);
 
         /* Last or common link */
         if ((vol->Links.empty() || it->first == link->Volume->Path) &&
@@ -3263,7 +3262,7 @@ TError TVolume::Destroy() {
             if (!error)
                 continue;
 
-            L_ACT("Stop CT{}:{} because {}", ct->Id, ct->Name, error);
+            L_ACT("Stop {} because {}", ct->Slug, error);
             error = CL->LockContainer(ct);
             if (!error)
                 error = ct->Stop(0);
@@ -3586,7 +3585,7 @@ TError TVolume::LinkVolume(std::shared_ptr<TContainer> container, const TPath &t
             return error;
     }
 
-    L_ACT("Add volume {} link {} for CT{}:{}", Path, target, container->Id, container->Name);
+    L_ACT("Add volume {} link {} for {}", Path, target, container->Slug);
 
     auto link = std::make_shared<TVolumeLink>(shared_from_this(), container);
     link->Target = target;
@@ -3694,7 +3693,7 @@ next:
         volumes_lock.lock();
     }
 
-    L_ACT("Del volume {} link {} for CT{}:{}", Path, link->Target, container->Id, container->Name);
+    L_ACT("Del volume {} link {} for {}", Path, link->Target, container->Slug);
 
     Links.remove(link);
     if (Links.empty() && (State == EVolumeState::Ready || State == EVolumeState::Tuning)) {
@@ -4055,14 +4054,14 @@ TError TVolume::Restore(const TKeyValue &node) {
                 duplicate = true;
         }
         if (duplicate) {
-            L_WRN("Duplicate volume {} link {} for CT{}:{} target {}", Path, link->HostTarget, link->Container->Id,
-                  link->Container->Name, link->Target);
+            L_WRN("Duplicate volume {} link {} for {} target {}", Path, link->HostTarget, link->Container->Slug,
+                  link->Target);
             continue;
         }
 
         if (link->HostTarget) {
-            L("Restore volume {} link {} for CT{}:{} target {}", Path, link->HostTarget, link->Container->Id,
-              link->Container->Name, link->Target);
+            L("Restore volume {} link {} for {} target {}", Path, link->HostTarget, link->Container->Slug,
+              link->Target);
 
             if (!link->HostTarget.IsMountPoint()) {
                 L("Link {} is lost", link->HostTarget);
