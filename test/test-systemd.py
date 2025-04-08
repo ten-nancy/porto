@@ -3,6 +3,7 @@
 import os
 import porto
 import subprocess
+import time
 from test_common import *
 
 c = porto.Connection(timeout=10)
@@ -16,9 +17,13 @@ else:
 a = c.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-jammy"]}, **{"controllers[systemd]": True})
 a_pid = a['root_pid']
 
-b = c.Run("b", command="sleep 1000")
+b = c.Run("b", command="tail -f /dev/null")
 b_pid = b['root_pid']
 
+a_cg = GetSystemdCg(a_pid)
+assert a_cg.startswith("/porto%a"), "{} must start with /porto%a".format(a_cg)
+
+time.sleep(1)
 a_cg = GetSystemdCg(a_pid)
 ExpectEq(a_cg, "/porto%a/init.scope")
 

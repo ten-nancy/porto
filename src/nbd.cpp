@@ -269,7 +269,7 @@ static TError negotiate(const TSocket &sock, uint64_t &size, uint16_t &flags, ui
 TError TNlFuture::WaitFor(uint64_t timeoutMs) {
     auto status = Fut.wait_for(std::chrono::milliseconds(timeoutMs));
     if (status != std::future_status::ready)
-        return DoCleanup() ? Fut.get() : TError("netlink timeout");
+        return DoCleanup() ? Fut.get() : TError(EError::NbdSocketTimeout, "netlink timeout");
 
     Cleanup = nullptr;
     return Fut.get();
@@ -278,7 +278,7 @@ TError TNlFuture::WaitFor(uint64_t timeoutMs) {
 TError TNlFuture::WaitUntil(uint64_t deadlineMs) {
     uint64_t now = GetCurrentTimeMs();
     if (now >= deadlineMs)
-        return DoCleanup() ? Fut.get() : TError("netlink timeout");
+        return DoCleanup() ? Fut.get() : TError(EError::NbdSocketTimeout, "netlink timeout");
 
     return WaitFor(deadlineMs - now);
 }
@@ -612,6 +612,8 @@ TError TNbdConn::ReconnectDevice(const TNbdConnParams &params, uint64_t deadline
     return fut.WaitUntil(deadlineMs);
 }
 
+const uint64_t disconnectTimeout = 60;
+
 TError TNbdConn::DisconnectDevice(int index, bool wait) {
     auto sk = Sock;
     if (!sk)
@@ -628,6 +630,6 @@ TError TNbdConn::DisconnectDevice(int index, bool wait) {
         return TError("nl_send failed");
 
     if (wait)
-        return fut.WaitFor(5000);
+        return fut.WaitFor(disconnectTimeout);
     return OK;
 }
