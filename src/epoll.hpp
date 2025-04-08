@@ -10,7 +10,7 @@ extern "C" {
 #include <sys/epoll.h>
 }
 
-constexpr int EPOLL_EVENT_OOM = 1;
+constexpr int EPOLL_EVENT_MEM = 1;
 
 class TContainer;
 class TEpollLoop;

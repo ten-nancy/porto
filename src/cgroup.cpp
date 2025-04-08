@@ -213,23 +213,46 @@ TError TCgroup::SetBool(const std::string &knob, bool value) const {
     return Set(knob, value ? "1" : "0");
 }
 
+static void getUintMap(FILE *stream, TUintMap &value) {
+    char *key;
+    unsigned long long val;
+
+    while (fscanf(stream, "%ms %llu\n", &key, &val) == 2) {
+        value[std::string(key)] = val;
+        free(key);
+    }
+}
+
 TError TCgroup::GetUintMap(const std::string &knob, TUintMap &value) const {
     if (!HasSubsystem())
         return TError("Cannot get from null cgroup");
 
-    FILE *file = fopen(Knob(knob).c_str(), "r");
-    char *key;
-    unsigned long long val;
+    FILE *stream = fopen(Knob(knob).c_str(), "r");
+    if (!stream)
+        return TError::System("Cannot open knob {}", knob);
 
-    if (!file)
-        return TError::System("Cannot open knob " + knob);
+    getUintMap(stream, value);
+    fclose(stream);
+    return OK;
+}
 
-    while (fscanf(file, "%ms %llu\n", &key, &val) == 2) {
-        value[std::string(key)] = val;
-        free(key);
-    }
+TError TCgroup::GetUintMap(const TFile &file, TUintMap &value) {
+    auto error = file.Lseek(0, SEEK_SET);
+    if (error)
+        return error;
 
-    fclose(file);
+    TFile other;
+    error = other.Dup(file);
+    if (error)
+        return error;
+
+    FILE *stream = fdopen(other.Fd, "r");
+    if (!stream)
+        return TError::System("Cannot open knob");
+    other.SetFd = -1;
+
+    getUintMap(stream, value);
+    fclose(stream);
     return OK;
 }
 
@@ -259,6 +282,10 @@ public:
 
     TError GetTasks(std::vector<pid_t> &pids) const override;
     TError GetCount(uint64_t &count, bool thread = false) const override;
+
+    std::unique_ptr<const TCgroup> Leaf() const override {
+        return std::unique_ptr<const TCgroup>(new TCgroup1(Subsystem, Name));
+    }
 };
 
 // TCgroup1 cgroup1 specified
@@ -553,6 +580,10 @@ public:
     TError GetProcesses(std::vector<pid_t> &pids) const override;
     TError GetTasks(std::vector<pid_t> &pids) const override;
     TError GetCount(uint64_t &count, bool thread = false) const override;
+
+    std::unique_ptr<const TCgroup> Leaf() const override {
+        return std::unique_ptr<const TCgroup>(new TCgroup2(Subsystem, Name + "/leaf"));
+    }
 
     // controllers
     static inline std::string ConvertControllerToV2(const std::string &type);
@@ -1297,9 +1328,7 @@ TError TMemorySubsystem::SetupOomEvent(const TCgroup &cg, TFile &event) const {
     if (!IsCgroup2())
         return SetupOomEventLegacy(cg, event);
 
-    TError error;
-
-    error = event.OpenRead(cg.Knob(EVENTS));
+    auto error = event.OpenRead(cg.Knob(EVENTS_LOCAL));
     if (error)
         return error;
 
@@ -1345,39 +1374,18 @@ uint64_t TMemorySubsystem::NotifyOomEvents(TFile &event) const {
     return value;
 }
 
-std::string TMemorySubsystem::ChooseMemoryEventsKnob(bool local) const {
-    if (IsCgroup2())
-        if (local)
-            return EVENTS_LOCAL;
-        else
-            return EVENTS;
-    else
-        return OOM_CONTROL;
-}
-
-TError TMemorySubsystem::GetMemoryEventsField(const TCgroup &cg, uint64_t &value, const std::string &field,
-                                              bool local) const {
-    TError error;
+TError TMemorySubsystem::GetOomKills(const TCgroup &cg, uint64_t &value) const {
     TUintMap map;
-
-    error = cg.GetUintMap(ChooseMemoryEventsKnob(local), map);
+    auto error = cg.GetUintMap(IsCgroup2() ? EVENTS_LOCAL : OOM_CONTROL, map);
     if (error)
         return error;
 
-    if (!map.count(field))
-        return TError(EError::NotSupported, "field {} not found", field);
+    auto it = map.find("oom_kill");
+    if (it == map.end())
+        return TError(EError::NotSupported, "field oom_kill not found");
 
-    value = map.at(field);
-
+    value = it->second;
     return OK;
-}
-
-TError TMemorySubsystem::GetOomKills(const TCgroup &cg, uint64_t &value, bool local) const {
-    return GetMemoryEventsField(cg, value, "oom_kill", local);
-}
-
-TError TMemorySubsystem::GetOomEvents(const TCgroup &cg, uint64_t &value, bool local) const {
-    return GetMemoryEventsField(cg, value, "oom", local);
 }
 
 TError TMemorySubsystem::SetUseHierarchy(const TCgroup &cg, bool value) const {

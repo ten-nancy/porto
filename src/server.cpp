@@ -329,18 +329,19 @@ static void ServerLoop() {
                 // from the clients (so clients see updated view of the
                 // world as soon as possible)
                 continue;
-            } else if (source->Flags & EPOLL_EVENT_OOM) {
+            } else if (source->Flags & EPOLL_EVENT_MEM) {
                 auto container = source->Container.lock();
 
                 if (!container) {
                     L_WRN("Container not found for OOM fd {}", source->Fd);
                     EpollLoop->StopInput(source->Fd);
-                } else if (container->ReceiveOomEvents() && container->OomIsFatal) {
-                    EpollLoop->StopInput(source->Fd);
-                    TEvent e(EEventType::OOM, container);
-                    EventQueue->Add(0, e);
+                } else {
+                    container->CollectMemoryEvents(source->Fd);
+                    if (container->OomIsFatal && container->OomEvents > 0) {
+                        TEvent e(EEventType::OOM, container);
+                        EventQueue->Add(0, e);
+                    }
                 }
-
             } else if (Clients.find(source->Fd) != Clients.end()) {
                 auto client = Clients[source->Fd];
                 error = client->Event(ev.events);

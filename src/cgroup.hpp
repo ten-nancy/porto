@@ -29,6 +29,7 @@ class TSubsystem;
 extern const TFlagsNames ControllersName;
 
 class TCgroup {
+protected:
     const TSubsystem *Subsystem = nullptr;
     std::string Name;
 
@@ -93,6 +94,8 @@ public:
     TPath Knob(const std::string &knob) const;
     bool Has(const std::string &knob) const;
 
+    virtual std::unique_ptr<const TCgroup> Leaf() const = 0;
+
     TError Get(const std::string &knob, std::string &value) const;
     TError Set(const std::string &knob, const std::string &value) const;
 
@@ -106,6 +109,7 @@ public:
     TError SetBool(const std::string &knob, bool value) const;
 
     TError GetUintMap(const std::string &knob, TUintMap &value) const;
+    static TError GetUintMap(const TFile &file, TUintMap &value);
 };
 
 class TSubsystem {
@@ -199,7 +203,6 @@ public:
 
     // cgroup v2 only
     static constexpr const char *CURRENT = "memory.current";
-    static constexpr const char *EVENTS = "memory.events";
     static constexpr const char *EVENTS_LOCAL = "memory.events.local";
     static constexpr const char *MAX = "memory.max";
     static constexpr const char *LOW = "memory.low";
@@ -276,12 +279,7 @@ public:
     TError SetupOomEvent(const TCgroup &cg, TFile &event) const;
     TError SetupOomEventLegacy(const TCgroup &cg, TFile &event) const;
     uint64_t NotifyOomEvents(TFile &event) const;
-
-    // oom counters
-    std::string ChooseMemoryEventsKnob(bool local = false) const;
-    TError GetMemoryEventsField(const TCgroup &cg, uint64_t &value, const std::string &field, bool local = false) const;
-    TError GetOomKills(const TCgroup &cg, uint64_t &value, bool local = false) const;
-    TError GetOomEvents(const TCgroup &cg, uint64_t &value, bool local = false) const;
+    TError GetOomKills(const TCgroup &cg, uint64_t &value) const;
 
     // hierarchy
     TError SetUseHierarchy(const TCgroup &cg, bool value) const;

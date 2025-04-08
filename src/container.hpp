@@ -83,7 +83,8 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
     pid_t LastActionPid = 0;
 
     TFile OomEvent;
-    std::shared_ptr<TEpollSource> Source;
+    TFile OomKillEvent;
+    std::vector<std::shared_ptr<TEpollSource>> Sources;
 
     // data
     TError UpdateSoftLimit();
@@ -126,6 +127,14 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
     TError ApplyCpuShares();
     void PropagateCpuLimit();
     TError ApplyExtraProperties();
+
+    void CollectOoms();
+    bool CollectOomsV1();
+    void CollectOomsV2();
+
+    void CollectOomKills();
+    uint64_t GetOomKillsV1();
+    uint64_t GetOomKillsV2();
 
 public:
     const std::shared_ptr<TContainer> Parent;
@@ -305,8 +314,8 @@ public:
     int OomScoreAdj = 0;
     std::atomic<uint64_t> OomEvents;
     bool OomKilled = false;
-    uint64_t OomKills = 0;
-    uint64_t OomKillsTotal = 0;
+    std::atomic<uint64_t> OomKills{0};
+    std::atomic<uint64_t> OomKillsTotal{0};
     int ExitStatus = 0;
 
     struct {
@@ -316,12 +325,7 @@ public:
     } TaintFlags;
 
     /* OOM processing */
-    bool ReceiveOomEvents();
-    bool ReceiveOomEventsV2();
-    bool ReceiveOomEventsV1();
-    void CollectOomKills();
-    void CollectOomKillsV1();
-    void CollectOomKillsV2();
+    void CollectMemoryEvents(int fd = -1);
 
     TPath RootPath; /* path in host namespace */
     std::vector<std::string> PlacePolicy;

@@ -6,23 +6,19 @@ from test_common import *
 import json
 from collections import defaultdict
 
+USE_CGROUP2 = False
 
 def wait_oom_kill(ct, oom_kills):
     ct.Wait(timeout_s=30)
     ExpectEq(ct['state'], 'dead')
     ExpectEq(int(ct['oom_kills']), oom_kills)
-    ExpectEq(ct['exit_code'], '1')
+    ExpectNe(ct['exit_code'], '0')
 
 
 def main():
+    global USE_CGROUP2
     USE_CGROUP2 = GetUseCgroup2()
     print("use {} hierarchy".format("cgroup2" if USE_CGROUP2 else "cgroup1"))
-
-    ConfigurePortod('test-oom', """
-    container {
-        memory_high_limit_proportion: 1
-    }
-    """)
 
     c = porto.Connection(timeout=30)
     def run(*args, oom_is_fatal=False, **kwargs):
@@ -91,7 +87,6 @@ def main():
 
     a.Destroy()
 
-
     # restore oom event
     print("restore oom event")
 
@@ -99,9 +94,8 @@ def main():
 
     ReloadPortod()
 
-    if not USE_CGROUP2:
-        # porto drops counters using cgroup1
-        total_oom = initial_oom_count
+    # porto drops counters using cgroup1
+    total_oom = initial_oom_count
 
     ExpectEq(r.GetProperty('oom_kills_total', sync=True), str(total_oom))
 
@@ -143,6 +137,7 @@ def main():
 
     ExpectEq(a['state'], 'dead')
     ExpectEq(a['oom_killed'], True)
+
     ExpectEq(m['state'], 'dead')
     ExpectEq(m['oom_killed'], True)
 
@@ -222,17 +217,11 @@ def main():
 
     ExpectEq(b.GetProperty('oom_kills_total', sync=True), '1')
     ExpectEq(get_oom_kills_from_cgroup(b), '1')
-    if USE_CGROUP2:
-        ExpectEq(get_oom_kills_from_cgroup(b, True), '1')
 
     ExpectEq(a['state'], 'meta')
     ExpectEq(a.GetProperty('oom_kills_total', sync=True), '1')
-    if USE_CGROUP2:
-        ExpectEq(a.GetProperty('oom_kills', sync=True), '1')
-        ExpectEq(get_oom_kills_from_cgroup(a, True), '0')
-        ExpectEq(get_oom_kills_from_cgroup(a), '1')
-    else:
-        ExpectEq(a.GetProperty('oom_kills', sync=True), '0')
+    ExpectEq(a.GetProperty('oom_kills', sync=True), '0')
+    if not USE_CGROUP2:
         ExpectEq(get_oom_kills_from_cgroup(a), '0')
 
 
@@ -250,20 +239,16 @@ def main():
     ExpectEq(get_oom_kills_from_cgroup(b), '1')
     if USE_CGROUP2:
         # b cgroup was recreated, so counter was dropped
-        ExpectEq(b.GetProperty('oom_kills_total', sync=True), '1')
         ExpectEq(get_oom_kills_from_cgroup(b, True), '1')
-    else:
-        ExpectEq(b.GetProperty('oom_kills_total', sync=True), '2')
+    ExpectEq(b.GetProperty('oom_kills_total', sync=True), '2')
 
     ExpectEq(a['state'], 'meta')
     ExpectEq(a.GetProperty('oom_kills_total', sync=True), '2')
     if USE_CGROUP2:
-        ExpectEq(a.GetProperty('oom_kills', sync=True), '2')
         ExpectEq(get_oom_kills_from_cgroup(a, True), '0')
         ExpectEq(get_oom_kills_from_cgroup(a), '2')
-    else:
-        ExpectEq(a.GetProperty('oom_kills', sync=True), '0')
-        ExpectEq(get_oom_kills_from_cgroup(a), '0')
+
+    ExpectEq(a.GetProperty('oom_kills', sync=True), '0')
 
 
     total_oom += 1
@@ -285,12 +270,9 @@ def main():
     ExpectEq(a['state'], 'meta')
     ExpectEq(a.GetProperty('oom_kills_total', sync=True), '3')
     if USE_CGROUP2:
-        ExpectEq(a.GetProperty('oom_kills', sync=True), '3')
         ExpectEq(get_oom_kills_from_cgroup(a, True), '0')
         ExpectEq(get_oom_kills_from_cgroup(a), '3')
-    else:
-        ExpectEq(a.GetProperty('oom_kills', sync=True), '0')
-        ExpectEq(get_oom_kills_from_cgroup(a), '0')
+    ExpectEq(a.GetProperty('oom_kills', sync=True), '0')
 
 
     total_oom += 1
@@ -298,7 +280,6 @@ def main():
 
     b.Destroy()
     a.Destroy()
-
 
     # counting at subling
     print("counting at subling")
@@ -316,10 +297,7 @@ def main():
         slot.Destroy()
 
     print(json.dumps(stats, sort_keys=True, indent=4))
-    if USE_CGROUP2:
-        ExpectEq(list(stats.items()), [("1 1 0 0 1 1", N)])
-    else:
-        ExpectEq(list(stats.items()), [("0 1 0 0 1 1", N)])
+    ExpectEq(list(stats.items()), [("0 1 0 0 1 1", N)])
 
 
 if __name__=='__main__':

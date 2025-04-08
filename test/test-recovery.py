@@ -350,6 +350,7 @@ def TestRecovery():
     r.SetProperty("command", "tail -f /dev/null")
     r.Start()
 
+    time.sleep(1)
     ValidateRunningData(r)
     state = GetState(r.GetData("root_pid"))
     Expect(state == "S" or state == "R")
