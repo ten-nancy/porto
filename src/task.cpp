@@ -9,6 +9,7 @@
 #include "util/cred.hpp"
 #include "util/log.hpp"
 #include "util/netlink.hpp"
+#include "util/proc.hpp"
 #include "util/signal.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
@@ -24,6 +25,21 @@ extern "C" {
 #include <sys/wait.h>
 #include <unistd.h>
 #include <wordexp.h>
+}
+
+std::string to_string(TTaskEnv::EMsgCode code) {
+    switch (code) {
+    case TTaskEnv::EMsgCode::Error:
+        return "Error";
+    case TTaskEnv::EMsgCode::WaitPid:
+        return "WaitPid";
+    case TTaskEnv::EMsgCode::TaskPid:
+        return "TaskPid";
+    case TTaskEnv::EMsgCode::SetupUserMapping:
+        return "SetupUserMapping";
+    default:
+        return "Unknown";
+    }
 }
 
 std::list<std::string> IpcSysctls = {
@@ -73,42 +89,39 @@ void InitProcBaseDirs() {
     ProcBaseDirs += 2;
 }
 
-void TTaskEnv::ReportPid(pid_t pid) {
-    TError error = Sock.SendPid(pid);
-    if (error && error.Errno != ENOMEM) {
-        L_ERR("{}", error);
-        Abort(error);
+void TTaskEnv::ReportPid(EMsgCode type) {
+    TPidFd pidFd;
+
+    AbortOnError(pidFd.Open(getpid()));
+    L("Report {} pid={}", to_string(type), getpid());
+    AbortOnError(Sock.SendInt(int(type)));
+    AbortOnError(Sock.SendPidFd(pidFd));
+}
+
+void TTaskEnv::ReportError(const TError &error) {
+    auto error2 = Sock.SendInt(int(EMsgCode::Error));
+    if (!error2)
+        error2 = Sock.SendError(error);
+
+    if (error2) {
+        L_ERR("Tried to send error: {}", error);
+        L_ERR("Failed send error: {}", error2);
+        _exit(EXIT_FAILURE);
     }
-    ReportStage++;
 }
 
 void TTaskEnv::Abort(const TError &error) {
     TError error2;
 
-    /*
-     * stage0: RecvPid WPid
-     * stage1: RecvPid VPid
-     * stage2: RecvError
-     */
     L("abort due to {}", error);
 
-    for (int stage = ReportStage; stage < 2; stage++) {
-        error2 = Sock.SendPid(GetPid());
-        if (error2 && error2.Errno != ENOMEM)
-            L_ERR("{}", error2);
-    }
-
-    error2 = Sock.SendError(error);
-    if (error2 && error2.Errno != ENOMEM)
-        L_ERR("{}", error2);
-
+    ReportError(error);
     _exit(EXIT_FAILURE);
 }
 
-static int ChildFn(void *arg) {
-    TTaskEnv *task = static_cast<TTaskEnv *>(arg);
-    task->StartChild();
-    return EXIT_FAILURE;
+void TTaskEnv::AbortOnError(const TError &error) {
+    if (error)
+        Abort(error);
 }
 
 TError TTaskEnv::OpenNamespaces(TContainer &ct) {
@@ -185,7 +198,7 @@ TError TTaskEnv::OpenNamespaces(TContainer &ct) {
 
 TError TTaskEnv::ChildExec() {
     /* set environment for wordexp */
-    TError error = Env.Apply();
+    auto error = Env.Apply();
 
     auto envp = Env.Envp();
 
@@ -196,10 +209,12 @@ TError TTaskEnv::ChildExec() {
             CT->Name.c_str(),
             NULL,
         };
-        SetDieOnParentExit(0);
-        TFile::Close({0, 1, 2});
+        TFile::CloseAllExcept({PortoInit.Fd, LogFile.Fd, Sock.GetFd()});
+        ReportError(OK);
+        AbortOnError(Sock.RecvZero());
+        L("Exec portoinit meta {}", CT->Slug);
         fexecve(PortoInit.Fd, (char *const *)args, envp);
-        return TError::System("cannot exec portoinit");
+        Abort(TError::System("fexec portoinit"));
     }
 
     std::vector<const char *> argv;
@@ -243,7 +258,6 @@ TError TTaskEnv::ChildExec() {
             L("environ[{}]={}", i, envp[i]);
     }
 
-    SetDieOnParentExit(0);
     PortoInit.Close();
 
     /* https://bugs.launchpad.net/upstart/+bug/1582199 */
@@ -272,6 +286,9 @@ TError TTaskEnv::ChildExec() {
         if (error)
             L_WRN("{}", error);
     }
+
+    ReportError(OK);
+    AbortOnError(Sock.RecvZero());
 
     L("Exec '{}'", argv[0]);
     execvpe(argv[0], (char *const *)argv.data(), envp);
@@ -335,9 +352,7 @@ TError TTaskEnv::ApplySysctl() {
 
 TError TTaskEnv::ConfigureChild() {
     L("ConfigureChild");
-    TError error;
-
-    error = CT->GetUlimit().Apply();
+    auto error = CT->GetUlimit().Apply();
     if (error)
         return error;
 
@@ -397,8 +412,8 @@ TError TTaskEnv::ConfigureChild() {
     /* Closing before directory changing for security.
      * More info: PORTO-925
      */
-    TFile::CloseAllExcept({0, 1, 2, Sock.GetFd(), Sock2.GetFd(), MasterSock.GetFd(), MasterSock2.GetFd(), LogFile.Fd,
-                           PortoInit.Fd, UserFd.GetFd()});
+    TFile::CloseAllExcept(
+        {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, Sock.GetFd(), LogFile.Fd, PortoInit.Fd, UserFd.GetFd()});
     error = Mnt.Cwd.Chdir();
     if (error)
         return error;
@@ -414,22 +429,6 @@ TError TTaskEnv::ConfigureChild() {
         if (setsid() < 0)
             return TError::System("setsid()");
     }
-
-    /* Report VPid */
-    if (TripleFork) {
-        MasterSock2.Close();
-        error = Sock2.SendPid(GetPid());
-        if (error)
-            return error;
-        /* Wait VPid Ack */
-        error = Sock2.RecvZero();
-        if (error)
-            return error;
-        /* Parent forwards VPid */
-        ReportStage++;
-        Sock2.Close();
-    } else
-        ReportPid(GetPid());
 
     error = TPath("/proc/self/loginuid").WriteAll(std::to_string(LoginUid));
     if (error && error.Errno != ENOENT)
@@ -479,6 +478,7 @@ TError TTaskEnv::ConfigureChild() {
 
     UserFd.Close();
 
+    ReportPid(EMsgCode::TaskPid);
     if (CT->UserNs) {
         int unshareFlags = CLONE_NEWUSER | CLONE_NEWNET;
 
@@ -494,7 +494,7 @@ TError TTaskEnv::ConfigureChild() {
                                   (unshareFlags & CLONE_NEWNET ? " | CLONE_NEWNET" : ""),
                                   (unshareFlags & CLONE_NEWCGROUP ? " | CLONE_NEWCGROUP" : ""));
 
-        error = Sock.SendZero();
+        error = Sock.SendInt(int(EMsgCode::SetupUserMapping));
         if (error)
             return error;
 
@@ -534,42 +534,242 @@ TError TTaskEnv::WaitAutoconf() {
 
 void TTaskEnv::StartChild() {
     L("StartChild");
-    TError error;
 
-    if (TripleFork) {
-        /* Die together with parent who report WPid */
-        SetDieOnParentExit(SIGKILL);
-    } else {
-        /* Report WPid */
-        ReportPid(GetPid());
-    }
-
-    /* Wait WPid Ack */
-    error = Sock.RecvZero();
-    if (error)
-        Abort(error);
+    ReportPid(EMsgCode::WaitPid);
 
     /* Apply configuration */
-    error = ConfigureChild();
-    if (error)
-        Abort(error);
-
-    /* Wait for Wakeup */
-    error = Sock.RecvZero();
-    if (error)
-        Abort(error);
-
-    MasterSock.Close();
+    AbortOnError(ConfigureChild());
 
     /* Reset signals before exec, signal block already lifted */
     ResetIgnoredSignals();
 
-    error = WaitAutoconf();
-    if (error)
-        Abort(error);
+    AbortOnError(WaitAutoconf());
 
-    error = ChildExec();
-    Abort(error);
+    Abort(ChildExec());
+}
+
+TError TTaskEnv::DoFork1() {
+    TError error;
+
+    /* Switch from signafd back to normal signal delivery */
+    ResetBlockedSignals();
+
+    SetDieOnParentExit(SIGKILL);
+
+    SetProcessName(fmt::format("portod-CT{}", CT->Id));
+
+    (void)setsid();
+
+    L("Attach to cgroups");
+    // move to target cgroups
+    for (auto &cg: Cgroups) {
+        error = cg->Attach(GetPid());
+        if (error)
+            return error;
+    }
+
+    error = SetOomScoreAdj(CT->OomScoreAdj);
+    if (error && CT->OomScoreAdj)
+        return error;
+
+    if (CT->HasProp(EProperty::COREDUMP_FILTER)) {
+        error = SetCoredumpFilter(CT->CoredumpFilter);
+        if (error)
+            return error;
+    }
+
+    L("setpriority");
+    if (setpriority(PRIO_PROCESS, 0, CT->SchedNice))
+        return TError::System("setpriority");
+
+    struct sched_param param;
+    param.sched_priority = CT->SchedPrio;
+    if (sched_setscheduler(0, CT->SchedPolicy, &param))
+        return TError::System("sched_setscheduler");
+
+    if (CT->SchedNoSmt) {
+        cpu_set_t taskMask;
+        CT->GetNoSmtCpus().FillCpuSet(&taskMask);
+
+        if (sched_setaffinity(0, sizeof(taskMask), &taskMask))
+            return TError::System("sched_setaffinity");
+    }
+
+    if (SetIoPrio(0, CT->IoPrio))
+        return TError::System("ioprio");
+
+    L("open default streams");
+    /* Default streams and redirections are outside */
+    error = CT->Stdin.OpenOutside(*CT, *Client);
+    if (error)
+        return error;
+
+    error = CT->Stdout.OpenOutside(*CT, *Client);
+    if (error)
+        return error;
+
+    error = CT->Stderr.OpenOutside(*CT, *Client);
+    if (error)
+        return error;
+
+    L("Enter namespaces");
+
+    error = IpcFd.SetNs(CLONE_NEWIPC);
+    if (error)
+        return error;
+
+    error = UtsFd.SetNs(CLONE_NEWUTS);
+    if (error)
+        return error;
+
+    error = NetFd.SetNs(CLONE_NEWNET);
+    if (error)
+        return error;
+
+    error = PidFd.SetNs(CLONE_NEWPID);
+    if (error)
+        return error;
+
+    error = MntFd.SetNs(CLONE_NEWNS);
+    if (error)
+        return error;
+
+    if (SupportCgroupNs) {
+        error = CgFd.SetNs(CLONE_NEWCGROUP);
+        if (error)
+            return error;
+    }
+
+    error = RootFd.Chroot();
+    if (error)
+        return error;
+
+    error = CwdFd.Chdir();
+    if (error)
+        return error;
+
+    struct clone_args clargs = {};
+    if (TripleFork) {
+        /*
+         * Enter into pid-namespace. fork() hangs in libc if child pid
+         * collide with parent pid outside. vfork() has no such problem.
+         */
+        L("vfork");
+        pid_t forkPid = vfork();
+        if (forkPid < 0)
+            Abort(TError::System("vfork()"));
+
+        if (forkPid)
+            _exit(EXIT_SUCCESS);
+        clargs.flags |= CLONE_PARENT;
+    } else
+        clargs.exit_signal = SIGCHLD;
+
+    if (CT->Isolate)
+        clargs.flags |= CLONE_NEWIPC | CLONE_NEWPID;
+
+    if (SupportCgroupNs && CT->CgroupFs != ECgroupFs::None)
+        clargs.flags |= CLONE_NEWCGROUP;
+
+    if (NewMountNs)
+        clargs.flags |= CLONE_NEWNS;
+
+    /* Create UTS namspace if hostname is changed or isolate=true */
+    if (CT->Isolate || CT->Hostname != "")
+        clargs.flags |= CLONE_NEWUTS;
+
+    pid_t clonePid = syscall(__NR_clone3, &clargs, sizeof(clargs));
+
+    if (clonePid < 0)
+        return TError(errno == ENOMEM ? EError::ResourceNotAvailable : EError::Unknown, errno, "clone()");
+
+    if (!clonePid)
+        StartChild();
+
+    return OK;
+}
+
+TError TTaskEnv::CommunicateChild(TPidFd &waitPidFd, TPidFd &taskPidFd) {
+    TFile taskProcFd;
+    TError childError = TError("Child did not send OK");
+
+    while (1) {
+        int val;
+        auto error = MasterSock.RecvInt(val);
+        if (error) {
+            if (error.Error == EError::NoValue)  // EOF
+                break;
+            if (error.Errno == EWOULDBLOCK)
+                Statistics->StartTimeouts++;
+            return error;
+        }
+
+        auto code = EMsgCode(val);
+        L("CommunicateChild {}", to_string(code));
+
+        switch (code) {
+        case EMsgCode::Error: {
+            childError = MasterSock.RecvError();  // child sends ok before final exec
+            if (childError)
+                return childError;
+            auto error = MasterSock.SendZero();
+            if (error)
+                return error;
+            break;
+        }
+        case EMsgCode::WaitPid: {
+            if (waitPidFd)
+                return TError("already received wait task pidfd");
+            auto error = MasterSock.RecvPidFd(waitPidFd);
+            if (error)
+                return error;
+            CT->WaitTask.Pid = waitPidFd.GetPid();
+            if (CT->WaitTask.Pid < 0)
+                return TError("No pid for wait task");
+            break;
+        }
+        case EMsgCode::TaskPid: {
+            if (taskPidFd)
+                return TError("already received task pidfd");
+            auto error = MasterSock.RecvPidFd(taskPidFd);
+            if (error)
+                return error;
+            CT->Task.Pid = taskPidFd.GetPid();
+            if (CT->Task.Pid < 0)
+                return TError("No pid for task");
+
+            error = taskPidFd.OpenProcFd(taskProcFd);
+            if (error)
+                return error;
+            CT->TaskVPid = GetProcVPid(taskProcFd);
+            if (CT->TaskVPid < 0)
+                return TError("No vpid for task");
+
+            break;
+        }
+        case EMsgCode::SetupUserMapping: {
+            error = CT->TaskCred.SetupMapping(taskProcFd);
+            if (error)
+                return error;
+
+            error = TNetwork::StartNetwork(*CT, *this);
+            if (error)
+                return error;
+
+            error = MasterSock.SendZero();
+            if (error)
+                return error;
+            break;
+        }
+        default:
+            return TError("Got unknown message code from child: {}", val);
+        }
+    }
+
+    if (!waitPidFd || !taskProcFd)
+        return TError("Child did not send pidfd");
+
+    return childError;
 }
 
 TError TTaskEnv::Start() {
@@ -578,14 +778,16 @@ TError TTaskEnv::Start() {
     which waits sub-container main task and dies in the same way. */
     L("Start with TripleFork={} QuadroFork={}", TripleFork, QuadroFork);
 
-    TError error, error2;
-
     CT->Task.Pid = 0;
     CT->TaskVPid = 0;
     CT->WaitTask.Pid = 0;
     CT->SeizeTask.Pid = 0;
 
-    error = TUnixSocket::SocketPair(MasterSock, Sock);
+    auto error = TUnixSocket::SocketPair(MasterSock, Sock);
+    if (error)
+        return error;
+
+    error = MasterSock.SetRecvTimeout(config().container().start_timeout_ms());
     if (error)
         return error;
 
@@ -599,264 +801,41 @@ TError TTaskEnv::Start() {
     if (error) {
         Sock.Close();
         MasterSock.Close();
-        L("Can't spawn child: {}", error);
+        L("Fork failed: {}", error);
         return error;
     }
 
     if (!task.Pid) {
-        /* FIXME: this changes stable behaviour with starting child on reload
-        MasterSock.Close(); */
+        MasterSock.Close();
 
-        TError error;
-
-        /* Switch from signafd back to normal signal delivery */
-        ResetBlockedSignals();
-
-        SetDieOnParentExit(SIGKILL);
-
-        SetProcessName("portod-CT" + std::to_string(CT->Id));
-
-        /* FIXME try to replace clone() with  unshare() */
-#if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
-        char stack[8192 * 4] __attribute__((aligned(16)));
-#else
-        char stack[8192] __attribute__((aligned(16)));
-#endif
-
-        (void)setsid();
-
-        L("Attach to cgroups");
-        // move to target cgroups
-        for (auto &cg: Cgroups) {
-            error = cg->Attach(GetPid());
-            if (error)
-                Abort(error);
-        }
-
-        error = SetOomScoreAdj(CT->OomScoreAdj);
-        if (error && CT->OomScoreAdj)
-            Abort(error);
-
-        if (CT->HasProp(EProperty::COREDUMP_FILTER)) {
-            error = SetCoredumpFilter(CT->CoredumpFilter);
-            if (error)
-                Abort(error);
-        }
-
-        L("setpriority");
-        if (setpriority(PRIO_PROCESS, 0, CT->SchedNice))
-            Abort(TError::System("setpriority"));
-
-        struct sched_param param;
-        param.sched_priority = CT->SchedPrio;
-        if (sched_setscheduler(0, CT->SchedPolicy, &param))
-            Abort(TError::System("sched_setscheduler"));
-
-        if (CT->SchedNoSmt) {
-            cpu_set_t taskMask;
-            CT->GetNoSmtCpus().FillCpuSet(&taskMask);
-
-            if (sched_setaffinity(0, sizeof(taskMask), &taskMask))
-                Abort(TError::System("sched_setaffinity"));
-        }
-
-        if (SetIoPrio(0, CT->IoPrio))
-            Abort(TError::System("ioprio"));
-
-        L("open default streams");
-        /* Default streams and redirections are outside */
-        error = CT->Stdin.OpenOutside(*CT, *Client);
-        if (error)
-            Abort(error);
-
-        error = CT->Stdout.OpenOutside(*CT, *Client);
-        if (error)
-            Abort(error);
-
-        error = CT->Stderr.OpenOutside(*CT, *Client);
-        if (error)
-            Abort(error);
-
-        L("Enter namespaces");
-
-        error = IpcFd.SetNs(CLONE_NEWIPC);
-        if (error)
-            Abort(error);
-
-        error = UtsFd.SetNs(CLONE_NEWUTS);
-        if (error)
-            Abort(error);
-
-        error = NetFd.SetNs(CLONE_NEWNET);
-        if (error)
-            Abort(error);
-
-        error = PidFd.SetNs(CLONE_NEWPID);
-        if (error)
-            Abort(error);
-
-        error = MntFd.SetNs(CLONE_NEWNS);
-        if (error)
-            Abort(error);
-
-        if (SupportCgroupNs) {
-            error = CgFd.SetNs(CLONE_NEWCGROUP);
-            if (error)
-                Abort(error);
-        }
-
-        error = RootFd.Chroot();
-        if (error)
-            Abort(error);
-
-        error = CwdFd.Chdir();
-        if (error)
-            Abort(error);
-
-        if (TripleFork) {
-            /*
-             * Enter into pid-namespace. fork() hangs in libc if child pid
-             * collide with parent pid outside. vfork() has no such problem.
-             */
-            L("vfork");
-            pid_t forkPid = vfork();
-            if (forkPid < 0)
-                Abort(TError::System("fork()"));
-
-            if (forkPid)
-                _exit(EXIT_SUCCESS);
-
-            error = TUnixSocket::SocketPair(MasterSock2, Sock2);
-            if (error)
-                Abort(error);
-
-            /* Report WPid */
-            ReportPid(GetTid());
-        }
-
-        int cloneFlags = SIGCHLD;
-        if (CT->Isolate)
-            cloneFlags |= CLONE_NEWPID | CLONE_NEWIPC;
-
-        if (SupportCgroupNs && CT->CgroupFs != ECgroupFs::None)
-            cloneFlags |= CLONE_NEWCGROUP;
-
-        if (NewMountNs)
-            cloneFlags |= CLONE_NEWNS;
-
-        /* Create UTS namspace if hostname is changed or isolate=true */
-        if (CT->Isolate || CT->Hostname != "")
-            cloneFlags |= CLONE_NEWUTS;
-
-        L("clone, flags: {}", cloneFlags);
-        pid_t clonePid = clone(ChildFn, stack + sizeof(stack), cloneFlags, this);
-
-        if (clonePid < 0) {
-            TError error(errno == ENOMEM ? EError::ResourceNotAvailable : EError::Unknown, errno, "clone()");
-            Abort(error);
-        }
-
-        if (!TripleFork)
-            _exit(EXIT_SUCCESS);
-
-        /* close other side before reading */
-        Sock2.Close();
-
-        pid_t appPid, appVPid;
-        error = MasterSock2.RecvPid(appPid, appVPid);
-        if (error)
-            Abort(error);
-
-        /* Forward VPid */
-        ReportPid(appPid);
-
-        /* Ack VPid */
-        error = MasterSock2.SendZero();
-        if (error)
-            Abort(error);
-
-        MasterSock2.Close();
-
-        ExecPortoinit(clonePid);
+        AbortOnError(DoFork1());
+        _exit(EXIT_SUCCESS);
     }
-
     Sock.Close();
 
-    error = MasterSock.SetRecvTimeout(config().container().start_timeout_ms());
+    TPidFd waitPidFd, taskPidFd;
+    error = CommunicateChild(waitPidFd, taskPidFd);
+    MasterSock.Close();
     if (error)
         goto kill_all;
 
-    error = MasterSock.RecvPid(CT->WaitTask.Pid, CT->TaskVPid);
-    if (error) {
-        if (errno == EWOULDBLOCK) {
-            Statistics->StartTimeouts++;
-            PrintStack(task.Pid);
-        }
+    if (CT->Task.Pid < 0 || CT->TaskVPid < 0 || CT->WaitTask.Pid < 0) {
+        error = TError("Child task is dead");
         goto kill_all;
     }
 
-    /* Ack WPid */
-    error = MasterSock.SendZero();
+    error = task.Wait();
     if (error)
         goto kill_all;
-
-    error = MasterSock.RecvPid(CT->Task.Pid, CT->TaskVPid);
-    if (error) {
-        if (errno == EWOULDBLOCK) {
-            Statistics->StartTimeouts++;
-            PrintStack(CT->WaitTask.Pid);
-        }
-        goto kill_all;
-    }
-
-    error2 = task.Wait();
-
-    /* Task was alive, even if it already died we'll get zombie */
-
-    if (CT->UserNs) {
-        // wait joining user namespace
-        error = MasterSock.RecvZero();
-        if (error)
-            Abort(error);
-
-        error = CT->TaskCred.SetupMapping(CT->Task.Pid);
-        if (error)
-            Abort(error);
-
-        if (CT->UserNs) {
-            error = TNetwork::StartNetwork(*CT, *this);
-            if (error)
-                Abort(error);
-        }
-
-        error = MasterSock.SendZero();
-        if (error)
-            Abort(error);
-    }
-
-    error = MasterSock.SendZero();
-    if (error)
-        L("Task wakeup error: {}", error);
-
-    /* Prefer reported error if any */
-    error = MasterSock.RecvError();
-    if (error) {
-        if (errno == EWOULDBLOCK) {
-            Statistics->StartTimeouts++;
-            PrintStack(CT->Task.Pid);
-        }
-        goto kill_all;
-    }
-
-    if (!error && error2) {
-        error = error2;
-        goto kill_all;
-    }
 
     return OK;
 
 kill_all:
     L("Task start failed: {}", error);
+    if (waitPidFd)
+        waitPidFd.Kill(SIGKILL);
+    if (taskPidFd)
+        taskPidFd.Kill(SIGKILL);
     if (task.Pid) {
         task.Kill(SIGKILL);
         task.Wait();
@@ -875,15 +854,11 @@ void TTaskEnv::ExecPortoinit(pid_t pid) {
     };
     auto envp = Env.Envp();
 
-    TError error = PortoInitCapabilities.ApplyLimit();
-    if (!error) {
-        TFile::CloseAllExcept({PortoInit.Fd, LogFile.Fd});
-        L("Exec portoinit");
-        fexecve(PortoInit.Fd, (char *const *)argv, envp);
-        error = TError::System("fexecve");
-    }
+    AbortOnError(PortoInitCapabilities.ApplyLimit());
 
-    L("Cannot exec portoinit: {}", error);
+    TFile::CloseAllExcept({PortoInit.Fd, LogFile.Fd, Sock.GetFd()});
+    L("Exec portoinit {} wait {}", CT->Slug, pid);
+    fexecve(PortoInit.Fd, (char *const *)argv, envp);
     kill(pid, SIGKILL);
-    _exit(EXIT_FAILURE);
+    Abort(TError::System("fexec portoinit"));
 }

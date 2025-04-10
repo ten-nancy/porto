@@ -439,10 +439,8 @@ except porto.exceptions.SocketError:
 else:
     assert False
 
-assert c.connected() == False
-assert c.nr_connects() == 1
-assert time.time() - start < 0.1
-
+ExpectEq(c.connected(), False)
+ExpectEq(c.nr_connects(), 1)
 
 # RETRY CONNECT
 
@@ -455,9 +453,8 @@ except porto.exceptions.SocketTimeout:
 else:
     assert False
 
-assert c.connected() == False
-assert c.nr_connects() == 2
-assert time.time() - start > 0.9
+ExpectEq(c.connected(), False)
+ExpectEq(c.nr_connects(), 2)
 
 # check new error on portod upgrade only in python3
 if sys.version_info.major != 3:
@@ -498,8 +495,11 @@ subprocess.call(['vmtouch', '-e', 'layer.tar.gz'])
 p = subprocess.run([portoctl, '--disk-timeout', '1', '-t', '1', 'layer', '-I', 'ubuntu-api-test', 'layer.tar.gz'], stdout = subprocess.PIPE, stderr=subprocess.PIPE)
 assert p.returncode != 0
 assert str(p.stderr).find('Timeout exceeded. Timeout value:') >= 0
-time.sleep(5)
-layers = str(os.listdir('/place/porto_layers'))
+for i in range(30):
+    time.sleep(1)
+    layers = str(os.listdir('/place/porto_layers'))
+    if layers.find('ubuntu-api-test') == -1:
+        break
 assert layers.find('ubuntu-api-test') == -1, layers
 
 

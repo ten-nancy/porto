@@ -13,8 +13,16 @@
 
 class TContainer;
 class TClient;
+class TPidFd;
 
 struct TTaskEnv {
+    enum class EMsgCode {
+        Error = 8321,
+        WaitPid = 8322,
+        TaskPid = 8323,
+        SetupUserMapping = 8324,
+    };
+
     std::shared_ptr<TContainer> CT;
     TClient *Client;
     TFile PortoInit;
@@ -40,12 +48,12 @@ struct TTaskEnv {
     uid_t LoginUid;
 
     TUnixSocket Sock, MasterSock;
-    TUnixSocket Sock2, MasterSock2;
-    int ReportStage = 0;
 
     TError OpenNamespaces(TContainer &ct);
 
     TError Start();
+    TError CommunicateChild(TPidFd &waitPidFd, TPidFd &taskPidFd);
+    TError DoFork1();
     void StartChild();
 
     TError ConfigureChild();
@@ -56,10 +64,10 @@ struct TTaskEnv {
     TError WaitAutoconf();
     TError ChildExec();
 
-    void TracerLoop(pid_t traceePid);
-
-    void ReportPid(pid_t pid);
+    void ReportPid(EMsgCode type);
+    void ReportError(const TError &error);
     void Abort(const TError &error);
+    void AbortOnError(const TError &error);
 
     void ExecPortoinit(pid_t pid);
 };

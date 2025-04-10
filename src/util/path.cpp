@@ -1145,18 +1145,11 @@ TError TPath::CreateAndWriteAll(const std::string &text) const {
 }
 
 TError TPath::ReadLines(std::vector<std::string> &lines, size_t max) const {
-    std::string text, line;
-
-    TError error = ReadAll(text, max);
+    TFile file;
+    auto error = file.OpenRead(*this);
     if (error)
         return error;
-
-    std::stringstream ss(text);
-
-    while (std::getline(ss, line))
-        lines.push_back(line);
-
-    return OK;
+    return file.ReadLines(lines, max);
 }
 
 TError TPath::WriteLines(const std::vector<std::string> &lines) const {
@@ -1517,6 +1510,21 @@ TError TFile::ReadAll(std::string &text, size_t max) const {
     return OK;
 }
 
+TError TFile::ReadLines(std::vector<std::string> &lines, size_t max) const {
+    std::string text, line;
+
+    TError error = ReadAll(text, max);
+    if (error)
+        return error;
+
+    std::stringstream ss(text);
+
+    while (std::getline(ss, line))
+        lines.push_back(line);
+
+    return OK;
+}
+
 TError TFile::ReadEnds(std::string &text, size_t max) const {
     ssize_t head = 0, tail, size;
     struct stat st;
@@ -1559,6 +1567,14 @@ TError TFile::WriteAll(const std::string &text) const {
     } while (off < len);
 
     return OK;
+}
+
+TError TFile::WriteAllAt(const TPath &path, const std::string &text) const {
+    TFile other;
+    auto error = other.OpenAt(*this, path, O_WRONLY | O_CLOEXEC | O_NOCTTY);
+    if (error)
+        return error;
+    return other.WriteAll(text);
 }
 
 TError TFile::Chattr(int fd, unsigned add_flags, unsigned del_flags) {

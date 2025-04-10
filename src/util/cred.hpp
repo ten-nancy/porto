@@ -4,6 +4,8 @@
 
 #include "util/error.hpp"
 
+class TFile;
+
 /* Allows numeric user prepresentation */
 TError FindUser(const std::string &user, uid_t &uid, gid_t &gid);
 TError UserId(const std::string &user, uid_t &uid);
@@ -67,7 +69,7 @@ public:
     TError InitGroups(const std::string &user);
 
     TError Apply() const;
-    TError SetupMapping(pid_t pid) const;
+    TError SetupMapping(const TFile &procFd) const;
 
     uid_t GetUid() const {
         return Uid;

@@ -1,5 +1,7 @@
 #include "proc.hpp"
 
+#include <fcntl.h>
+
 #include <sstream>
 
 #include "log.hpp"
@@ -152,4 +154,56 @@ TError GetProcStartTime(pid_t pid, uint64_t &time) {
         return TError("Invalid /proc/pid/stat structure: {}", stat);
 
     return StringToUint64(values[19], time);
+}
+
+TError GetProcField(const TPath &path, const std::string &field, std::string &value) {
+    TFile file;
+    auto error = file.OpenRead(path);
+    if (error)
+        return error;
+    return GetProcField(file, field, value);
+}
+
+TError GetProcField(const TFile &procFd, const TPath &path, const std::string &field, std::string &value) {
+    TFile file;
+    auto error = file.OpenAt(procFd, path, O_CLOEXEC | O_RDONLY | O_NOCTTY);
+    if (error)
+        return error;
+    return GetProcField(file, field, value);
+}
+
+TError GetProcField(const TFile &knob, const std::string &field, std::string &value) {
+    std::vector<std::string> lines;
+
+    auto error = knob.ReadLines(lines);
+    if (error)
+        return error;
+
+    for (const auto &line: lines) {
+        if (!StringStartsWith(line, field))
+            continue;
+
+        auto pos = line.find_first_of(" \t");
+        if (pos == line.npos)
+            return TError("Invalid proc line");
+
+        pos = line.find_first_not_of(" \t", pos);
+        if (pos == line.npos)
+            return TError("Invalid proc line");
+
+        value = line.substr(pos);
+        return OK;
+    }
+    return TError(EError::NotFound, "field {}", field);
+}
+
+pid_t GetProcVPid(const TFile &procFd) {
+    pid_t pid = -1;
+    std::string value;
+    if (!GetProcField(procFd, "status", "NStgid:", value)) {
+        auto pids = SplitString(value, '\t');
+        if (!pids.empty())
+            (void)StringToInt(pids.back(), pid);
+    }
+    return pid;
 }

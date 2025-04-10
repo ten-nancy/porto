@@ -56,6 +56,33 @@ void DumpMallocInfo();
 
 int SetIoPrio(pid_t pid, int ioprio);
 
+class TPidFd {
+    TPidFd(const TPidFd &) = delete;
+    TPidFd &operator=(const TPidFd &) = delete;
+
+public:
+    TFile PidFd;
+
+    TPidFd() = default;
+
+    TPidFd(int fd)
+        : PidFd(fd)
+    {}
+    TError Open(pid_t pid);
+    // Check if process exists and is not zombie
+    bool Running() const;
+    // Wait process to terminate (but not to be reaped!, i.e. it can be zombie).
+    TError Wait(int timeoutMs) const;
+    TError Kill(int signo) const;
+    TError KillWait(int signo, int timeoutMs) const;
+    TError OpenProcFd(TFile &procFd) const;
+    pid_t GetPid() const;
+    pid_t GetNsPid() const;
+    operator bool() const {
+        return bool(PidFd);
+    }
+};
+
 class TUnixSocket: public TNonCopyable {
     int SockFd;
 
@@ -80,30 +107,22 @@ public:
     }
     TError RecvZero() const {
         int zero;
-        return RecvInt(zero);
+        auto error = RecvInt(zero);
+        if (error)
+            return error;
+        if (zero)
+            return TError("Expected 0 got {}", zero);
+        return OK;
     }
     TError SendPid(pid_t pid) const;
+    TError SendPidFd(const TPidFd &pidfd) const;
+    TError RecvPidFd(TPidFd &pidfd) const;
     TError RecvPid(pid_t &pid, pid_t &vpid) const;
     TError SendError(const TError &error) const;
     TError RecvError() const;
     TError SendFd(int fd) const;
     TError RecvFd(int &fd) const;
     TError SetRecvTimeout(int timeout_ms) const;
-};
-
-class TPidFd {
-    TFile PidFd;
-
-public:
-    pid_t Pid = 0;
-
-    TError Open(pid_t pid);
-    // Check if process exists and is not zombie
-    bool Running() const;
-    // Wait process to terminate (but not to be reaped!, i.e. it can be zombie).
-    TError Wait(int timeoutMs) const;
-    TError Kill(int signo) const;
-    TError KillWait(int signo, int timeoutMs) const;
 };
 
 class TPidFile {

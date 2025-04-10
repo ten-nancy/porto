@@ -340,6 +340,9 @@ TError TUnixSocket::RecvInt(int &val) const {
     ret = read(SockFd, &val, sizeof(val));
     if (ret < 0)
         return TError::System("cannot receive int");
+    if (ret == 0)
+        return TError(EError::NoValue);
+
     if (ret != sizeof(val))
         return TError("partial read of int: {}", ret);
     return OK;
@@ -422,8 +425,8 @@ TError TUnixSocket::SendError(const TError &error) const {
 
 TError TUnixSocket::RecvError() const {
     TError error;
-
-    TError::Deserialize(SockFd, error);
+    if (!TError::Deserialize(SockFd, error))
+        return TError("Unexpected end of stream during error receive");
     return error;
 }
 
@@ -495,6 +498,20 @@ TError TUnixSocket::RecvFd(int &fd) const {
         }
     }
     return TError("no rights after recvmsg");
+}
+
+TError TUnixSocket::SendPidFd(const TPidFd &pidfd) const {
+    return SendFd(pidfd.PidFd.Fd);
+}
+
+TError TUnixSocket::RecvPidFd(TPidFd &pidfd) const {
+    int fd;
+    auto error = RecvFd(fd);
+    if (error)
+        return error;
+    TFile tmp(fd);
+    pidfd.PidFd.Swap(tmp);
+    return OK;
 }
 
 TError TUnixSocket::SetRecvTimeout(int timeout_ms) const {
@@ -615,7 +632,6 @@ TError TPidFd::Open(pid_t pid) {
     auto error = PidFd.OpenPid(pid);
     if (error)
         return error;
-    Pid = pid;
     return OK;
 }
 
@@ -646,6 +662,17 @@ TError TPidFd::Wait(int timeoutMs) const {
     return TError::System("poll");
 }
 
+TError TPidFd::OpenProcFd(TFile &procFd) const {
+    auto pid = GetPid();
+    auto error = procFd.OpenDir(fmt::format("/proc/{}", pid));
+    if (error)
+        return error;
+
+    if (GetPid() < 0)
+        return TError(EError::Unknown, ESRCH, "process with pid={} gone", pid);
+    return OK;
+}
+
 TError TPidFd::Kill(int signo) const {
     if (syscall(__NR_pidfd_send_signal, PidFd.Fd, signo, nullptr, 0) < 0)
         return TError::System("pidfd_send_signal");
@@ -657,6 +684,14 @@ TError TPidFd::KillWait(int signo, int timeoutMs) const {
     if (error && error.Errno != ESRCH)
         return error;
     return Wait(timeoutMs);
+}
+
+pid_t TPidFd::GetPid() const {
+    pid_t pid = -1;
+    std::string value;
+    if (!GetProcField(fmt::format("/proc/thread-self/fdinfo/{}", PidFd.Fd), "Pid:", value))
+        (void)StringToInt(value, pid);
+    return pid;
 }
 
 TError TPidFile::Read() {

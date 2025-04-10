@@ -332,22 +332,22 @@ std::string TCred::GetMapping(uint32_t id) {
         return fmt::format("0 {} 1\n1 1 {}\n{} {} {}", id, id - 1, id + 1, id + 1, 4294967295 - 1 - id);
 }
 
-TError TCred::SetupMapping(pid_t pid) const {
+TError TCred::SetupMapping(const TFile &procFd) const {
     TError error;
     std::string uidMap, gidMap;
 
     uidMap = GetMapping(Uid);
     gidMap = GetMapping(Gid);
 
-    error = TPath(fmt::format("/proc/{}/uid_map", pid)).WriteAll(uidMap);
+    error = procFd.WriteAllAt("uid_map", uidMap);
     if (error)
         return error;
 
-    error = TPath(fmt::format("/proc/{}/setgroups", pid)).WriteAll("allow");
+    error = procFd.WriteAllAt("setgroups", "allow");
     if (error)
         return error;
 
-    error = TPath(fmt::format("/proc/{}/gid_map", pid)).WriteAll(gidMap);
+    error = procFd.WriteAllAt("gid_map", gidMap);
     if (error)
         return error;
 

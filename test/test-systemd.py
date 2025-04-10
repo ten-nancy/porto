@@ -23,9 +23,14 @@ b_pid = b['root_pid']
 a_cg = GetSystemdCg(a_pid)
 assert a_cg.startswith("/porto%a"), "{} must start with /porto%a".format(a_cg)
 
-time.sleep(1)
-a_cg = GetSystemdCg(a_pid)
+for i in range(10):
+    if i:
+        time.sleep(1)
+    a_cg = GetSystemdCg(a_pid)
+    if a_cg == "/porto%a/init.scope":
+        break
 ExpectEq(a_cg, "/porto%a/init.scope")
+
 
 b_cg = GetSystemdCg(b_pid)
 ExpectEq(b_cg, portod_cg)

@@ -35,9 +35,12 @@ TError TError::Serialize(int fd) const {
     ret = write(fd, &len, sizeof(len));
     if (ret != sizeof(len))
         return System("Can't serialize length");
-    ret = write(fd, Text.data(), len);
-    if (ret != (int)len)
-        return System("Can't serialize description");
+    // Don’t write zero len message: it can cause SIGPIPE
+    if (len) {
+        ret = write(fd, Text.data(), len);
+        if (ret != (int)len)
+            return System("Can't serialize description");
+    }
 
     return OK;
 }
@@ -72,10 +75,12 @@ bool TError::Deserialize(int fd, TError &error) {
     }
 
     std::string desc(len, '\0');
-    ret = read(fd, &desc[0], len);
-    if (ret != (int)len) {
-        error = System("Can't deserialize description");
-        return true;
+    if (len) {
+        ret = read(fd, &desc[0], len);
+        if (ret != (int)len) {
+            error = System("Can't deserialize description");
+            return true;
+        }
     }
 
     error = TError(err, errno_, std::move(desc));
