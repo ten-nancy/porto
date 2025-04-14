@@ -2019,6 +2019,16 @@ noinline static TError ClearStatistics(const rpc::TClearStatisticsRequest *req) 
 }
 
 TError TRequest::Check() {
+    // 30 seconds -- default client connection timeout
+    if (QueueTime + 30 * 1000 <= GetCurrentTimeMs()) {
+        // Check if peer is still there
+        if (send(Client->Fd, nullptr, 0, MSG_DONTWAIT) < 0) {
+            if (errno != EPIPE)
+                L_WRN("Error during client check: {}", TError::System("send"));
+            return TError(EError::SocketError);
+        }
+    }
+
     auto req_ref = Req.GetReflection();
 
     std::vector<const google::protobuf::FieldDescriptor *> req_fields;
@@ -2059,6 +2069,8 @@ void TRequest::Handle() {
 
     if (!error && (!RoReq || Verbose))
         L_REQ("{} {} {} from {}", Cmd, Arg, Opt, Client->Id);
+    else if (error.Error == EError::SocketError)
+        L_REQ("{} {} {} from {} dropped", Cmd, Arg, Opt, Client->Id);
 
     if (Debug && !SecretReq)
         L_DBG("Raw request: {}", Req.ShortDebugString());
