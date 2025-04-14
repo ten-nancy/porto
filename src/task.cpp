@@ -209,7 +209,7 @@ TError TTaskEnv::ChildExec() {
             CT->Name.c_str(),
             NULL,
         };
-        TFile::CloseAllExcept({PortoInit.Fd, LogFile.Fd, Sock.GetFd()});
+        TFile::CloseAllExcept({PortoInit.Fd, LogFile.Fd, Sock.Fd});
         ReportError(OK);
         AbortOnError(Sock.RecvZero());
         L("Exec portoinit meta {}", CT->Slug);
@@ -413,7 +413,7 @@ TError TTaskEnv::ConfigureChild() {
      * More info: PORTO-925
      */
     TFile::CloseAllExcept(
-        {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, Sock.GetFd(), LogFile.Fd, PortoInit.Fd, UserFd.GetFd()});
+        {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, Sock.Fd, LogFile.Fd, PortoInit.Fd, UserFd.GetFd()});
     error = Mnt.Cwd.Chdir();
     if (error)
         return error;
@@ -787,9 +787,7 @@ TError TTaskEnv::Start() {
     if (error)
         return error;
 
-    error = MasterSock.SetRecvTimeout(config().container().start_timeout_ms());
-    if (error)
-        return error;
+    MasterSock.SetDeadline(GetCurrentTimeMs() + config().container().start_timeout_ms());
 
     // we want our child to have portod master as parent, so we
     // are doing double fork here (fork + clone);
@@ -856,7 +854,7 @@ void TTaskEnv::ExecPortoinit(pid_t pid) {
 
     AbortOnError(PortoInitCapabilities.ApplyLimit());
 
-    TFile::CloseAllExcept({PortoInit.Fd, LogFile.Fd, Sock.GetFd()});
+    TFile::CloseAllExcept({PortoInit.Fd, LogFile.Fd, Sock.Fd});
     L("Exec portoinit {} wait {}", CT->Slug, pid);
     fexecve(PortoInit.Fd, (char *const *)argv, envp);
     kill(pid, SIGKILL);

@@ -7,6 +7,7 @@
 #include "common.hpp"
 #include "util/path.hpp"
 #include "util/signal.hpp"
+#include "util/socket.hpp"
 
 extern "C" {
 #include <sys/prctl.h>
@@ -83,23 +84,14 @@ public:
     }
 };
 
-class TUnixSocket: public TNonCopyable {
-    int SockFd;
+class TUnixSocket: public TSocket {
+    TUnixSocket &operator=(int sock);
 
 public:
     static TError SocketPair(TUnixSocket &sock1, TUnixSocket &sock2);
     TUnixSocket(int sock = -1)
-        : SockFd(sock)
+        : TSocket(sock)
     {};
-    ~TUnixSocket() {
-        Close();
-    };
-    void operator=(int sock);
-    TUnixSocket &operator=(TUnixSocket &&Sock);
-    void Close();
-    int GetFd() const {
-        return SockFd;
-    }
     TError SendInt(int val) const;
     TError RecvInt(int &val) const;
     TError SendZero() const {
@@ -115,14 +107,13 @@ public:
         return OK;
     }
     TError SendPid(pid_t pid) const;
+    TError RecvPid(pid_t &pid, pid_t &vpid) const;
     TError SendPidFd(const TPidFd &pidfd) const;
     TError RecvPidFd(TPidFd &pidfd) const;
-    TError RecvPid(pid_t &pid, pid_t &vpid) const;
     TError SendError(const TError &error) const;
     TError RecvError() const;
     TError SendFd(int fd) const;
     TError RecvFd(int &fd) const;
-    TError SetRecvTimeout(int timeout_ms) const;
 };
 
 class TPidFile {

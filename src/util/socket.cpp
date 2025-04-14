@@ -1,5 +1,7 @@
 #include "util/socket.hpp"
 
+#include "util/unix.hpp"
+
 extern "C" {
 #include <netdb.h>
 #include <sys/un.h>
@@ -7,11 +9,10 @@ extern "C" {
 }
 
 TError TSocket::Connect(const sockaddr *addr, size_t len) {
-    int64_t timeout = Timeout();
-    if (timeout < 0)
-        return TError::System("connect socket failed", EWOULDBLOCK);
+    auto error = ApplyWriteDeadline();
+    if (error)
+        return error;
 
-    auto error = SetWriteTimeout(timeout);
     int ret = connect(Fd, addr, len);
     if (ret == 0)
         return OK;
@@ -82,11 +83,7 @@ TError TSocket::Read(void *buf, size_t len) const {
     char *p = (char *)buf;
 
     while (len > 0) {
-        int64_t timeout = Timeout();
-        if (timeout < 0)
-            return TError::System("read from socket failed", EWOULDBLOCK);
-
-        auto error = SetReadTimeout(timeout);
+        auto error = ApplyReadDeadline();
         if (error)
             return error;
 
@@ -109,11 +106,7 @@ TError TSocket::Write(const void *buf, size_t len) const {
     const char *p = (const char *)buf;
 
     while (len > 0) {
-        int64_t timeout = Timeout();
-        if (timeout < 0)
-            return TError::System("write to socket failed", EWOULDBLOCK);
-
-        auto error = SetWriteTimeout(timeout);
+        auto error = ApplyWriteDeadline();
         if (error)
             return error;
 
@@ -131,26 +124,19 @@ TError TSocket::Write(const void *buf, size_t len) const {
     return OK;
 }
 
-TError TSocket::SetReadTimeout(int64_t timeout_ms) const {
-    struct timeval tv;
-
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-
-    if (setsockopt(Fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv))
-        return TError::System("setsockopt(SO_RCVTIMEO)");
+TError TSocket::SetTimeout(int64_t timeout_ms, int type) const {
+    struct timeval tv = {.tv_sec = timeout_ms / 1000, .tv_usec = (timeout_ms % 1000) * 1000};
+    if (setsockopt(Fd, SOL_SOCKET, type, &tv, sizeof(tv)))
+        return TError::System("setsockopt(_, SOL_SOCKET, {}, _)", type);
 
     return OK;
 }
 
-TError TSocket::SetWriteTimeout(int64_t timeout_ms) const {
-    struct timeval tv;
-
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-
-    if (setsockopt(Fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv))
-        return TError::System("setsockopt(SO_SNDTIMEO)");
-
-    return OK;
+int64_t TSocket::Timeout() const {
+    if (!DeadlineMs)
+        return 0;
+    uint64_t now = GetCurrentTimeMs();
+    if (now >= DeadlineMs)
+        return -1;
+    return DeadlineMs - now;
 }

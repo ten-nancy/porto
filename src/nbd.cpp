@@ -18,6 +18,7 @@ extern "C" {
 #include "nbd.hpp"
 #include "util/log.hpp"
 #include "util/socket.hpp"
+#include "util/unix.hpp"
 
 #define NBD_OPT_EXPORT_NAME     (1)      /**< Client wants to select a named export (is followed by name of export) */
 #define NBD_FLAG_FIXED_NEWSTYLE (1 << 0) /**< new-style export that actually supports extending */

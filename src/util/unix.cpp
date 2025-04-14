@@ -285,21 +285,9 @@ void DumpMallocInfo() {
     L("Topmost releasable block (keepcost):\t{}", mi.keepcost);
 }
 
-void TUnixSocket::Close() {
-    if (SockFd >= 0)
-        close(SockFd);
-    SockFd = -1;
-}
-
-void TUnixSocket::operator=(int sock) {
+TUnixSocket &TUnixSocket::operator=(int sock) {
     Close();
-    SockFd = sock;
-}
-
-TUnixSocket &TUnixSocket::operator=(TUnixSocket &&Sock) {
-    Close();
-    SockFd = Sock.SockFd;
-    Sock.SockFd = -1;
+    SetFd = sock;
     return *this;
 }
 
@@ -324,28 +312,14 @@ TError TUnixSocket::SocketPair(TUnixSocket &sock1, TUnixSocket &sock2) {
 }
 
 TError TUnixSocket::SendInt(int val) const {
-    ssize_t ret;
-
-    ret = write(SockFd, &val, sizeof(val));
-    if (ret < 0)
-        return TError::System("cannot send int");
-    if (ret != sizeof(val))
-        return TError("partial read of int: " + std::to_string(ret));
-    return OK;
+    return Write(&val, sizeof(val));
 }
 
 TError TUnixSocket::RecvInt(int &val) const {
-    ssize_t ret;
-
-    ret = read(SockFd, &val, sizeof(val));
-    if (ret < 0)
-        return TError::System("cannot receive int");
-    if (ret == 0)
+    auto error = Read(&val, sizeof(val));
+    if (error && error.Errno == ECONNRESET)
         return TError(EError::NoValue);
-
-    if (ret != sizeof(val))
-        return TError("partial read of int: {}", ret);
-    return OK;
+    return error;
 }
 
 TError TUnixSocket::SendPid(pid_t pid) const {
@@ -368,6 +342,10 @@ TError TUnixSocket::SendPid(pid_t pid) const {
     struct ucred *ucred = (struct ucred *)CMSG_DATA(cmsg);
     ssize_t ret;
 
+    auto error = ApplyWriteDeadline();
+    if (error)
+        return error;
+
     cmsg->cmsg_level = SOL_SOCKET;
     cmsg->cmsg_type = SCM_CREDENTIALS;
     cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
@@ -375,7 +353,7 @@ TError TUnixSocket::SendPid(pid_t pid) const {
     ucred->uid = getuid();
     ucred->gid = getgid();
 
-    ret = sendmsg(SockFd, &msghdr, 0);
+    ret = sendmsg(Fd, &msghdr, 0);
     if (ret < 0)
         return TError::System("cannot report real pid");
     if (ret != sizeof(pid))
@@ -403,11 +381,15 @@ TError TUnixSocket::RecvPid(pid_t &pid, pid_t &vpid) const {
     struct ucred *ucred = (struct ucred *)CMSG_DATA(cmsg);
     ssize_t ret;
 
+    auto error = ApplyReadDeadline();
+    if (error)
+        return error;
+
     cmsg->cmsg_level = SOL_SOCKET;
     cmsg->cmsg_type = SCM_CREDENTIALS;
     cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
 
-    ret = recvmsg(SockFd, &msghdr, 0);
+    ret = recvmsg(Fd, &msghdr, 0);
     if (ret < 0)
         return TError::System("cannot receive real pid");
     if (ret != sizeof(pid))
@@ -420,12 +402,19 @@ TError TUnixSocket::RecvPid(pid_t &pid, pid_t &vpid) const {
 }
 
 TError TUnixSocket::SendError(const TError &error) const {
-    return error.Serialize(SockFd);
+    auto error2 = ApplyWriteDeadline();
+    if (error2)
+        return error2;
+
+    return error.Serialize(Fd);
 }
 
 TError TUnixSocket::RecvError() const {
-    TError error;
-    if (!TError::Deserialize(SockFd, error))
+    auto error = ApplyReadDeadline();
+    if (error)
+        return error;
+
+    if (!TError::Deserialize(Fd, error))
         return TError("Unexpected end of stream during error receive");
     return error;
 }
@@ -453,7 +442,11 @@ TError TUnixSocket::SendFd(int fd) const {
     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
     *((int *)CMSG_DATA(cmsg)) = fd;
 
-    ssize_t ret = sendmsg(SockFd, &msghdr, 0);
+    auto error = ApplyWriteDeadline();
+    if (error)
+        return error;
+
+    ssize_t ret = sendmsg(Fd, &msghdr, 0);
 
     if (ret <= 0)
         return TError::System("cannot send fd");
@@ -484,7 +477,11 @@ TError TUnixSocket::RecvFd(int &fd) const {
     cmsg->cmsg_type = SCM_RIGHTS;
     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
 
-    int ret = recvmsg(SockFd, &msghdr, 0);
+    auto error = ApplyReadDeadline();
+    if (error)
+        return error;
+
+    int ret = recvmsg(Fd, &msghdr, 0);
     if (ret <= 0)
         return TError::System("cannot receive fd");
 
@@ -511,18 +508,6 @@ TError TUnixSocket::RecvPidFd(TPidFd &pidfd) const {
         return error;
     TFile tmp(fd);
     pidfd.PidFd.Swap(tmp);
-    return OK;
-}
-
-TError TUnixSocket::SetRecvTimeout(int timeout_ms) const {
-    struct timeval tv;
-
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-
-    if (setsockopt(SockFd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv))
-        return TError::System("setsockopt(SO_RCVTIMEO)");
-
     return OK;
 }
 

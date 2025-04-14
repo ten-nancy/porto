@@ -4,7 +4,6 @@
 
 #include "common.hpp"
 #include "util/error.hpp"
-#include "util/unix.hpp"
 
 extern "C" {
 #include <sys/socket.h>
@@ -17,15 +16,21 @@ class TSocket: public TNonCopyable {
     TError Connect(const sockaddr *addr, size_t len);
     TError Connect(const std::string &host, const std::string &port);
 
-    TError SetReadTimeout(int64_t timeoutMs) const;
-    TError SetWriteTimeout(int64_t timeoutMs) const;
-    int64_t Timeout() const {
-        if (!DeadlineMs)
-            return 0;
-        uint64_t now = GetCurrentTimeMs();
-        if (now >= DeadlineMs)
-            return -1;
-        return DeadlineMs - now;
+    TError SetTimeout(int64_t timeoutMs, int type) const;
+    int64_t Timeout() const;
+
+protected:
+    TError ApplyDeadline(int type) const {
+        auto timeout = Timeout();
+        if (timeout < 0)
+            return TError::System("socket timeout", EWOULDBLOCK);
+        return SetTimeout(timeout, type);
+    }
+    TError ApplyReadDeadline() const {
+        return ApplyDeadline(SO_RCVTIMEO);
+    }
+    TError ApplyWriteDeadline() const {
+        return ApplyDeadline(SO_SNDTIMEO);
     }
 
 public:
@@ -46,14 +51,17 @@ public:
         other.SetFd = -1;
     }
 
+    TSocket(int fd)
+        : SetFd(fd)
+    {}
     void SetDeadline(uint64_t deadlineMs) {
         DeadlineMs = deadlineMs;
     }
     TError ResetDeadline() {
         SetDeadline(0);
-        auto error = SetReadTimeout(0);
+        auto error = SetTimeout(0, SO_RCVTIMEO);
         if (!error)
-            error = SetWriteTimeout(0);
+            error = SetTimeout(0, SO_SNDTIMEO);
         return error;
     }
 
