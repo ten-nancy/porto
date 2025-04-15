@@ -202,7 +202,7 @@ static TError getTopRunningTime(Porto::Connection &conn, int64_t &time) {
 }
 
 // TODO(ovov): remove this after implementing similar logic inside daemon
-TError WaitLongRequests(uint64_t deadline) {
+TError WaitLongRequests(uint64_t deadline, const TPidFd &server) {
     Porto::Connection conn;
     if (conn.SetTimeout(1))
         return conn.GetLastError();
@@ -210,9 +210,14 @@ TError WaitLongRequests(uint64_t deadline) {
     std::cout << "Waiting for long requests to end" << std::endl;
     int64_t top_running_time = -1;
     do {
+        if (!server.Running())
+            return OK;
         auto error = getTopRunningTime(conn, top_running_time);
-        if (error)
+        if (error) {
+            if (!server.Running())
+                return OK;
             return error;
+        }
         if (top_running_time < 3)
             return OK;
     } while (!WaitDeadline(deadline, 100));
@@ -224,7 +229,7 @@ TError DoReloadPortod(const TPidFd &master, const TPidFd &server) {
     uint64_t timeout = (CmdTimeout >= 0 ? CmdTimeout : config().daemon().portod_start_timeout()) * 1000;
     uint64_t deadline = GetCurrentTimeMs() + timeout;
 
-    auto error = WaitLongRequests(deadline);
+    auto error = WaitLongRequests(deadline, server);
     if (error)
         return error;
 
