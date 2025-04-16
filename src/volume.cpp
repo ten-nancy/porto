@@ -45,6 +45,7 @@ TPath NbdKV;
 MeasuredMutex VolumesMutex("volumes");
 std::map<TPath, std::shared_ptr<TVolume>> Volumes;
 std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
+std::map<std::string, std::shared_ptr<TVolume>> VolumeById;
 
 static std::atomic<uint64_t> NextId(1);
 
@@ -3224,6 +3225,9 @@ TError TVolume::Destroy() {
             it.second->Nested.erase(volume);
 
         Volumes.erase(volume->Path);
+        VolumeById.erase(volume->Id);
+        if (Volumes.size() != VolumeById.size())
+            L_WRN("VolumeById size mismatch: {} != {}", Volumes.size(), VolumeById.size());
 
         /* Remove common link */
         if (VolumeLinks.erase(volume->Path))
@@ -3898,6 +3902,9 @@ TError TVolume::Restore(const TKeyValue &node) {
         L_WRN("Duplicate volume link: {}", Path);
 
     Volumes[Path] = shared_from_this();
+    VolumeById[Id] = shared_from_this();
+    if (Volumes.size() != VolumeById.size())
+        L_WRN("VolumeById size mismatch: {} != {}", Volumes.size(), VolumeById.size());
 
     /* Restore common link */
     auto common_link = std::make_shared<TVolumeLink>(shared_from_this(), RootContainer);
@@ -4129,6 +4136,9 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec, std::shared_ptr<TVolume> &v
     }
 
     Volumes[volume->Path] = volume;
+    VolumeById[volume->Id] = volume;
+    if (Volumes.size() != VolumeById.size())
+        L_WRN("VolumeById size mismatch: {} != {}", Volumes.size(), VolumeById.size());
 
     owner->OwnedVolumes.push_back(volume);
 

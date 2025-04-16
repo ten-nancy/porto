@@ -31,6 +31,8 @@ static const char META_LAYER[] = "_layer_";
 
 static uint64_t AsyncRemoveWatchDogPeriod;
 
+extern std::map<std::string, std::shared_ptr<TVolume>> VolumeById;
+
 /* Protected with VolumesMutex */
 
 static std::set<std::pair<dev_t, ino_t>> ActiveInodes;
@@ -90,21 +92,25 @@ static inline std::unique_lock<std::mutex> LockPlaces() {
     return std::unique_lock<std::mutex>(PlacesMutex);
 }
 
-static TPath getStorageBase(const TPath &place, EStorageType type) {
+static TPath getStorageName(EStorageType type) {
     switch (type) {
     case EStorageType::Volume:
-        return place / PORTO_VOLUMES;
+        return PORTO_VOLUMES;
     case EStorageType::Layer:
-        return place / PORTO_LAYERS;
+        return PORTO_LAYERS;
     case EStorageType::Storage:
-        return place / PORTO_STORAGE;
+        return PORTO_STORAGE;
     case EStorageType::DockerLayer:
-        return place / PORTO_DOCKER;
+        return PORTO_DOCKER;
     case EStorageType::Meta:
-        return place;
+        return "";
     default:
-        return TPath();
+        return "";
     }
+}
+
+static TPath getStorageBase(const TPath &place, EStorageType type) {
+    return place / getStorageName(type);
 }
 
 static unsigned getPermission(EStorageType type) {
@@ -135,25 +141,19 @@ void AsyncRemoveWatchDog() {
         placesLock.unlock();
 
         for (const auto &place: places) {
-            bool dropped = false;
-            if (!place.Exists()) {
+            TFile pin;
+            auto error = pin.OpenDir(place);
+            if (error) {
+                if (error.Errno != ENOENT && error.Errno != ENOTDIR)
+                    L_WRN("Open place: {}", error);
                 dropPlace(place);
                 continue;
             }
 
-            for (auto type: {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
-                error = TStorage::Cleanup(place, type);
-                if (error) {
-                    if (error.Errno != ENOENT)
-                        L_WRN("Cleanup place {} failed: {}", getStorageBase(place, type), error);
-                    if (!dropped) {
-                        dropPlace(place);
-                        dropped = true;
-                    }
-                }
-                if (NeedStopHelpers)
-                    return;
-            }
+            bool drop = false;
+            (void)TStorage::Cleanup(pin, false, drop);
+            if (drop)
+                dropPlace(place);
             if (NeedStopHelpers)
                 return;
         }
@@ -223,6 +223,9 @@ void TStorage::Init() {
         PlaceLoadLimit = {{"default", 1}};
 
     CheckPlace(PORTO_PLACE);
+}
+
+void TStorage::StartAsyncRemover() {
     AsyncRemoveWatchDogPeriod = config().volumes().async_remove_watchdog_ms();
     AsyncRemoveThread = std::thread(&AsyncRemoveWatchDog);
 }
@@ -309,67 +312,145 @@ TError TStorage::CheckBaseDirectory(const TPath &place, EStorageType type, unsig
     return OK;
 }
 
-/* FIXME racy. rewrite with openat... etc */
-TError TStorage::Cleanup(const TPath &place, EStorageType type) {
-    TError error;
-    TPath base = getStorageBase(place, type);
+static TError cleanupVolume(const TFile &dir, const TFile &pin, const std::string &name) {
+    auto lock = LockVolumes();
+    auto it = VolumeById.find(name);
+    if (it != VolumeById.end()) {
+        struct stat st1, st2;
+        auto internal = it->second->GetInternal("");
+        auto error2 = internal.StatStrict(st2);
+        auto error = pin.Stat(st1);
+        if (error)
+            L_WRN("Failed stat {}: {}", pin.RealPath(), error);
+        // handle race with volume create/destroy
+        if (!st1.st_nlink)
+            return OK;
+        if (error2)
+            return error2;
+        if (st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino)
+            return OK;
+        L("Volume {} does not match via inodes with {}", pin.RealPath(), internal);
+    } else
+        L("Volume {} is junk", pin.RealPath());
 
+    auto removeName = TPath(REMOVE_PREFIX) + name;
+    auto error = dir.RenameAt(name, removeName);
+    if (error)
+        return error;
+    lock.unlock();
+
+    L_ACT("Remove junk: {}", pin.RealPath());
+    return dir.RemoveAllAtInterruptible(removeName, NeedStopHelpers, true);
+}
+
+TError TStorage::Cleanup(const TFile &place, bool strict, bool &drop) {
+    int not_exist = 0;
+    for (auto type: {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
+        auto name = getStorageName(type);
+        TFile dir;
+
+        auto error = dir.OpenDirStrictAt(place, name);
+        if (error) {
+            if (error.Errno == ENOTDIR) {
+                auto error2 = place.UnlinkAt(name);
+                if (error2) {
+                    L_WRN("Cannot unlink storage dir {} {}: {}", place.RealPath(), name, error2);
+                    if (strict)
+                        return error;
+                }
+            } else if (error.Errno != ENOENT) {
+                L_WRN("Cannot open storage dir {} {}: {}", place.RealPath(), name, error);
+                if (strict)
+                    return error;
+            }
+            ++not_exist;
+            continue;
+        }
+
+        error = TStorage::Cleanup(dir, type);
+        if (error) {
+            L_WRN("Cleanup place {} {} failed: {}", place.RealPath(), getStorageName(type), error);
+            if (strict)
+                return error;
+        }
+        if (NeedStopHelpers)
+            return TError(EError::SocketError);
+    }
+
+    if (not_exist == 3)
+        drop = true;
+    return OK;
+}
+
+/* FIXME racy. rewrite with openat... etc */
+TError TStorage::Cleanup(const TFile &dir, EStorageType type) {
     std::vector<std::string> list;
-    error = base.ReadDirectory(list);
+    auto error = dir.ReadDirectory(list);
     if (error)
         return error;
 
     for (auto &name: list) {
-        TPath path = base / name;
-
-        if (type == EStorageType::Storage && path.IsDirectoryStrict() && StringStartsWith(name, META_PREFIX)) {
-            error = Cleanup(path, EStorageType::Meta);
-            if (error)
-                L_WRN("Cannot cleanup metastorage {} {}", path, error);
+        TFile pin;
+        auto error = pin.OpenAt(dir, name, O_PATH | O_NOFOLLOW | O_CLOEXEC | O_NOCTTY);
+        if (error) {
+            if (error.Errno != ENOENT)
+                L_WRN("{}", error);
             continue;
         }
 
-        if (path.IsDirectoryStrict()) {
+        struct stat st;
+        error = pin.Stat(st);
+        if (error) {
+            L_WRN("{}", error);
+            continue;
+        }
+
+        if (type == EStorageType::Volume) {
+            error = cleanupVolume(dir, pin, name);
+            if (error)
+                L_WRN("Failed cleanup volume {}: {}", pin.RealPath(), error);
+            continue;
+        }
+
+        if (type == EStorageType::Storage && S_ISDIR(st.st_mode) && StringStartsWith(name, META_PREFIX)) {
+            error = Cleanup(pin, EStorageType::Meta);
+            if (error)
+                L_WRN("Cannot cleanup metastorage {} {}", pin.RealPath(), error);
+            continue;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
             if (!CheckName(name))
                 continue;
             if (type == EStorageType::Meta && StringStartsWith(name, META_LAYER))
                 continue;
         }
 
-        if (!path.PathExists())
-            continue;
-
         auto lock = LockVolumes();
-
-        TFile dirent;
-        if (!dirent.OpenDir(path)) {
-            if (InodeIsActive(dirent))
+        if (S_ISDIR(st.st_mode)) {
+            if (InodeIsActive(pin))
                 continue;
+        } else if (S_ISREG(st.st_mode)) {
+            if (StringStartsWith(name, PRIVATE_PREFIX)) {
+                auto tail = name.substr(std::string(PRIVATE_PREFIX).size());
+                struct stat st1;
+                if (!dir.StatAt(tail, false, st1) && S_ISDIR(st1.st_mode))
+                    continue;
 
-            path = dirent.RealPath();
-
-        } else if (path.IsRegularStrict()) {
-            if (type != EStorageType::Volume && StringStartsWith(name, PRIVATE_PREFIX)) {
-                std::string tail = name.substr(std::string(PRIVATE_PREFIX).size());
-                if ((base / tail).IsDirectoryStrict() ||
-                    (base / (std::string(IMPORT_PREFIX) + tail)).IsDirectoryStrict())
+                if (!dir.StatAt(std::string(IMPORT_PREFIX) + tail, false, st1) && S_ISDIR(st1.st_mode))
                     continue;
             }
 
             /* Remove random files if any */
-            path.Unlink();
-            continue;
-        } else if (!path.PathExists()) {
-            L_ACT("Skip removing of non-existing path {}", path);
+            error = dir.UnlinkAt(name);
             continue;
         }
-
         lock.unlock();
 
-        L_ACT("Remove junk: {}", path);
-        error = path.RemoveAllInterruptible(NeedStopHelpers);
+        L_ACT("Remove junk: {} {}", dir.RealPath(), name);
+        error = dir.RemoveAllAtInterruptible(name, NeedStopHelpers, false);
         if (error)
-            L_WRN("Cannot remove junk {}: {}", path, error);
+            L_WRN("Cannot remove junk {} {}: {}", dir.RealPath(), name, error);
     }
 
     return OK;

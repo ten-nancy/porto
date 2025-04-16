@@ -34,7 +34,8 @@ constexpr off_t ROTATE_OFFSET_LIMIT = 16384;  // 16Kb
 // TODO(ovov): maybe use version from gnulib with fts_cwd_fd:
 // https://git.savannah.gnu.org/cgit/gnulib.git/tree/lib/fts_.h?id=d4ec02b3cc70cddaaa5183cc5a45814e0afb2292#n133
 // With such approach we dont need chdir to handle long path names
-static TError RemoveRecursive(const TPath &path, bool remove_root, std::atomic_bool *interrupt = nullptr) {
+static TError RemoveRecursive(const TPath &path, bool remove_root, std::atomic_bool *interrupt = nullptr,
+                              bool umountAll = false) {
     TPathWalk walk;
 
     auto error = walk.Open(path, FTS_PHYSICAL | FTS_XDEV | FTS_NOSTAT);
@@ -52,17 +53,23 @@ static TError RemoveRecursive(const TPath &path, bool remove_root, std::atomic_b
         if (interrupt && *interrupt)
             return TError("RemoveRecursive was interrupted");
 
-        if (walk.Directory && !walk.Postorder)
-            continue;
+        const char *pathname = !walk.Level() ? walk.Ent->fts_path : walk.Ent->fts_name;
 
-        int unlink_flags = walk.Directory ? AT_REMOVEDIR : 0;
-        const char *pathname = walk.Ent->fts_name;
-        if (walk.Level() == 0) {
-            if (!remove_root)
-                continue;
-            pathname = walk.Ent->fts_path;
+        if (umountAll && (!walk.Directory || !walk.Postorder)) {
+            auto error = TPath(pathname).UmountAll(MNT_DETACH);
+            if (error)
+                return error;
         }
 
+        if (walk.Directory) {
+            if (!walk.Postorder)
+                continue;
+
+            if (walk.Level() == 0 && !remove_root)
+                continue;
+        }
+
+        int unlink_flags = walk.Directory ? AT_REMOVEDIR : 0;
         if (unlinkat(AT_FDCWD, pathname, unlink_flags) < 0) {
             if (errno != ENOENT)
                 return TError::System("unlinkat");
@@ -638,12 +645,12 @@ TError TFile::RemoveAt(const TPath &path) const {
     return error;
 }
 
-TError TPath::RemoveAll() const {
-    return RemoveRecursive(*this, true);
+TError TFile::RemoveAllAtInterruptible(const TPath &path, std::atomic_bool &interrupt, bool umountAll) const {
+    return RemoveRecursive(ProcPath() / path, true, &interrupt, umountAll);
 }
 
-TError TPath::RemoveAllInterruptible(std::atomic_bool &interrupt) const {
-    return RemoveRecursive(*this, true, &interrupt);
+TError TPath::RemoveAll() const {
+    return RemoveRecursive(*this, true);
 }
 
 TError TPath::ClearEmptyDirectories(const TPath &root) const {
@@ -1804,6 +1811,28 @@ TError TFile::RmdirAt(const TPath &path) const {
         return TError(EError::InvalidPath, "Absolute path {}", path.Path);
     if (unlinkat(Fd, path.c_str(), AT_REMOVEDIR))
         return TError::System("Cannot rmdirat {} {}", RealPath(), path);
+    return OK;
+}
+
+TError TFile::ReadDirectory(std::vector<std::string> &result) const {
+    result.clear();
+
+    int fd = fcntl(Fd, F_DUPFD_CLOEXEC, 3);
+    if (fd < 0)
+        return TError::System("fcntl(_, F_DUPFD_CLOEXEC)");
+
+    auto dir = fdopendir(fd);
+    if (!dir) {
+        close(fd);
+        return TError::System("fdopendir");
+    }
+
+    struct dirent *de;
+    while ((de = readdir(dir))) {
+        if (strcmp(de->d_name, ".") && strcmp(de->d_name, ".."))
+            result.push_back(std::string(de->d_name));
+    }
+    closedir(dir);
     return OK;
 }
 

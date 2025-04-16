@@ -1824,16 +1824,16 @@ noinline TError CleanupPlace(const rpc::TCleanupPlaceRequest &req) {
     if (error)
         return error;
 
-    for (auto type: {EStorageType::Volume, EStorageType::Layer, EStorageType::Storage}) {
-        auto error = TStorage::Cleanup(place, type);
-        if (error) {
-            if (error.Errno != ENOENT) {
-                L_WRN("Cleanup place {} failed: {}", place, error);
-                return error;
-            }
-        }
+    TFile pin;
+    error = pin.OpenDir(place);
+    if (error) {
+        if (error.Errno == ENOENT)
+            return TError(EError::LayerNotFound, "place {} not found", place);
+        return error;
     }
-    return OK;
+
+    bool drop = false;
+    return TStorage::Cleanup(pin, true, drop);
 }
 
 noinline TError CreateMetaStorage(const rpc::TMetaStorage &req) {

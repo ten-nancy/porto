@@ -1,9 +1,9 @@
 import porto
 from test_common import *
 import shutil
+import tempfile
 
 c = porto.Connection(timeout=30)
-print(porto.__file__)
 
 # PORTO-1121
 
@@ -38,14 +38,35 @@ finally:
     shutil.rmtree(USER_PLACE_PATH, ignore_errors=True)
 
 
-vol = c.CreateVolume()
+def ExpectVolumeNotExist(place, vol_id):
+    assert not os.path.exists(os.path.join(place, 'porto_volumes', vol_id))
+    assert not os.path.exists(os.path.join(place, 'porto_volumes', '_remove_' + vol_id))
 
 
-os.mkdir(os.path.join(vol.path, 'porto_storage'))
-c.CleanupPlace(vol.path)
-assert os.path.exists(os.path.join(vol.path, 'porto_storage'))
-os.mkdir(os.path.join(vol.path, 'porto_storage', '_remove_asdasd'))
+with CreateVolume(c) as vol, tempfile.NamedTemporaryFile() as tmp:
+    os.mkdir(os.path.join(vol.path, 'porto_storage'))
+    c.CleanupPlace(vol.path)
+    assert os.path.exists(os.path.join(vol.path, 'porto_storage'))
 
-c.CleanupPlace(vol.path)
-assert os.path.exists(os.path.join(vol.path, 'porto_storage'))
-assert not os.path.exists(os.path.join(vol.path, 'porto_storage', '_remove_asdasd'))
+    with CreateVolume(c, place=vol.path) as vol1:
+        os.mkdir(os.path.join(vol.path, 'porto_storage', '_remove_asdasd'))
+        os.mkdir(os.path.join(vol.path, 'porto_volumes', vol['id']))
+        os.mkdir(os.path.join(vol.path, 'porto_volumes', '123c'))
+        os.mkdir(os.path.join(vol.path, 'porto_volumes', '231c'))
+        os.mkdir(os.path.join(vol.path, 'porto_volumes', '231c', 'dir'))
+        open(os.path.join(vol.path, 'porto_volumes', '231c', 'data'), 'a').close()
+        subprocess.check_call(['mount', '--bind', tmp.name, os.path.join(vol.path, 'porto_volumes', '231c', 'data')])
+        subprocess.check_call(['mount', '--bind', vol.path, os.path.join(vol.path, 'porto_volumes', '231c', 'dir')])
+
+        c.CleanupPlace("/place")
+        c.CleanupPlace(vol.path)
+
+        assert os.path.exists(os.path.join(vol.path, 'porto_storage'))
+        assert os.path.exists(os.path.join(vol.path, 'porto_volumes'))
+        assert os.path.exists(os.path.join('/place', 'porto_volumes', vol['id']))
+        assert os.path.exists(os.path.join(vol.path, 'porto_volumes', vol1['id']))
+
+        ExpectVolumeNotExist(vol.path, '123c')
+        ExpectVolumeNotExist(vol.path, '231c')
+        ExpectVolumeNotExist(vol.path, vol['id'])
+        assert not os.path.exists(os.path.join(vol.path, 'porto_storage', '_remove_asdasd'))

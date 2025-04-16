@@ -34,7 +34,8 @@ public:
     static TError CheckName(const std::string &name, bool meta = false);
     static TError CheckPlace(const TPath &place);
     static TError CheckBaseDirectory(const TPath &place, EStorageType type, unsigned perms);
-    static TError Cleanup(const TPath &place, EStorageType type);
+    static TError Cleanup(const TFile &place, bool strict, bool &drop);
+    static TError Cleanup(const TFile &dir, EStorageType type);
     static TError SanitizeLayer(const TPath &layer);
     TError List(enum EStorageType type, std::list<TStorage> &list);
     TError ImportArchive(const TPath &archive, const std::string &cgroup, const std::string &compress = "",
@@ -56,6 +57,7 @@ public:
     TError StatMeta(TStatFS &stat);
 
     static void Init();
+    static void StartAsyncRemover();
     static void StopAsyncRemover();
     static void IncPlaceLoad(const TPath &place);
     static void DecPlaceLoad(const TPath &place);

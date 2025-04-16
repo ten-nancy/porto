@@ -254,6 +254,7 @@ static void ServerLoop() {
     }
     StartStatFsLoop();
     StartRpcQueue();
+    TStorage::StartAsyncRemover();
     EventQueue->Start();
 
     if (config().daemon().log_rotate_ms()) {
