@@ -305,8 +305,6 @@ public:
 };
 
 class TCpuSubsystem: public TSubsystem {
-    std::vector<uint64_t> SharesMultipliers;
-
     inline std::string ChooseThrottledKnob() const;
     static inline uint64_t PreparePeriod(uint64_t period);
     static inline uint64_t PrepareQuota(uint64_t quota, uint64_t period);
@@ -326,7 +324,7 @@ public:
 
     // cgroup v1 private knobs
     static constexpr const char *CFS_RESERVE_US = "cpu.cfs_reserve_us";
-    static constexpr const char *CFS_RESERVE_SHARES = "cpu.cfs_reserve_shares";
+    static constexpr const char *CFS_RESERVE_RQS = "cpu.cfs_reserve_rqs_limit";
     static constexpr const char *CFS_BURST_USAGE = "cpu.cfs_burst_usage";
     static constexpr const char *CFS_BURST_LOAD = "cpu.cfs_burst_load";
     static constexpr const char *CFS_THROTTLED = "cpu.cfs_throttled";
@@ -346,6 +344,7 @@ public:
     bool HasShares = false;
     bool HasQuota = false;
     bool HasReserve = false;
+    bool HasReserveRqs = false;
     bool HasRtGroup = false;
     bool HasIdle = false;
     bool EnableIdle = false;
@@ -370,11 +369,10 @@ public:
     TError GetBurstUsage(const TCgroup &cg, uint64_t &value) const;
 
     // knob setters
-    TError SetPeriod(const TCgroup &cg, uint64_t period);
     TError SetLimit(const TCgroup &cg, uint64_t quota, uint64_t period);
     TError SetRtLimit(const TCgroup &cg, uint64_t quota, uint64_t period);
-    TError SetGuarantee(const TCgroup &cg, uint64_t period, uint64_t guarantee);
-    TError SetShares(const TCgroup &cg, const std::string &policy, double weight, uint64_t guarantee);
+    TError SetGuarantee(const TCgroup &cg, uint64_t guarantee);
+    TError SetShares(const TCgroup &cg, const std::string &policy, uint64_t weight, uint64_t guarantee);
     TError SetCpuIdle(const TCgroup &cg, bool value);
 };
 

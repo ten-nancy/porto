@@ -396,7 +396,8 @@ try:
     assert a.GetProperty('cpu_guarantee') == '{}c'.format(dump.spec.cpu_guarantee)
     assert a.GetProperty('cpu_guarantee') == b.GetProperty('cpu_guarantee')
 
-    assert a.GetProperty('cpu_guarantee_total') == '{}c'.format(dump.status.cpu_guarantee_total)
+    ExpectEq(float(a.GetProperty('cpu_guarantee_total')[:-1]), dump.status.cpu_guarantee_total)
+
 
     a.SetProperty('cpu_period', '1054000')
     a.SetProperty('cpu_weight', '41.5')
@@ -521,7 +522,7 @@ try:
     a = c.Create(container_name_a)
     a.Start()
 
-    ab = c.Run(a.name + '/b', wait=0, weak=True, command="python -c 'import time; a = [0 for i in range(1024 * 1024)]; time.sleep(3)'")
+    ab = c.Run(a.name + '/b', wait=0, weak=True, command="python3 -c 'import time; a = [0 for i in range(1024 * 1024)]; time.sleep(3)'")
     time.sleep(1)
 
     dump = a.Dump()

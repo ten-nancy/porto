@@ -539,7 +539,6 @@ public:
         if (CT->CpuPolicy != value) {
             CT->CpuPolicy = value;
             CT->SetProp(EProperty::CPU_POLICY);
-            CT->ChooseSchedPolicy();
         }
         return OK;
     }
@@ -3899,6 +3898,7 @@ public:
         if (CT->CpuLimit != power) {
             CT->CpuLimit = power;
             CT->SetProp(EProperty::CPU_LIMIT);
+            CT->PropogateCpuLimit();
         }
         return OK;
     }
@@ -3909,6 +3909,7 @@ public:
         if (!error && CT->CpuLimit != limit) {
             CT->CpuLimit = limit;
             CT->SetProp(EProperty::CPU_LIMIT);
+            CT->PropogateCpuLimit();
         }
         return error;
     }
@@ -3929,18 +3930,17 @@ public:
 class TCpuLimitTotal: public TProperty {
 public:
     TCpuLimitTotal()
-        : TProperty(P_CPU_LIMIT_TOTAL, EProperty::NONE, "CPU total limit: <CPUS>c [cores]")
+        : TProperty(P_CPU_LIMIT_TOTAL, EProperty::NONE, "CPU bound limit: <CPUS>c [cores]")
     {
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
-        if (CT->CpuLimitSum)
-            value = CpuPowerToString(CT->CpuLimitSum);
+        value = CpuPowerToString(CT->CpuLimitBound);
         return OK;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-        spec.set_cpu_limit_total((double)CT->CpuLimitSum / CPU_POWER_PER_SEC);
+        spec.set_cpu_limit_total((double)CT->CpuLimitBound / CPU_POWER_PER_SEC);
     }
 } static CpuLimitTotal;
 
@@ -3952,8 +3952,7 @@ public:
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
-        if (CT->CpuLimitBound)
-            value = CpuPowerToString(CT->CpuLimitBound);
+        value = CpuPowerToString(CT->CpuLimitBound);
         return OK;
     }
 
@@ -3980,6 +3979,7 @@ public:
         if (CT->CpuGuarantee != power) {
             CT->CpuGuarantee = power;
             CT->SetProp(EProperty::CPU_GUARANTEE);
+            CT->PropogateCpuGuarantee();
         }
         return OK;
     }
@@ -3992,6 +3992,7 @@ public:
         if (CT->CpuGuarantee != guarantee) {
             CT->CpuGuarantee = guarantee;
             CT->SetProp(EProperty::CPU_GUARANTEE);
+            CT->PropogateCpuGuarantee();
         }
         return OK;
     }
@@ -4017,13 +4018,12 @@ public:
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
-        if (CT->CpuGuarantee || CT->CpuGuaranteeSum)
-            value = CpuPowerToString(std::max(CT->CpuGuarantee, CT->CpuGuaranteeSum));
+        value = CpuPowerToString(CT->CpuGuaranteeBound);
         return OK;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-        spec.set_cpu_guarantee_total((double)std::max(CT->CpuGuarantee, CT->CpuGuaranteeSum) / CPU_POWER_PER_SEC);
+        spec.set_cpu_guarantee_total(double(CT->CpuGuaranteeBound) / CPU_POWER_PER_SEC);
     }
 } static CpuGuaranteeTotal;
 
@@ -4035,8 +4035,7 @@ public:
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
-        if (CT->CpuGuaranteeBound)
-            value = CpuPowerToString(CT->CpuGuaranteeBound);
+        value = CpuPowerToString(CT->CpuGuaranteeBound);
         return OK;
     }
 
@@ -4098,7 +4097,7 @@ public:
         IsDynamic = true;
     }
     TError Get(std::string &value) const override {
-        value = StringFormat("%lg", CT->CpuWeight);
+        value = StringFormat("%lg", double(CT->CpuWeight) / 100);
         return OK;
     }
 
@@ -4106,10 +4105,10 @@ public:
         if (val < 0.01 || val > 100)
             return TError(EError::InvalidValue, "out of range");
 
-        if (CT->CpuWeight != val) {
-            CT->CpuWeight = val;
+        uint64_t weight = val * 100;
+        if (CT->CpuWeight != weight) {
+            CT->CpuWeight = weight;
             CT->SetProp(EProperty::CPU_WEIGHT);
-            CT->ChooseSchedPolicy();
         }
         return OK;
     }
@@ -4125,7 +4124,7 @@ public:
     }
 
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_cpu_weight(CT->CpuWeight);
+        spec.set_cpu_weight(double(CT->CpuWeight) / 100);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {

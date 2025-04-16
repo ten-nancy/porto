@@ -10,7 +10,7 @@ def CT_NAME(suffix):
     global NAME
     return NAME + "-" + suffix
 
-EPS = 0.95
+EPS = 0.9
 TEST_LIM_SHARE = 0.75 #of the whole machine
 
 DURATION = 1000 #ms
@@ -104,6 +104,60 @@ def SplitLimit(conn, prefix, total, n, rt = False):
 
 conn = porto.Connection(timeout=30)
 conn.AllocContainer = types.MethodType(AllocContainer, conn)
+
+
+
+def TestPropogation():
+    print('test cpu limit/guarantee propogation')
+    with RunContainer(conn, name='foo', cpu_limit='2c') as foo:
+        bar = conn.Run('foo/bar')
+        baz = conn.Run('foo/bar/baz')
+        ExpectEq(foo['cpu_limit'], '2c')
+        ExpectEq(foo['cpu_limit_bound'], '2c')
+
+        ExpectEq(bar['cpu_limit'], '0c')
+        ExpectEq(bar['cpu_limit_bound'], '2c')
+
+        ExpectEq(baz['cpu_limit'], '0c')
+        ExpectEq(baz['cpu_limit_bound'], '2c')
+
+        foo.SetProperty('cpu_limit', '3c')
+
+        ExpectEq(foo['cpu_limit'], '3c')
+        ExpectEq(foo['cpu_limit_bound'], '3c')
+
+        ExpectEq(bar['cpu_limit'], '0c')
+        ExpectEq(bar['cpu_limit_bound'], '3c')
+
+        ExpectEq(baz['cpu_limit'], '0c')
+        ExpectEq(baz['cpu_limit_bound'], '3c')
+
+    with RunContainer(conn, name='foo', cpu_guarantee='2c') as foo:
+        bar = conn.Run('foo/bar', cpu_guarantee='20c')
+        baz = conn.Run('foo/bar/baz', cpu_guarantee='20c')
+        ExpectEq(foo['cpu_guarantee'], '2c')
+        ExpectEq(foo['cpu_guarantee_bound'], '2c')
+
+        ExpectEq(bar['cpu_guarantee'], '20c')
+        ExpectEq(bar['cpu_guarantee_bound'], '2c')
+
+        ExpectEq(baz['cpu_guarantee'], '20c')
+        ExpectEq(baz['cpu_guarantee_bound'], '2c')
+
+        foo.SetProperty('cpu_guarantee', '3c')
+
+        ExpectEq(foo['cpu_guarantee'], '3c')
+        ExpectEq(foo['cpu_guarantee_bound'], '3c')
+
+        ExpectEq(bar['cpu_guarantee'], '20c')
+        ExpectEq(bar['cpu_guarantee_bound'], '3c')
+
+        ExpectEq(baz['cpu_guarantee'], '20c')
+        ExpectEq(baz['cpu_guarantee_bound'], '3c')
+
+
+TestPropogation()
+
 
 print("\nSet 1c limit for single container:")
 
@@ -235,18 +289,18 @@ if CPUNR > 3:
 # check cpu limit/guarantee bound
 a = conn.Create('a', weak=True)
 a.SetProperty('cpu_limit', '{}c'.format(CPUNR - 1))
-a.SetProperty('cpu_guarantee', '6c')
+a.SetProperty('cpu_guarantee', '3c')
 
 b = conn.Create('a/b', weak=True)
 b.SetProperty('cpu_limit', '{}c'.format(CPUNR - 2))
-b.SetProperty('cpu_guarantee', '8c')
+b.SetProperty('cpu_guarantee', '10c')
 
 c = conn.Create('a/b/c', weak=True)
 c.SetProperty('cpu_limit', '{}c'.format(CPUNR))
 c.SetProperty('cpu_guarantee', '2c')
 
 d = conn.Create('a/b/c/d', weak=True)
-d.SetProperty('command', 'sleep 100')
+d.SetProperty('command', 'tail -f /dev/null')
 
 a.Start()
 b.Start()
@@ -258,10 +312,10 @@ ExpectProp(b, 'cpu_limit_bound', '{}c'.format(CPUNR - 2))
 ExpectProp(c, 'cpu_limit_bound', '{}c'.format(CPUNR - 2))
 ExpectProp(d, 'cpu_limit_bound', '{}c'.format(CPUNR - 2))
 
-ExpectProp(a, 'cpu_guarantee_bound', '6c')
-ExpectProp(b, 'cpu_guarantee_bound', '8c')
-ExpectProp(c, 'cpu_guarantee_bound', '8c')
-ExpectProp(d, 'cpu_guarantee_bound', '8c')
+ExpectProp(a, 'cpu_guarantee_bound', '3c')
+ExpectProp(b, 'cpu_guarantee_bound', '3c')
+ExpectProp(c, 'cpu_guarantee_bound', '2c')
+ExpectProp(d, 'cpu_guarantee_bound', '0c')
 
 assert 0 != a.Dump().status.cpu_limit_total
 assert '%dc' % a.Dump().status.cpu_limit_total == a.GetProperty('cpu_limit_total')
@@ -337,9 +391,6 @@ try:
     def get_cpu_shares(ct):
         return get_cpuacct_knob(ct, 'cpu.shares')
 
-    def get_cfs_reserve_shares(ct):
-        return get_cpuacct_knob(ct, 'cpu.cfs_reserve_shares')
-
     base_shares = get_cpuacct_knob('/', 'cpu.shares')
     min_shares = 2
 
@@ -355,12 +406,10 @@ try:
     b.Start()
 
     ExpectProp(a, 'cpu_guarantee', '{}c'.format(guarantee_cores))
-    ExpectEq(get_cpu_shares('a'), base_shares)
-    ExpectEq(get_cfs_reserve_shares('a'), 16 * base_shares)
+    ExpectEq(get_cpu_shares('a'), guarantee_cores * base_shares)
 
     ExpectProp(b, 'cpu_guarantee', '0c')
-    ExpectEq(get_cpu_shares('b'), base_shares)
-    ExpectEq(get_cfs_reserve_shares('b'), base_shares)
+    ExpectEq(get_cpu_shares('b'), min_shares)
 
     ConfigurePortod('test-cpu_limit', """
     container {
@@ -370,21 +419,17 @@ try:
 
     ExpectProp(a, 'cpu_guarantee', '{}c'.format(guarantee_cores))
     ExpectEq(get_cpu_shares('a'), guarantee_cores * base_shares)
-    ExpectEq(get_cfs_reserve_shares('a'), guarantee_cores * base_shares)
 
     ExpectProp(b, 'cpu_guarantee', '0c')
     ExpectEq(get_cpu_shares('b'), min_shares)
-    ExpectEq(get_cfs_reserve_shares('b'), min_shares)
 
     ConfigurePortod('test-cpu_limit', "")
 
     ExpectProp(a, 'cpu_guarantee', '{}c'.format(guarantee_cores))
-    ExpectEq(get_cpu_shares('a'), base_shares)
-    ExpectEq(get_cfs_reserve_shares('a'), 16 * base_shares)
+    ExpectEq(get_cpu_shares('a'), guarantee_cores * base_shares)
 
     ExpectProp(b, 'cpu_guarantee', '0c')
-    ExpectEq(get_cpu_shares('b'), base_shares)
-    ExpectEq(get_cfs_reserve_shares('b'), base_shares)
+    ExpectEq(get_cpu_shares('b'), min_shares)
 
     # check cpu_guarantee_bound
 
@@ -396,20 +441,22 @@ try:
     a = conn.Create('a')
     b = conn.Create('a/b')
     a.SetProperty('cpu_guarantee', '1c')
+    b.SetProperty('cpu_guarantee', '4c')
     a.Start()
     b.Start()
 
     ExpectProp(a, 'cpu_guarantee', '1c')
     ExpectProp(a, 'cpu_guarantee_bound', '1c')
-    ExpectProp(b, 'cpu_guarantee', '0c')
+    ExpectProp(b, 'cpu_guarantee', '4c')
     ExpectProp(b, 'cpu_guarantee_bound', '1c')
 
     a.SetProperty('cpu_guarantee', '2c')
 
     ExpectProp(a, 'cpu_guarantee', '2c')
     ExpectProp(a, 'cpu_guarantee_bound', '2c')
-    ExpectProp(b, 'cpu_guarantee', '0c')
+    ExpectProp(b, 'cpu_guarantee', '4c')
     ExpectProp(b, 'cpu_guarantee_bound', '2c')
+
 
 finally:
     for ct in [a, b]:

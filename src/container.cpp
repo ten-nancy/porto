@@ -465,10 +465,12 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     }
 
     if (IsRoot()) {
-        CpuLimit = GetNumCores() * CPU_POWER_PER_SEC;
+        CpuLimitBound = CpuLimit = GetNumCores() * CPU_POWER_PER_SEC;
+        CpuGuaranteeBound = CpuGuarantee = CpuLimit;
         SetProp(EProperty::CPU_LIMIT);
         SetProp(EProperty::MEM_LIMIT);
-    }
+    } else
+        CpuLimitBound = Parent->CpuLimitBound;
 
     IoPolicy = "";
     IoPrio = 0;
@@ -769,8 +771,6 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
         error = ct->ApplyDynamicProperties(true);
         if (error)
             goto err;
-
-        ct->PropagateCpuLimit();
     }
 
     if (ct->State == EContainerState::Dead && ct->AutoRespawn)
@@ -1434,6 +1434,8 @@ static bool SkipIoUringThread(int pid) {
 }
 
 TError TContainer::ApplySchedPolicy() {
+    ChooseSchedPolicy();
+
     auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     struct sched_param param;
     param.sched_priority = SchedPrio;
@@ -2015,88 +2017,112 @@ TError TContainer::ApplyCpuSet() {
     return OK;
 }
 
+void TContainer::PropogateCpuGuarantee() {
+    auto bound = std::min(CpuGuarantee, Parent->CpuGuaranteeBound);
+    if (bound == CpuGuaranteeBound)
+        return;
+
+    CpuGuaranteeBound = bound;
+    for (auto &ct: Children)
+        ct->PropogateCpuGuarantee();
+}
+
+TError TContainer::SetCpuGuarantee(uint64_t guarantee) {
+    if (IsRoot() || !(Controllers & CGROUP_CPU) || !HasResources())
+        return OK;
+
+    L_ACT("Set cpu guarantee {} {}", Slug, CpuPowerToString(guarantee));
+    auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
+    auto error = CgroupDriver.CpuSubsystem->SetGuarantee(*cpucg, guarantee);
+    if (error)
+        L_ERR("Cannot set cpu guarantee: {}", error);
+    return error;
+}
+
 TError TContainer::ApplyCpuGuarantee() {
-    auto cpu_lock = LockCpuAffinity();
-    TError error;
+    if (CpuGuaranteeBound == CpuGuaranteeCur)
+        return OK;
 
-    if (config().container().propagate_cpu_guarantee()) {
-        auto ct_lock = LockContainers();
-        CpuGuaranteeSum = 0;
-        for (auto child: Children) {
-            if (child->State == EContainerState::Running || child->State == EContainerState::Meta ||
-                child->State == EContainerState::Starting)
-                CpuGuaranteeSum += std::max(child->CpuGuarantee, child->CpuGuaranteeSum);
-        }
-        ct_lock.unlock();
-    }
+    auto error = SetCpuGuarantee(CpuGuaranteeBound);
+    if (error)
+        return error;
 
-    auto cur = std::max(CpuGuarantee, CpuGuaranteeSum);
-    if (!IsRoot() && (Controllers & CGROUP_CPU) && cur != CpuGuaranteeCur) {
-        L_ACT("Set cpu guarantee {} {} -> {}", Slug, CpuPowerToString(CpuGuaranteeCur), CpuPowerToString(cur));
-        auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
-        error = CgroupDriver.CpuSubsystem->SetGuarantee(*cpucg, CpuPeriod, cur);
-        if (error) {
-            L_ERR("Cannot set cpu guarantee: {}", error);
+    CpuGuaranteeCur = CpuGuaranteeBound;
+
+    for (auto &ct: Children) {
+        error = ct->ApplyCpuGuarantee();
+        if (error)
             return error;
-        }
-        CpuGuaranteeCur = cur;
     }
-
     return OK;
 }
 
 TError TContainer::ApplyCpuShares() {
-    TError error;
+    if (IsRoot() || !(Controllers & CGROUP_CPU) || !HasResources() || ExtSchedIdle)
+        return OK;
 
-    if (!IsRoot() && (Controllers & CGROUP_CPU) && !ExtSchedIdle) {
-        auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
-        error = CgroupDriver.CpuSubsystem->SetShares(*cpucg, CpuPolicy, CpuWeight, CpuGuaranteeCur);
-        if (error) {
-            L_ERR("Cannot set cpu shares: {}", error);
-            return error;
-        }
-    }
-
-    return OK;
+    auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
+    auto error = CgroupDriver.CpuSubsystem->SetShares(*cpucg, CpuPolicy, CpuWeight, CpuGuarantee);
+    if (error)
+        L_ERR("Cannot set cpu shares: {}", error);
+    return error;
 }
 
-void TContainer::PropagateCpuLimit() {
-    uint64_t max = RootContainer->CpuLimit;
-    auto ct_lock = LockContainers();
+TError TContainer::SetCpuLimit(uint64_t limit, uint64_t period) {
+    if (IsRoot() || !(Controllers & CGROUP_CPU) || !HasResources())
+        return OK;
 
-    if (Parent)
-        CpuLimitBound = CpuLimit ? std::min(CpuLimit, Parent->CpuLimitBound) : Parent->CpuLimitBound;
-    else
-        CpuLimitBound = CpuLimit;
+    auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
 
-    CpuGuaranteeBound = std::max(CpuGuarantee, CpuGuaranteeBound);
+    L_ACT("Set cpu limit {} {} period {}", Slug, CpuPowerToString(limit), period);
 
-    for (auto ct = this; ct; ct = ct->Parent.get()) {
-        uint64_t sum = 0;
-
-        if (ct->State == EContainerState::Running || (ct->State == EContainerState::Starting && !ct->IsMeta()))
-            sum += ct->CpuLimit ?: max;
-
-        for (auto &child: ct->Children) {
-            if (child->State == EContainerState::Running ||
-                (child->State == EContainerState::Starting && !child->IsMeta()))
-                sum += child->CpuLimit ?: max;
-            else if (child->State == EContainerState::Meta)
-                sum += std::min(child->CpuLimit ?: max, child->CpuLimitSum);
-
-            child->CpuLimitBound = child->CpuLimit ? std::min(child->CpuLimit, ct->CpuLimitBound) : ct->CpuLimitBound;
-            child->CpuGuaranteeBound = std::max(child->CpuGuarantee, ct->CpuGuaranteeBound);
-        }
-
-        if (sum == ct->CpuLimitSum)
-            break;
-
-        L_DBG("Propagate total cpu limit {} {} -> {}", Slug, CpuPowerToString(ct->CpuLimitSum), CpuPowerToString(sum));
-
-        ct->CpuLimitSum = sum;
+    auto error = CgroupDriver.CpuSubsystem->SetRtLimit(*cpucg, limit, period);
+    if (error) {
+        if (CpuPolicy == "rt")
+            return error;
+        L_WRN("Cannot set rt cpu limit: {}", error);
     }
 
-    ct_lock.unlock();
+    return CgroupDriver.CpuSubsystem->SetLimit(*cpucg, limit, period);
+}
+
+void TContainer::PropogateCpuLimit() {
+    auto bound = CpuLimit ? std::min(CpuLimit, Parent->CpuLimitBound) : Parent->CpuLimitBound;
+    if (bound == CpuLimitBound)
+        return;
+
+    CpuLimitBound = bound;
+    for (auto &ct: Children)
+        ct->PropogateCpuLimit();
+}
+
+TError TContainer::ApplyCpuLimit() {
+    // Child cannot have limit greater than parent.
+    // So in order to increase child limit, we first
+    // must increase parent limit
+    if (CpuLimitBound >= CpuLimitCur) {
+        // change == 0, but period could be changed
+        auto error = SetCpuLimit(CpuLimitBound, CpuPeriod);
+        if (error)
+            return error;
+    }
+
+    if (CpuLimitBound != CpuLimitCur) {
+        for (auto &ct: Children) {
+            auto error = ct->ApplyCpuLimit();
+            if (error)
+                return error;
+        }
+    }
+
+    if (CpuLimitBound < CpuLimitCur) {
+        auto error = SetCpuLimit(CpuLimitBound, CpuPeriod);
+        if (error)
+            return error;
+    }
+    CpuLimitCur = CpuLimitBound;
+
+    return OK;
 }
 
 TError TContainer::ApplyExtraProperties() {
@@ -2236,114 +2262,10 @@ TError TContainer::SetSeccomp(const std::string &name) {
     return OK;
 }
 
-TError TContainer::SetCpuLimit(uint64_t limit) {
-    auto cpucg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
-    TError error;
-
-    L_ACT("Set cpu limit {} {} -> {}", Slug, CpuPowerToString(CpuLimitCur), CpuPowerToString(limit));
-
-    error = CgroupDriver.CpuSubsystem->SetRtLimit(*cpucg, limit, CpuPeriod);
-    if (error) {
-        if (CpuPolicy == "rt")
-            return error;
-        L_WRN("Cannot set rt cpu limit: {}", error);
-    }
-
-    error = CgroupDriver.CpuSubsystem->SetLimit(*cpucg, limit, CpuPeriod);
-    if (error)
-        return error;
-
-    CpuLimitCur = limit;
-    return OK;
-}
-
-TError TContainer::ApplyCpuLimit() {
-    uint64_t limit = CpuLimit;
-    TError error;
-
-    for (auto *p = Parent.get(); p; p = p->Parent.get()) {
-        if (p->CpuLimit && p->CpuLimit <= limit) {
-            L_ACT("Disable cpu limit {} for {} parent {} has lower limit {}", CpuPowerToString(limit), Slug, p->Slug,
-                  CpuPowerToString(p->CpuLimit));
-            limit = 0;
-            break;
-        }
-    }
-
-    auto subtree = Subtree();
-
-    if (limit && (limit < CpuLimitCur || !CpuLimitCur)) {
-        for (auto &ct: subtree)
-            if (ct.get() != this && ct->State != EContainerState::Stopped && (ct->Controllers & CGROUP_CPU) &&
-                ct->CpuLimitCur > limit)
-                ct->SetCpuLimit(limit);
-    }
-
-    error = SetCpuLimit(limit);
-    if (error)
-        return error;
-
-    for (auto &ct: subtree) {
-        if (ct.get() != this && ct->State != EContainerState::Stopped && (ct->Controllers & CGROUP_CPU)) {
-            uint64_t limit = ct->CpuLimit;
-            for (auto *p = ct->Parent.get(); p && limit; p = p->Parent.get())
-                if (p->CpuLimit && p->CpuLimit <= limit)
-                    limit = 0;
-            if (limit != ct->CpuLimitCur)
-                ct->SetCpuLimit(limit);
-        }
-    }
-
-    return OK;
-}
-
 TError TContainer::ApplyDynamicProperties(bool onRestore) {
     auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
     auto blkcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.BlkioSubsystem.get());
     TError error;
-
-    if ((Controllers & CGROUP_CPU) &&
-        (TestPropDirty(EProperty::CPU_PERIOD) || TestPropDirty(EProperty::CPU_GUARANTEE))) {
-        for (auto ct = this; ct; ct = ct->Parent.get()) {
-            error = ct->ApplyCpuGuarantee();
-            if (error)
-                return error;
-            if (!config().container().propagate_cpu_guarantee())
-                break;
-        }
-    }
-
-    if (Controllers & CGROUP_CPU) {
-        for (auto ct = this; ct; ct = ct->Parent.get())
-            error = ct->ApplyCpuShares();
-    }
-
-    if (TestPropDirty(EProperty::CPU_LIMIT) || TestClearPropDirty(EProperty::CPU_GUARANTEE))
-        PropagateCpuLimit();
-
-    if ((Controllers & CGROUP_CPU) &&
-        (TestPropDirty(EProperty::CPU_POLICY) || TestPropDirty(EProperty::CPU_WEIGHT) ||
-         TestClearPropDirty(EProperty::CPU_LIMIT) || TestClearPropDirty(EProperty::CPU_PERIOD))) {
-        error = ApplyCpuLimit();
-        if (error)
-            return error;
-        if (CgroupDriver.MemorySubsystem->SupportHighLimit() && (Controllers & CGROUP_MEMORY))
-            SetPropDirty(EProperty::MEM_HIGH_LIMIT);
-    }
-
-    /* Kludge for the sake of dynamic update and inheritance
-       for existing containers */
-
-    if (TestClearPropDirty(EProperty::CPU_PERIOD)) {
-        if (Controllers & CGROUP_CPU) {
-            auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpuSubsystem.get());
-            error = CgroupDriver.CpuSubsystem->SetPeriod(*cg, CpuPeriod);
-            if (error) {
-                L_ERR("Cannot update cpu period for cgroup: {}", error);
-                return error;
-            }
-        }
-    }
 
     if (TestClearPropDirty(EProperty::CPU_SET) && Parent) {
         if (NewCpuJail != CpuJail || CpuSetType == ECpuSetType::Node) {
@@ -2370,13 +2292,37 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if ((!JobMode) && (TestClearPropDirty(EProperty::CPU_POLICY) || TestClearPropDirty(EProperty::CPU_WEIGHT))) {
+    if (TestPropDirty(EProperty::CPU_GUARANTEE)) {
+        error = ApplyCpuGuarantee();
+        if (error)
+            return error;
+    }
+
+    if (TestPropsDirty(EProperty::CPU_GUARANTEE, EProperty::CPU_WEIGHT, EProperty::CPU_POLICY)) {
+        error = ApplyCpuShares();
+        if (error)
+            return error;
+    }
+
+    if (TestPropsDirty(EProperty::CPU_LIMIT, EProperty::CPU_PERIOD)) {
+        error = ApplyCpuLimit();
+        if (error)
+            return error;
+        if (TestPropDirty(EProperty::CPU_LIMIT) && CgroupDriver.MemorySubsystem->SupportHighLimit() &&
+            (Controllers & CGROUP_MEMORY))
+            SetPropDirty(EProperty::MEM_HIGH_LIMIT);
+    }
+
+    if ((!JobMode) && (TestPropsDirty(EProperty::CPU_POLICY, EProperty::CPU_WEIGHT))) {
         error = ApplySchedPolicy();
         if (error) {
             L_ERR("Cannot set scheduler policy: {}", error);
             return error;
         }
     }
+
+    TestClearPropsDirty(EProperty::CPU_GUARANTEE, EProperty::CPU_LIMIT, EProperty::CPU_PERIOD, EProperty::CPU_WEIGHT,
+                        EProperty::CPU_POLICY);
 
     if (TestClearPropDirty(EProperty::MEM_GUARANTEE)) {
         error = CgroupDriver.MemorySubsystem->SetGuarantee(*memcg, MemGuarantee);
@@ -3375,11 +3321,6 @@ TError TContainer::PrepareStart() {
         }
     }
 
-    if (!HasProp(EProperty::CPU_POLICY)) {
-        CpuPolicy = Parent ? Parent->CpuPolicy : "normal";
-        ChooseSchedPolicy();
-    }
-
     return OK;
 }
 
@@ -3537,8 +3478,6 @@ TError TContainer::PrepareRuntimeResources() {
         return error;
     }
 
-    PropagateCpuLimit();
-
     return OK;
 }
 
@@ -3554,13 +3493,6 @@ void TContainer::FreeRuntimeResources() {
 
     if (CpuJail)
         UnjailCpus(CpuAffinity);
-
-    PropagateCpuLimit();
-
-    if (CpuGuarantee && config().container().propagate_cpu_guarantee()) {
-        for (auto p = Parent; p; p = p->Parent)
-            (void)p->ApplyCpuGuarantee();
-    }
 }
 
 TError TContainer::FreeResources(bool ignore) {
@@ -3859,7 +3791,6 @@ TError TContainer::Pause() {
     for (auto &ct: Subtree()) {
         if (ct->State == EContainerState::Running || ct->State == EContainerState::Meta) {
             ct->SetState(EContainerState::Paused);
-            ct->PropagateCpuLimit();
             error = ct->Save();
             if (error)
                 L_ERR("Cannot save state after pause: {}", error);
@@ -3890,7 +3821,6 @@ TError TContainer::Resume() {
             CgroupDriver.FreezerSubsystem->Thaw(*cg, false);
         if (ct->State == EContainerState::Paused) {
             ct->SetState(IsMeta() ? EContainerState::Meta : EContainerState::Running);
-            ct->PropagateCpuLimit();
         }
         error = ct->Save();
         if (error)

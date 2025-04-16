@@ -121,11 +121,12 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
     void UnjailCpus(const TBitMap &affinity);
     void UnjailCpusLocked(const TBitMap &affinity);
 
-    TError SetCpuLimit(uint64_t limit);
-    TError ApplyCpuLimit();
+    TError SetCpuGuarantee(uint64_t guarantee);
     TError ApplyCpuGuarantee();
     TError ApplyCpuShares();
-    void PropagateCpuLimit();
+
+    TError SetCpuLimit(uint64_t limit, uint64_t period);
+    TError ApplyCpuLimit();
     TError ApplyExtraProperties();
 
     void CollectOoms();
@@ -274,12 +275,14 @@ public:
     bool ExtSchedIdle = false;
 
     uint64_t CpuLimit = 0;
-    uint64_t CpuGuarantee = 0;
-    double CpuWeight = 1;
+    uint64_t CpuLimitBound = 0;
+    uint64_t CpuLimitCur = 0;
     uint64_t CpuPeriod;
 
-    uint64_t CpuLimitBound = 0;
+    uint64_t CpuGuarantee = 0;
     uint64_t CpuGuaranteeBound = 0;
+    uint64_t CpuGuaranteeCur = 0;
+    uint64_t CpuWeight = 100;
 
     /* Under CpuAffinityMutex */
     ECpuSetType CpuSetType = ECpuSetType::Inherit;
@@ -287,12 +290,6 @@ public:
     int CpuJail = 0;
     int NewCpuJail = 0;
     TBitMap CpuAffinity;
-
-    /* Under CpuAffinityMutex */
-    uint64_t CpuGuaranteeSum = 0;
-    uint64_t CpuGuaranteeCur = 0;
-    uint64_t CpuLimitSum = 0;
-    uint64_t CpuLimitCur = 0;
 
     bool AutoRespawn = false;
     int64_t RespawnLimit = -1;
@@ -399,6 +396,14 @@ public:
     }
 
     template <typename... T>
+    bool TestPropsDirty(T... props) {
+        bool dirty = false;
+        for (auto prop: {props...})
+            dirty |= TestPropDirty(prop);
+        return dirty;
+    }
+
+    template <typename... T>
     bool TestClearPropsDirty(T... props) {
         bool dirty = false;
         for (auto prop: {props...})
@@ -446,6 +451,9 @@ public:
     uint64_t GetAnonMemLimit(bool effective = true) const;
     TError ChooseDirtyMemLimit();
     void PropagateDirtyMemLimit();
+
+    void PropogateCpuGuarantee();
+    void PropogateCpuLimit();
 
     bool IsRoot() const {
         return !Level;

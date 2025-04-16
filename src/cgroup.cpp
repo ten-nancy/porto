@@ -1459,8 +1459,6 @@ TError TCpuSubsystem::InitializeSubsystem() {
 
         MinShares = 1;     /* kernel limit CGROUP_WEIGHT_MIN */
         MaxShares = 10000; /* kernel limit CGROUP_WEIGHT_MAX */
-
-        SharesMultipliers = {100, 10, 10};
     } else {
         HasShares = cg->Has(SHARES);
         if (HasShares && cg->GetUint64(SHARES, BaseShares))
@@ -1468,8 +1466,6 @@ TError TCpuSubsystem::InitializeSubsystem() {
 
         MinShares = 2;          /* kernel limit MIN_SHARES */
         MaxShares = 1024 * 256; /* kernel limit MAX_SHARES */
-
-        SharesMultipliers = {256, 16, 16};
     }
 
     if (HasShares)
@@ -1483,8 +1479,8 @@ TError TCpuSubsystem::InitializeSubsystem() {
 
         HasRtGroup = cg->Has(RT_RUNTIME_US) && cg->Has(RT_PERIOD_US);
 
-        HasReserve = HasShares && HasQuota && cg->Has(CFS_RESERVE_US) && cg->Has(CFS_RESERVE_SHARES) &&
-                     config().container().enable_cpu_reserve();
+        HasReserve = cg->Has(CFS_RESERVE_US);
+        HasReserveRqs = cg->Has(CFS_RESERVE_RQS);
     }
 
     if (HasRtGroup)
@@ -1629,21 +1625,6 @@ TError TCpuSubsystem::SetQuotaAndPeriod(const TCgroup &cg, uint64_t quota, uint6
     return OK;
 }
 
-TError TCpuSubsystem::SetPeriod(const TCgroup &cg, uint64_t period) {
-    if (!HasQuota)
-        return OK;
-
-    period = PreparePeriod(period);
-
-    if (!IsCgroup2())
-        return cg.Set(CFS_PERIOD_US, std::to_string(period));
-
-    uint64_t value;
-    // GetUint64 processes the first token and returns 0 in case of max
-    (void)cg.GetUint64(MAX, value);
-    return SetQuotaAndPeriod(cg, value, period);
-}
-
 TError TCpuSubsystem::SetLimit(const TCgroup &cg, uint64_t quota, uint64_t period) {
     if (!HasQuota)
         return OK;
@@ -1654,80 +1635,34 @@ TError TCpuSubsystem::SetLimit(const TCgroup &cg, uint64_t quota, uint64_t perio
     return SetQuotaAndPeriod(cg, quota, period);
 }
 
-TError TCpuSubsystem::SetGuarantee(const TCgroup &cg, uint64_t period, uint64_t guarantee) {
-    if (!HasReserve || IsCgroup2())
-        return OK;
-
-    period = PreparePeriod(period);
-
-    TError error;
-    uint64_t reserve = std::floor((double)guarantee * period / CPU_POWER_PER_SEC);
-
-    error = cg.SetUint64(CFS_RESERVE_US, reserve);
-    if (error)
-        return error;
-
-    return OK;
-}
-
-TError TCpuSubsystem::SetShares(const TCgroup &cg, const std::string &policy, double weight, uint64_t guarantee) {
-    TError error;
-
+TError TCpuSubsystem::SetGuarantee(const TCgroup &cg, uint64_t guarantee) {
     if (HasReserve) {
-        // cgroup v1 only
-        uint64_t shares = BaseShares, reserve_shares = BaseShares;
-
-        shares *= weight;
-        reserve_shares *= weight;
-
-        if (policy == "rt" || policy == "high" || policy == "iso") {
-            shares *= 16;
-            reserve_shares *= 256;
-        } else if (policy == "normal" || policy == "batch") {
-            if (config().container().proportional_cpu_shares()) {
-                double scale = (double)guarantee / CPU_POWER_PER_SEC;
-                shares *= scale;
-                reserve_shares *= scale;
-            } else if (guarantee)
-                reserve_shares *= 16;
-        } else if (policy == "idle") {
-            shares /= 16;
-        }
-
-        shares = std::min(std::max(shares, MinShares), MaxShares);
-        reserve_shares = std::min(std::max(reserve_shares, MinShares), MaxShares);
-
-        error = cg.SetUint64(SHARES, shares);
+        auto error = cg.SetUint64(CFS_RESERVE_US, 0);
         if (error)
             return error;
+    }
 
-        error = cg.SetUint64(CFS_RESERVE_SHARES, reserve_shares);
-        if (error)
-            return error;
-
-    } else if (HasShares) {
-        uint64_t shares = std::floor((double)guarantee * BaseShares / CPU_POWER_PER_SEC);
-
-        /* default cpu_guarantee is 1c, shares < 1024 are broken */
-        shares = std::max(shares, BaseShares);
-
-        shares *= weight;
-
-        if (policy == "rt")
-            shares *= SharesMultipliers[0];
-        else if (policy == "high" || policy == "iso")
-            shares *= SharesMultipliers[1];
-        else if (policy == "idle")
-            shares /= SharesMultipliers[2];
-
-        shares = std::min(std::max(shares, MinShares), MaxShares);
-
-        error = cg.SetUint64(IsCgroup2() ? WEIGHT : SHARES, shares);
+    if (HasReserveRqs) {
+        auto quot = guarantee / CPU_POWER_PER_SEC;
+        auto rem = guarantee % CPU_POWER_PER_SEC;
+        auto error = cg.SetUint64(CFS_RESERVE_RQS, quot + !!rem);
         if (error)
             return error;
     }
 
     return OK;
+}
+
+TError TCpuSubsystem::SetShares(const TCgroup &cg, const std::string &policy, uint64_t weight, uint64_t guarantee) {
+    uint64_t shares = BaseShares * guarantee * weight / (100 * CPU_POWER_PER_SEC);
+
+    if (policy == "rt" || policy == "high" || policy == "iso")
+        shares *= 16;
+    else if (policy == "idle")
+        shares = BaseShares / 16;
+
+    shares = std::min(std::max(shares, MinShares), MaxShares);
+    return cg.SetUint64(IsCgroup2() ? WEIGHT : SHARES, shares);
 }
 
 // SetCpuIdle is invoked inside HasIdle condition

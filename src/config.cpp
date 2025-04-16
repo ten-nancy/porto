@@ -115,7 +115,6 @@ static void DefaultConfig() {
     container->set_stop_timeout_ms(30 * 1000);
     container->set_max_total(3000);
     container->set_empty_wait_timeout_ms(5000);
-    container->set_enable_cpu_reserve(true);
     container->set_rt_priority(0);
     container->set_rt_nice(-20);
     container->set_high_nice(-10);
@@ -153,8 +152,6 @@ static void DefaultConfig() {
 
     container->set_cpu_period(100000000); /* 100ms */
     container->set_cpu_limit_scale(1);
-    container->set_proportional_cpu_shares(false);
-    container->set_propagate_cpu_guarantee(true);
 
     container->set_enable_systemd(true);
     container->set_detect_systemd(true);
