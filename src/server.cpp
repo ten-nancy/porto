@@ -414,15 +414,15 @@ static TError TuneLimits() {
 
     /*
      * two FDs for each container: OOM event and netlink
-     * ten for each thread
+     * twenty for each thread
      * one for each client
      * plus some extra
      */
     int maxFd = config().container().max_total() * 2 + NR_SUPERUSER_CONTAINERS * 2 +
                 (config().daemon().ro_threads() + config().daemon().rw_threads() + config().daemon().io_threads() +
                  config().daemon().vl_threads()) *
-                    10 +
-                config().daemon().max_clients() + NR_SUPERUSER_CLIENTS + 1000;
+                    20 +
+                config().daemon().max_clients() + NR_SUPERUSER_CLIENTS + 10000;
 
     L_SYS("Estimated portod file descriptor limit: {}", maxFd);
 
