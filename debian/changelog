@@ -1,3 +1,36 @@
+porto (5.3.48) unstable; urgency=low
+  [ ovov ]
+      container: refactor cpu limit/guarantee
+      portod: bump RLIMIT_NOFILE for daemon process
+      storage, volume: cleanup stale volumes
+      portod: fix waiting for long request corner case
+      dont build porto for bionic
+      portod: wait for long requests to finish before reload
+      rpc: drop request of disconnected clients
+      util/unix: inherit TUnixSocket from TSocket
+      task: refactor container task start
+      volume, nbd: return NbdSocketTimeout on netlink timeout
+      container: fix oom events handling
+      container: resolve pid to container via cgroup-v2 if present
+      container: remove place_usage/place_limit
+      container: add slug field to simplify logging
+      volume: use file descriptors to pass lower layers
+      ci: move release var to flow-vars-ui
+      tests: use ubuntu-jammy layer only
+      cmake: bump cmake_minimum_required
+      test: convert tests to python3
+      rpc, storage: add CleanupPlace call
+      task: remove ptrace_on_start implementation
+      portod: use pidfd to avoid races during stop/reload/upgrade
+      master: print info about received signals
+  [ kndrvt ]
+      debian: add build package for noble
+  [ alexperevalov ]
+      readme.md: build porto in containerized environment like docker
+  last commit: d77acf5774e1e231012b8858bb48a7efb958bcaa
+
+ -- Porto Team <porto@yandex-team.ru>  Thu, 17 Apr 2025 14:13:55 -0000
+
 porto (5.3.47) unstable; urgency=low
   [ kndrvt ]
       ci: make package build on-demand
