@@ -92,8 +92,8 @@ void InitProcBaseDirs() {
 void TTaskEnv::ReportPid(EMsgCode type) {
     TPidFd pidFd;
 
-    AbortOnError(pidFd.Open(getpid()));
-    L("Report {} pid={}", to_string(type), getpid());
+    AbortOnError(pidFd.Open((GetPid())));
+    L("Report {} pid={}", to_string(type), GetPid());
     AbortOnError(Sock.SendInt(int(type)));
     AbortOnError(Sock.SendPidFd(pidFd));
 }
