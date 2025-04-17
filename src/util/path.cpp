@@ -51,7 +51,7 @@ static TError RemoveRecursive(const TPath &path, bool remove_root, std::atomic_b
             return error;
 
         if (interrupt && *interrupt)
-            return TError("RemoveRecursive was interrupted");
+            return TError(EError::SocketError, "RemoveRecursive was interrupted");
 
         const char *pathname = !walk.Level() ? walk.Ent->fts_path : walk.Ent->fts_name;
 

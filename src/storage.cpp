@@ -390,6 +390,9 @@ TError TStorage::Cleanup(const TFile &dir, EStorageType type) {
         return error;
 
     for (auto &name: list) {
+        if (NeedStopHelpers)
+            return TError(EError::SocketError, "RemoveRecursive was interrupted");
+
         TFile pin;
         auto error = pin.OpenAt(dir, name, O_PATH | O_NOFOLLOW | O_CLOEXEC | O_NOCTTY);
         if (error) {
