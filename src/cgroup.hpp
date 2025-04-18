@@ -267,6 +267,7 @@ public:
 
     // memory limit
     bool SupportSwap() const;
+    TError ReclaimLimit(const TCgroup &cg, uint64_t limit, uint64_t &old_high_limit);
     TError SetLimit(const TCgroup &cg, uint64_t limit);
 
     // io limits

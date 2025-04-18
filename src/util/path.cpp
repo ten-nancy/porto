@@ -46,7 +46,6 @@ static TError umountAll(const char *path, int flags) {
     }
 }
 
-
 // TODO(ovov): maybe use version from gnulib with fts_cwd_fd:
 // https://git.savannah.gnu.org/cgit/gnulib.git/tree/lib/fts_.h?id=d4ec02b3cc70cddaaa5183cc5a45814e0afb2292#n133
 // With such approach we dont need chdir to handle long path names

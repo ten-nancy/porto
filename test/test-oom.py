@@ -119,9 +119,15 @@ def main():
 
     a = run("test-oom", command=stress_memory_loop, memory_limit="16M", cpu_limit="1c")
 
-    time.sleep(3)
-    ExpectEq(a['state'], 'running')
-    ExpectLe(1, int(a['oom_kills']))
+    oom_kills = 0
+    for i in range(10):
+        time.sleep(1)
+        ExpectEq(a['state'], 'running')
+        oom_kills = int(a['oom_kills'])
+        if oom_kills:
+            break
+
+    ExpectLe(1, oom_kills)
     ExpectNe(a.GetProperty('oom_kills_total', sync=True), str(total_oom))
 
     a.Destroy()

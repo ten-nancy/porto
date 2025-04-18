@@ -1224,13 +1224,48 @@ bool TMemorySubsystem::SupportSwap() const {
     return RootCgroup()->Has(IsCgroup2() ? SWAP_MAX : MEM_SWAP_LIMIT);
 }
 
+constexpr auto HIGH_LIMIT_RETRIES = 3;
+
+TError TMemorySubsystem::ReclaimLimit(const TCgroup &cg, uint64_t limit, uint64_t &old_high_limit) {
+    const auto knob = IsCgroup2() ? HIGH : HIGH_LIMIT;
+
+    auto error = cg.GetUint64(knob, old_high_limit);
+    if (error)
+        return error;
+
+    for (int i = 0; i < HIGH_LIMIT_RETRIES; ++i) {
+        error = cg.SetUint64(knob, limit);
+        if (error) {
+            if (i > 0)
+                goto fail;
+            return error;
+        }
+
+        uint64_t usage;
+        error = Usage(cg, usage);
+        if (error)
+            goto fail;
+
+        if (usage <= limit)
+            return OK;
+    }
+
+    error = TError(EError::Unknown, EBUSY, "high_limit");
+fail:
+    // try to revert high limit
+    auto error2 = cg.SetUint64(knob, old_high_limit);
+    if (error2)
+        L_WRN("Failed to rollback high limit: {}", error2);
+    return error;
+}
+
 TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
     TError error;
     uint64_t old_limit, old_high_limit = 0;
     std::string value;
-    const std::string knobLimitName = IsCgroup2() ? MAX : LIMIT;
-    const std::string knobHighLimitName = IsCgroup2() ? HIGH : HIGH_LIMIT;
-    const std::string knobSwapName = IsCgroup2() ? SWAP_MAX : MEM_SWAP_LIMIT;
+    const std::string maxKnob = IsCgroup2() ? MAX : LIMIT;
+    const std::string highKnob = IsCgroup2() ? HIGH : HIGH_LIMIT;
+    const std::string swapKnob = IsCgroup2() ? SWAP_MAX : MEM_SWAP_LIMIT;
     /*
      * Maxumum value depends on arch, kernel version and bugs
      * "-1" works everywhere since 2.6.31
@@ -1238,19 +1273,19 @@ TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
     if (!limit) {
         std::string value = IsCgroup2() ? "max" : "-1";
         if (SupportSwap()) {
-            error = cg.Set(knobSwapName, value);
+            error = cg.Set(swapKnob, value);
             if (error)
-                L_WRN("Cannot set {}: {}", knobSwapName, value);
+                L_WRN("Cannot set {}: {}", swapKnob, value);
         }
-        return cg.Set(knobLimitName, value);
+        return cg.Set(maxKnob, value);
     }
 
     if (IsCgroup2()) {
-        error = cg.Get(knobLimitName, value);
+        error = cg.Get(maxKnob, value);
         if (value == "max")
             old_limit = INT64_MAX;
     } else
-        error = cg.GetUint64(knobLimitName, old_limit);
+        error = cg.GetUint64(maxKnob, old_limit);
     if (error)
         return error;
 
@@ -1259,9 +1294,7 @@ TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
 
     /* reduce high limit first to fail faster */
     if (limit < old_limit && SupportHighLimit()) {
-        auto error2 = cg.GetUint64(knobHighLimitName, old_high_limit);
-        if (!error2)
-            error = cg.SetUint64(knobHighLimitName, limit);
+        error = ReclaimLimit(cg, limit, old_high_limit);
         if (error)
             return error;
     }
@@ -1269,23 +1302,23 @@ TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
     /* Memory limit cannot be bigger than Memory+Swap limit. */
     if (SupportSwap()) {
         uint64_t cur_limit;
-        cg.GetUint64(knobSwapName, cur_limit);
+        cg.GetUint64(swapKnob, cur_limit);
         if (cur_limit < limit) {
-            error = cg.SetUint64(knobSwapName, limit);
+            error = cg.SetUint64(swapKnob, limit);
             if (error)
-                L_WRN("Cannot set {}: {}", knobSwapName, value);
+                L_WRN("Cannot set {}: {}", swapKnob, value);
         }
     }
 
     // this also updates high limit
-    error = cg.SetUint64(knobLimitName, limit);
+    error = cg.SetUint64(maxKnob, limit);
     if (!error && SupportSwap())
-        error = cg.SetUint64(knobSwapName, limit);
+        error = cg.SetUint64(swapKnob, limit);
 
     if (error) {
-        (void)cg.SetUint64(knobLimitName, old_limit);
+        (void)cg.SetUint64(maxKnob, old_limit);
         if (old_high_limit)
-            (void)cg.SetUint64(knobHighLimitName, old_high_limit);
+            (void)cg.SetUint64(highKnob, old_high_limit);
     }
 
     return error;
