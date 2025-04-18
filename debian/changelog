@@ -1,3 +1,13 @@
+porto (5.3.49) unstable; urgency=low
+  [ ovov ]
+      cgroup: reclaim memory before setting memory.limit_in_bytes
+      util/path: do not log umounts during RemoveRecursive
+      task: replace libc getpid call with system call
+      storage: interrupt cleanup on portod reload
+  last commit: 2a398e17a2843dc21ea0e74ec53fb6f7962ac048
+
+ -- Porto Team <porto@yandex-team.ru>  Fri, 18 Apr 2025 02:29:29 -0000
+
 porto (5.3.48) unstable; urgency=low
   [ ovov ]
       container: refactor cpu limit/guarantee
