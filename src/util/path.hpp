@@ -362,7 +362,7 @@ public:
     TError UnlinkAt(const TPath &path) const;
     TError RmdirAt(const TPath &path) const;
     TError RemoveAt(const TPath &path) const;
-    TError RemoveAllAtInterruptible(const TPath &path, std::atomic_bool &interrupt, bool umountAll) const;
+    TError RemoveAllAtInterruptible(const TPath &path, std::atomic_bool &interrupt, bool doumount) const;
     TError ReadDirectory(std::vector<std::string> &result) const;
     TError RenameAt(const TPath &oldpath, const TPath &newpath) const;
     TError HardlinkAt(const TPath &path, const TFile &target, const TPath &target_path = "") const;

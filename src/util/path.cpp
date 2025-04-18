@@ -31,11 +31,27 @@ extern "C" {
 
 constexpr off_t ROTATE_OFFSET_LIMIT = 16384;  // 16Kb
 
+static TError umountAll(const char *path, int flags) {
+    flags |= UMOUNT_NOFOLLOW;
+    while (1) {
+        if (umount2(path, flags)) {
+            if (errno == EINVAL || errno == ENOENT)
+                return OK; /* not a mountpoint */
+
+            if (errno == EBUSY && !(flags & MNT_DETACH))
+                flags |= MNT_DETACH;
+            else
+                return TError::System("umount2({})", path);
+        }
+    }
+}
+
+
 // TODO(ovov): maybe use version from gnulib with fts_cwd_fd:
 // https://git.savannah.gnu.org/cgit/gnulib.git/tree/lib/fts_.h?id=d4ec02b3cc70cddaaa5183cc5a45814e0afb2292#n133
 // With such approach we dont need chdir to handle long path names
 static TError RemoveRecursive(const TPath &path, bool remove_root, std::atomic_bool *interrupt = nullptr,
-                              bool umountAll = false) {
+                              bool doumount = false) {
     TPathWalk walk;
 
     auto error = walk.Open(path, FTS_PHYSICAL | FTS_XDEV | FTS_NOSTAT);
@@ -55,8 +71,8 @@ static TError RemoveRecursive(const TPath &path, bool remove_root, std::atomic_b
 
         const char *pathname = !walk.Level() ? walk.Ent->fts_path : walk.Ent->fts_name;
 
-        if (umountAll && (!walk.Directory || !walk.Postorder)) {
-            auto error = TPath(pathname).UmountAll(MNT_DETACH);
+        if (doumount && (!walk.Directory || !walk.Postorder)) {
+            auto error = umountAll(pathname, MNT_DETACH);
             if (error)
                 return error;
         }
@@ -645,8 +661,8 @@ TError TFile::RemoveAt(const TPath &path) const {
     return error;
 }
 
-TError TFile::RemoveAllAtInterruptible(const TPath &path, std::atomic_bool &interrupt, bool umountAll) const {
-    return RemoveRecursive(ProcPath() / path, true, &interrupt, umountAll);
+TError TFile::RemoveAllAtInterruptible(const TPath &path, std::atomic_bool &interrupt, bool umount) const {
+    return RemoveRecursive(ProcPath() / path, true, &interrupt, umount);
 }
 
 TError TPath::RemoveAll() const {
@@ -1027,16 +1043,7 @@ TError TPath::Umount(uint64_t flags) const {
 
 TError TPath::UmountAll(int flags) const {
     L_ACT("umount all {}", Path);
-    while (1) {
-        if (umount2(c_str(), UMOUNT_NOFOLLOW | flags)) {
-            if (errno == EINVAL || errno == ENOENT)
-                return OK; /* not a mountpoint */
-            if (errno == EBUSY)
-                umount2(c_str(), UMOUNT_NOFOLLOW | MNT_DETACH | flags);
-            else
-                return TError::System("umount2(" + Path + ")");
-        }
-    }
+    return umountAll(c_str(), flags);
 }
 
 TError TPath::UmountNested() const {
