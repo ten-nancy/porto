@@ -1,3 +1,10 @@
+porto (5.3.50) unstable; urgency=low
+  [ ovov ]
+      cgroup: fix setting high limit for cgv2
+  last commit: 13e8ffe7b057212fb285ec66ba7170fd611a80f9
+
+ -- Porto Team <porto@yandex-team.ru>  Fri, 18 Apr 2025 04:33:58 -0000
+
 porto (5.3.49) unstable; urgency=low
   [ ovov ]
       cgroup: reclaim memory before setting memory.limit_in_bytes
