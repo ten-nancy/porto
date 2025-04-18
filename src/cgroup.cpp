@@ -1226,10 +1226,10 @@ bool TMemorySubsystem::SupportSwap() const {
 
 constexpr auto HIGH_LIMIT_RETRIES = 3;
 
-TError TMemorySubsystem::ReclaimLimit(const TCgroup &cg, uint64_t limit, uint64_t &old_high_limit) {
+TError TMemorySubsystem::ReclaimLimit(const TCgroup &cg, uint64_t limit, std::string &old_high_limit) {
     const auto knob = IsCgroup2() ? HIGH : HIGH_LIMIT;
 
-    auto error = cg.GetUint64(knob, old_high_limit);
+    auto error = cg.Get(knob, old_high_limit);
     if (error)
         return error;
 
@@ -1253,7 +1253,7 @@ TError TMemorySubsystem::ReclaimLimit(const TCgroup &cg, uint64_t limit, uint64_
     error = TError(EError::Unknown, EBUSY, "high_limit");
 fail:
     // try to revert high limit
-    auto error2 = cg.SetUint64(knob, old_high_limit);
+    auto error2 = cg.Set(knob, old_high_limit);
     if (error2)
         L_WRN("Failed to rollback high limit: {}", error2);
     return error;
@@ -1261,7 +1261,8 @@ fail:
 
 TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
     TError error;
-    uint64_t old_limit, old_high_limit = 0;
+    uint64_t old_limit;
+    std::string old_high_limit;
     std::string value;
     const std::string maxKnob = IsCgroup2() ? MAX : LIMIT;
     const std::string highKnob = IsCgroup2() ? HIGH : HIGH_LIMIT;
@@ -1317,8 +1318,8 @@ TError TMemorySubsystem::SetLimit(const TCgroup &cg, uint64_t limit) {
 
     if (error) {
         (void)cg.SetUint64(maxKnob, old_limit);
-        if (old_high_limit)
-            (void)cg.SetUint64(highKnob, old_high_limit);
+        if (!old_high_limit.empty())
+            (void)cg.Set(highKnob, old_high_limit);
     }
 
     return error;
