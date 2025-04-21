@@ -780,14 +780,9 @@ write permissions to the target or owning related volume.
     Increase cpu.shares accourding to required cpu power distribution.
     Offstream kernel patches provides more accurate control.
 
-* **cpu\_guarantee\_total** - effective CPU guarantee
+* **cpu\_guarantee\_bound** - mininum guarantee of upper hierarchy
 
-    Porto popagates CPU guarantee from childrents into parent containtes:
-    cpu\_guarantee\_total = max(cpu\_guarantee, sum cpu\_guarantee\_total for running childrens)
-
-    For root container this shows total CPU guarantee.
-
-* **cpu\_guarantee\_bound** - maximum guarantee of upper hierarhy
+* **cpu\_guarantee\_total** - same as cpu\_guarantee\_bound
 
 * **cpu\_limit** - CPU usage limit
 
@@ -798,14 +793,9 @@ write permissions to the target or owning related volume.
 
     For root container this shows total CPU count.
 
-* **cpu\_limit\_total** - total CPU limit
-
-    cpu\_limit\_total = sum min(cpu\_limit, cpu\_limit\_total) for running or
-    meta childrens plus contianer cpu\_limit if it's running.
-
-    For root contianer this shows total CPU commitment.
-
 * **cpu\_limit\_bound** - minimum limit of upper hierarhy
+
+* **cpu\_limit\_total** - same as cpu\_limit\_bound
 
 * **cpu\_period** - CPU limit accounting period
 

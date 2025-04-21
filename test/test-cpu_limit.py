@@ -301,6 +301,11 @@ c.SetProperty('cpu_guarantee', '2c')
 
 d = conn.Create('a/b/c/d', weak=True)
 d.SetProperty('command', 'tail -f /dev/null')
+d.SetProperty('controllers[cpu]', 'false')
+
+e = conn.Create('a/b/c/e', weak=True)
+e.SetProperty('command', 'tail -f /dev/null')
+e.SetProperty('controllers[cpu]', 'true')
 
 a.Start()
 b.Start()
@@ -315,7 +320,8 @@ ExpectProp(d, 'cpu_limit_bound', '{}c'.format(CPUNR - 2))
 ExpectProp(a, 'cpu_guarantee_bound', '3c')
 ExpectProp(b, 'cpu_guarantee_bound', '3c')
 ExpectProp(c, 'cpu_guarantee_bound', '2c')
-ExpectProp(d, 'cpu_guarantee_bound', '0c')
+ExpectProp(d, 'cpu_guarantee_bound', '2c') # does not have cpu controller
+ExpectProp(e, 'cpu_guarantee_bound', '0c')
 
 assert 0 != a.Dump().status.cpu_limit_total
 assert '%dc' % a.Dump().status.cpu_limit_total == a.GetProperty('cpu_limit_total')

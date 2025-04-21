@@ -469,8 +469,11 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
         CpuGuaranteeBound = CpuGuarantee = CpuLimit;
         SetProp(EProperty::CPU_LIMIT);
         SetProp(EProperty::MEM_LIMIT);
-    } else
+    } else {
         CpuLimitBound = Parent->CpuLimitBound;
+        // cpu controller disabled by default, so we just inherit CpuGuaranteeBound
+        CpuGuaranteeBound = Parent->CpuGuaranteeBound;
+    }
 
     IoPolicy = "";
     IoPrio = 0;
@@ -2018,7 +2021,10 @@ TError TContainer::ApplyCpuSet() {
 }
 
 void TContainer::PropogateCpuGuarantee() {
-    auto bound = std::min(CpuGuarantee, Parent->CpuGuaranteeBound);
+    auto bound = Parent->CpuGuaranteeBound;
+    if (Controllers & CGROUP_CPU)
+        bound = std::min(CpuGuarantee, Parent->CpuGuaranteeBound);
+
     if (bound == CpuGuaranteeBound)
         return;
 
@@ -2596,6 +2602,19 @@ TDevices TContainer::EffectiveDevices(const TDevices &devices) const {
 
 TDevices TContainer::EffectiveDevices() const {
     return EffectiveDevices(Devices);
+}
+
+TError TContainer::SetControllers(uint64_t controllers) {
+    if ((controllers & RequiredControllers) != RequiredControllers)
+        return TError(EError::InvalidValue, "Cannot disable required controllers");
+
+    auto needPropogateCpuGuarantee = (Controllers & CGROUP_CPU) != (controllers & CGROUP_CPU);
+    Controllers = controllers;
+    SetProp(EProperty::CONTROLLERS);
+
+    if (needPropogateCpuGuarantee)
+        PropogateCpuGuarantee();
+    return OK;
 }
 
 TError TContainer::SetDeviceConf(const TDevices &devices, bool merge) {

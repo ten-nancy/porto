@@ -2202,15 +2202,11 @@ public:
         return OK;
     }
     TError Set(const std::string &value) override {
-        uint64_t val;
-        TError error = StringParseFlags(value, ControllersName, val, ';');
+        uint64_t controllers;
+        TError error = StringParseFlags(value, ControllersName, controllers, ';');
         if (error)
             return error;
-        if ((val & CT->RequiredControllers) != CT->RequiredControllers)
-            return TError(EError::InvalidValue, "Cannot disable required controllers");
-        CT->Controllers = val;
-        CT->SetProp(EProperty::CONTROLLERS);
-        return OK;
+        return CT->SetControllers(controllers);
     }
     TError GetIndexed(const std::string &index, std::string &value) override {
         uint64_t controllers = CT->Controllers;
@@ -2222,23 +2218,22 @@ public:
         return OK;
     }
     TError SetIndexed(const std::string &index, const std::string &value) override {
-        uint64_t val;
-        bool enable;
-        TError error = StringParseFlags(index, ControllersName, val, ';');
+        uint64_t controllers;
+        auto error = StringParseFlags(index, ControllersName, controllers, ';');
         if (error)
             return error;
+
+        bool enable;
         error = StringToBool(value, enable);
         if (error)
             return error;
+
         if (enable)
-            val = CT->Controllers | val;
+            controllers = CT->Controllers | controllers;
         else
-            val = CT->Controllers & ~val;
-        if ((val & CT->RequiredControllers) != CT->RequiredControllers)
-            return TError(EError::InvalidValue, "Cannot disable required controllers");
-        CT->Controllers = val;
-        CT->SetProp(EProperty::CONTROLLERS);
-        return OK;
+            controllers = CT->Controllers & ~controllers;
+
+        return CT->SetControllers(controllers);
     }
 
     void Dump(rpc::TContainerSpec &spec) const override {
@@ -2254,18 +2249,15 @@ public:
     }
 
     TError Load(const rpc::TContainerSpec &spec) override {
-        uint64_t controllers = 0, val;
+        uint64_t controllers = 0;
         for (auto &name: spec.controllers().controller()) {
+            uint64_t val;
             TError error = StringParseFlags(name, ControllersName, val, ';');
             if (error)
                 return error;
             controllers |= val;
         }
-        if ((controllers & CT->RequiredControllers) != CT->RequiredControllers)
-            return TError(EError::InvalidValue, "Cannot disable required controllers");
-        CT->Controllers = controllers;
-        CT->SetProp(EProperty::CONTROLLERS);
-        return OK;
+        return CT->SetControllers(controllers);
     }
 } static Controllers;
 

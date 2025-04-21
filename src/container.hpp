@@ -491,6 +491,7 @@ public:
     TError ApplyResolvConf() const;
     TError SetSymlink(const TPath &symlink, const TPath &target);
 
+    TError SetControllers(uint64_t controllers);
     TError SetDeviceConf(const TDevices &devices, bool merge);
     TError EnableFuse(bool value);
     TError EnableControllers(uint64_t controllers);
