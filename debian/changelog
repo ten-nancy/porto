@@ -1,3 +1,11 @@
+porto (5.3.51) unstable; urgency=low
+  [ ovov ]
+      container: cpu_guarantee_bound depends on cpu controller
+      container: fix SchedNice computation
+  last commit: ec058ebdeab17fe565fe82451871a940e598c87e
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 21 Apr 2025 22:16:30 -0000
+
 porto (5.3.50) unstable; urgency=low
   [ ovov ]
       cgroup: fix setting high limit for cgv2
