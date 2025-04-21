@@ -1412,7 +1412,7 @@ void TContainer::ChooseSchedPolicy() {
 
     if (SchedPolicy != SCHED_RR) {
         /* -1 nice is a +10% cpu weight */
-        SchedNice -= std::log(CpuWeight) / std::log(1.1);
+        SchedNice -= std::log(double(CpuWeight) / 100) / std::log(1.1);
         SchedNice = std::min(std::max(SchedNice, -20), 19);
     }
 }
