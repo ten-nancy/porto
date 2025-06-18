@@ -1,4 +1,5 @@
 project(src)
+cmake_minimum_required(VERSION 3.5)
 
 function(PORTO_PROTOBUF_GENERATE_CPP SRCS HDRS)
 	set(${SRCS})

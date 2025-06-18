@@ -5,7 +5,7 @@
 # Distributed under the MIT License.
 # (See accompanying file LICENSE or copy at https://mit-license.org/)
 
-cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
 project(http-client-lite)
 
 ## Set output binary

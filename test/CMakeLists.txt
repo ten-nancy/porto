@@ -1,4 +1,5 @@
 project(tests)
+cmake_minimum_required(VERSION 3.5)
 
 include_directories(${util_SOURCE_DIR})
 include_directories(${libporto_SOURCE_DIR})

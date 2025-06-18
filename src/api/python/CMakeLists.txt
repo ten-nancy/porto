@@ -1,4 +1,6 @@
 project(python-portopy)
+cmake_minimum_required(VERSION 3.5)
+
 
 # TODO(ovov): use PROTOBUF_GENERATE_CPP
 # use a system protoc for backward compatibility

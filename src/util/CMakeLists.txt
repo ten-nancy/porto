@@ -1,4 +1,5 @@
 project(util)
+cmake_minimum_required(VERSION 3.5)
 
 add_subdirectory(prometheus-cpp-lite)
 add_subdirectory(nlohmann-safe)

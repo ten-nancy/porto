@@ -15,6 +15,9 @@ endif()
 
 PROJECT(porto)
 
+# export build commands for clangd indexing by default
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 OPTION(ENABLE_GO "Enables building golang API" OFF)
 OPTION(ENABLE_PYTHON "Enables building python API" ON)
 OPTION(USE_SYSTEM_LIBNL "Use system libnl" ON)
