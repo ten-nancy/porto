@@ -208,6 +208,7 @@ public:
     TError Mkdir(unsigned int mode) const;
     TError MkdirAll(unsigned int mode, bool ignore = false) const;
     TError MkdirTmp(const TPath &parent, const std::string &prefix, unsigned int mode);
+    TError CreateTmpDirInplace();
     TError Rmdir() const;
     TError Unlink() const;
     TError RemoveAll() const;
@@ -390,6 +391,10 @@ public:
     bool ExistsAt(const TPath &path) const;
     TError Bind(const TFile &target) const;
     TError BindLegacy(const TFile &target) const;
+    bool FileIsDirectoryFollowAt(const TPath &filePathObject) const;
+    bool FileExistsAt(const TPath &filePathObject) const;
+    TError OpenTree(const TPath &filePathObject, int flags);
+    TError MoveMount(const TPath &dirPathObject);
 
     uint32_t FsType() const;
     TError StatFS(TStatFS &result) const;

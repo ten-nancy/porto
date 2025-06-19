@@ -57,6 +57,9 @@ public:
 
     bool IsPortod() const;
 
+    pid_t GetRootPid() const;
+    std::string RootPathMagicLink();
+
     bool CanSetUidGid() const;
     TError CanControl(const TCred &cred);
     TError CanControl(const TContainer &ct, bool child = false);

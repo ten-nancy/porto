@@ -331,6 +331,14 @@ bool TClient::IsPortod(void) const {
     return StringEndsWith(TPath(StringFormat("/proc/%u/exe", Pid)).RealPath().ToString(), "portod");
 }
 
+pid_t TClient::GetRootPid() const {
+    return ClientContainer->IsRoot() ? 1 : ClientContainer->Task.Pid;
+}
+
+std::string TClient::RootPathMagicLink() {
+    return fmt::format("/proc/{}/root", GetRootPid());
+}
+
 bool TClient::CanSetUidGid() const {
     /* loading capabilities by pid is racy, use container limits instead */
     if (TaskCred.IsRootUser())
