@@ -135,6 +135,8 @@ message TConfig {
 
         optional string network_limit_soft_bpf_elf_path = 78;
 
+        optional bool watchdog_run_network_ifup_script = 79;
+
         /* Deprecated */
         optional bool enable_iproute = 41;
         optional bool enabled = 1 [deprecated=true];

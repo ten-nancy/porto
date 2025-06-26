@@ -181,6 +181,8 @@ class TNetwork: public TNonCopyable {
     TError Reconnect();
     TError RepairLocked();
 
+    TError RunNetworkIfUpScript();
+
     /* Something went wrong, handled by Repair */
     TError NetError;
 

@@ -2138,6 +2138,37 @@ out:
     return error;
 }
 
+TError TNetwork::RunNetworkIfUpScript() {
+    TNamespaceFd netns, cur_ns;
+    TError error = OK;
+
+    error = cur_ns.Open("/proc/thread-self/ns/net");
+    if (error)
+        return error;
+
+    std::vector<std::shared_ptr<TContainer>> containers;
+    auto state_lock = LockNetState();
+    for (auto ct: NetUsers) {
+        containers.emplace_back(ct->shared_from_this());
+    }
+    state_lock.unlock();
+
+    for (auto ct: containers) {
+        TNetEnv NetEnv;
+        error = netns.Open(ct->Task.Pid, "ns/net");
+        if (!error)
+            error = netns.SetNs(CLONE_NEWNET);
+        if (!error)
+            error = NetEnv.RunNetworkIfUpScript(*ct);
+        if (error)
+            break;
+    }
+
+    TError error2 = cur_ns.SetNs(CLONE_NEWNET);
+    PORTO_ASSERT(!error2);
+    return error;
+}
+
 TError TNetwork::SyncResolvConf() {
     std::string conf;
     TError error;
@@ -2369,6 +2400,9 @@ void TNetwork::NetWatchdog() {
                 net->StartRepair();
             if (net->NetError)
                 net->RepairLocked();
+
+            if (config().network().watchdog_run_network_ifup_script())
+                net->RunNetworkIfUpScript();
         }
         if (GetCurrentTimeMs() - LastProxyNeighbour >= NetProxyNeighbourPeriod) {
             auto lock = HostNetwork->LockNet();
