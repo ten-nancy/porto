@@ -310,7 +310,10 @@ class TCpuSubsystem: public TSubsystem {
     inline std::string ChooseThrottledKnob() const;
     static inline uint64_t PreparePeriod(uint64_t period);
     static inline uint64_t PrepareQuota(uint64_t quota, uint64_t period);
-    TError SetQuotaAndPeriod(const TCgroup &cg, uint64_t quota, uint64_t period = 0) const;
+
+    TError SetQuotaAndPeriodV1(const TCgroup &cg, uint64_t quota, uint64_t period) const;
+    TError SetQuotaAndPeriodV2(const TCgroup &cg, uint64_t quota, uint64_t period) const;
+    TError SetQuotaAndPeriod(const TCgroup &cg, uint64_t quota, uint64_t period) const;
 
 public:
     // common knobs
@@ -369,6 +372,8 @@ public:
     TError GetUnconstrainedWait(const TCgroup &cg, uint64_t &value) const;
     bool SupportBurstUsage() const;
     TError GetBurstUsage(const TCgroup &cg, uint64_t &value) const;
+
+    TError GetCpuLimit(const TCgroup &cg, uint64_t &quota, uint64_t &period);
 
     // knob setters
     TError SetLimit(const TCgroup &cg, uint64_t quota, uint64_t period);

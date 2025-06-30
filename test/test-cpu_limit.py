@@ -470,3 +470,11 @@ finally:
             ct.Destroy()
         except:
             pass
+
+
+with contextlib.ExitStack() as cleanup:
+    a = cleanup.enter_context(RunContainer(conn, 'A', cpu_limit='3c', cpu_period='100ms'))
+    b = cleanup.enter_context(RunContainer(conn, 'A/B', cpu_limit='2c', cpu_period='100ms'))
+    c = cleanup.enter_context(RunContainer(conn, 'A/B/C', cpu_limit='1c', cpu_period='100ms'))
+
+    b.SetProperty('cpu_period', '800ms')

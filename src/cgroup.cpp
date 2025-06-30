@@ -1622,41 +1622,53 @@ uint64_t TCpuSubsystem::PrepareQuota(uint64_t quota, uint64_t period) {
     return quota;
 }
 
-/* quota == 0 -> -1 / max */
-TError TCpuSubsystem::SetQuotaAndPeriod(const TCgroup &cg, uint64_t quota, uint64_t period) const {
-    TError error;
-    std::string value;
+TError TCpuSubsystem::SetQuotaAndPeriodV1(const TCgroup &cg, uint64_t quota, uint64_t period) const {
+    std::string quota_s = quota > 0 ? std::to_string(quota) : "-1";
 
-    if (quota)
-        value = std::to_string(quota);
-
-    if (IsCgroup2()) {
-        if (!quota)
-            value = "max";
-
-        if (period)
-            value += " " + std::to_string(period);
-
-        error = cg.Set(MAX, value);
-        if (error)
+    // Setting quota/period in cgroup-v1 can be tricky because
+    // we cannot set it in one action as we can in cgroup-v2:
+    // Changing one paramter can violate parent constraint,
+    // while changing another paramter can violate child constraint.
+    // In this case we temporarily disable quota (by writing -1)
+    // and set it again after setting period.
+    bool need_quota_change = true;
+    auto error = cg.Set(CFS_QUOTA_US, quota_s);
+    if (error) {
+        if (error.Errno != EINVAL || !quota)
             return error;
 
-    } else {
-        if (!quota)
-            value = "-1";
-
-        (void)cg.Set(CFS_QUOTA_US, value);
-
-        error = cg.Set(CFS_PERIOD_US, std::to_string(period));
+        // disable quota
+        error = cg.Set(CFS_QUOTA_US, "-1");
         if (error)
             return error;
+        need_quota_change = true;
+    }
 
-        error = cg.Set(CFS_QUOTA_US, value);
+    error = cg.SetUint64(CFS_PERIOD_US, period);
+    if (error)
+        return error;
+
+    if (need_quota_change) {
+        error = cg.Set(CFS_QUOTA_US, quota_s);
         if (error)
             return error;
     }
 
     return OK;
+}
+
+TError TCpuSubsystem::SetQuotaAndPeriodV2(const TCgroup &cg, uint64_t quota, uint64_t period) const {
+    if (!quota)
+        return cg.Set(MAX, "max");
+
+    return cg.Set(MAX, fmt::format("{} {}", quota, period));
+}
+
+/* quota == 0 -> -1 / max */
+TError TCpuSubsystem::SetQuotaAndPeriod(const TCgroup &cg, uint64_t quota, uint64_t period) const {
+    if (IsCgroup2())
+        return SetQuotaAndPeriodV2(cg, quota, period);
+    return SetQuotaAndPeriodV1(cg, quota, period);
 }
 
 TError TCpuSubsystem::SetLimit(const TCgroup &cg, uint64_t quota, uint64_t period) {
