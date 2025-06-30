@@ -14,6 +14,7 @@ extern "C" {
 #include <linux/falloc.h>
 #include <linux/fs.h>
 #include <linux/limits.h>
+#include <linux/magic.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
@@ -1461,9 +1462,59 @@ void TFile::Close(const std::vector<int> &fds) {
         close(fd);
 }
 
-void TFile::CloseAllExcept(const std::vector<int> &except) {
+static void closeAllExceptSlow(const TError &reason, const std::vector<int> &except) {
+    L_WRN("TFile::CloseAllExcept fallback due to {}", reason);
     int max = getdtablesize();
     for (int fd = 0; fd < max; fd++) {
+        if (std::find(except.begin(), except.end(), fd) == except.end())
+            close(fd);
+    }
+}
+
+static TError openProc(TFile &proc) {
+    auto error = proc.OpenDir("/proc");
+    if (error)
+        return error;
+
+    struct stat st;
+    error = proc.Stat(st);
+    if (error)
+        return error;
+
+    if (st.st_ino != 1)
+        return TError("/proc has unexpected ino: {}", st.st_ino);
+
+    TStatFS statFS;
+    error = proc.StatFS(statFS);
+    if (error)
+        return error;
+
+    if (statFS.FsType != PROC_SUPER_MAGIC)
+        return TError("/proc has unexpected fs_type: {}", statFS.FsType);
+
+    return OK;
+}
+
+void TFile::CloseAllExcept(const std::vector<int> &except) {
+    TFile proc, pin;
+    auto error = openProc(proc);
+    if (error)
+        return closeAllExceptSlow(error, except);
+
+    error = pin.OpenAt(proc, "thread-self/fd", O_RDONLY | O_CLOEXEC | O_NOCTTY);
+    if (error)
+        return closeAllExceptSlow(error, except);
+
+    std::vector<std::string> vals;
+    error = pin.ReadDirectory(vals);
+    if (error)
+        return closeAllExceptSlow(error, except);
+
+    for (auto &v: vals) {
+        int fd;
+        error = StringToInt(v, fd);
+        if (error)
+            return closeAllExceptSlow(error, except);
         if (std::find(except.begin(), except.end(), fd) == except.end())
             close(fd);
     }
