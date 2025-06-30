@@ -3872,9 +3872,10 @@ TError TContainer::ScheduleRespawn() {
         if (Parent->State == EContainerState::Respawning) {
             L_ACT("Respawn {} after respawning parent", Slug);
         } else {
-            L_ACT("Respawn {} after {} ms", Slug, RespawnDelay / 1000000);
+            auto delay = std::max(50UL, RespawnDelay / 1000000);
+            L_ACT("Respawn {} after {} ms", Slug, delay);
             TEvent e(EEventType::Respawn, shared_from_this());
-            EventQueue->Add(RespawnDelay / 1000000, e);
+            EventQueue->Add(delay, e);
         }
     }
     return error;
