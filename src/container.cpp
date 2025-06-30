@@ -4607,9 +4607,10 @@ void TContainer::CollectOomsV2() {
     }
     auto ooms = it->second;
     auto delta = getDelta(OomEvents, ooms);
-    if (delta > 0)
+    if (delta > 0) {
         Statistics->ContainersOOM += delta;
-    L_EVT("OOM in {}", Slug);
+        L_EVT("OOM in {}", Slug);
+    }
 }
 
 bool TContainer::CollectOomsV1() {
