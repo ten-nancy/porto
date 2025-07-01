@@ -552,7 +552,15 @@ TError StringToCpuPower(const std::string &str, uint64_t &power) {
 }
 
 std::string CpuPowerToString(uint64_t nsec) {
-    return fmt::format("{:g}c", (double)nsec / CPU_POWER_PER_SEC);
+    auto sec = nsec / CPU_POWER_PER_SEC;
+    auto rem = nsec % CPU_POWER_PER_SEC;
+    if (rem == 0)
+        return fmt::format("{}c", sec);
+
+    while (rem % 10 == 0)
+        rem /= 10;
+
+    return fmt::format("{}.{}c", sec, rem);
 }
 
 TError UintMapToString(const TUintMap &map, std::string &value) {
