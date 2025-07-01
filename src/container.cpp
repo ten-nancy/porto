@@ -2108,7 +2108,7 @@ TError TContainer::ApplyCpuLimit() {
     // must increase parent limit
     if (CpuLimitBound >= CpuLimitCur) {
         // change == 0, but period could be changed
-        auto error = SetCpuLimit(CpuLimitBound, CpuPeriod);
+        auto error = SetCpuLimit(CpuLimit ? CpuLimitBound : 0, CpuPeriod);
         if (error)
             return error;
     }
@@ -2122,7 +2122,7 @@ TError TContainer::ApplyCpuLimit() {
     }
 
     if (CpuLimitBound < CpuLimitCur) {
-        auto error = SetCpuLimit(CpuLimitBound, CpuPeriod);
+        auto error = SetCpuLimit(CpuLimit ? CpuLimitBound : 0, CpuPeriod);
         if (error)
             return error;
     }
