@@ -67,14 +67,17 @@ TError TStdStream::Open(const TPath &path, const TCred &cred) {
 
     Offset = 0;
 
-    /* Do not block at read only opening fifo pipes */
+    /* Do not block opening fifo pipes */
     if (Stream)
         flags = O_WRONLY | O_APPEND;
     else
-        flags = O_RDONLY | O_NONBLOCK;
+        flags = O_RDONLY;
 
-    /* Never assign controlling terminal at open */
-    flags |= O_NOCTTY;
+    /*
+      Never assign controlling terminal at open.
+      Do not block opening fifo pipes.
+    */
+    flags |= O_NOCTTY | O_NONBLOCK;
 
 retry:
     fd = open(path.c_str(), flags);
@@ -90,10 +93,10 @@ retry:
     if (fd < 0)
         return TError(EError::InvalidValue, errno, "open " + path.ToString());
 
-    if (!Stream && fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0) {
-        auto err = errno;
+    if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0) {
+        auto error = TError::System("fcntl");
         close(fd);
-        return TError::System("fcntl {}", strerror(err));
+        return error;
     }
 
     if (flags != (O_RDWR | O_NOCTTY) && isatty(fd)) {

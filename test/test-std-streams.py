@@ -1,6 +1,9 @@
 import porto
 from test_common import *
 
+import contextlib
+import os
+
 c = porto.Connection(timeout=30)
 
 blksize = os.stat(__file__).st_blksize
@@ -88,7 +91,7 @@ ct.Destroy()
 # check fifo pipe for stdin
 ct = c.CreateWeakContainer('test')
 
-vol = c.CreateVolume(layers=['ubuntu-jammy'], containers='test')
+vol = c.CreateVolume(layers=['ubuntu-jammy'], containers='test', backend='overlay')
 ct.SetProperty("root", vol.path)
 
 ct.Start()
@@ -102,3 +105,27 @@ ExpectEq(b['exit_code'], '0')
 b.Destroy()
 
 ct.Destroy()
+
+
+# check fifo pipe for stdout
+with contextlib.ExitStack() as cleanup:
+    vol = cleanup.enter_context(CreateVolume(c, backend='overlay', layers=['ubuntu-jammy']))
+    fifo_path = os.path.join(vol.path, 'stdout')
+    os.mkfifo(fifo_path)
+
+    fd = os.open(fifo_path, os.O_RDWR)
+    try:
+        ct = cleanup.enter_context(RunContainer(c, 'test', stdout_path='/stdout', root=vol.path, command='printf "hello world"'))
+        ExpectEq(os.read(fd, 4096).decode(), 'hello world')
+    finally:
+        os.close(fd)
+
+with contextlib.ExitStack() as cleanup:
+    vol = cleanup.enter_context(CreateVolume(c, backend='overlay', layers=['ubuntu-jammy']))
+    fifo_path = os.path.join(vol.path, 'stdout')
+    os.mkfifo(fifo_path)
+    ExpectException(
+        cleanup.enter_context,
+        porto.exceptions.InvalidValue,
+        RunContainer(c, 'test', stdout_path='/stdout', root=vol.path, command='echo hello world'),
+    )
