@@ -1631,7 +1631,7 @@ TError TCpuSubsystem::SetQuotaAndPeriodV1(const TCgroup &cg, uint64_t quota, uin
     // while changing another paramter can violate child constraint.
     // In this case we temporarily disable quota (by writing -1)
     // and set it again after setting period.
-    bool need_quota_change = true;
+    bool need_quota_change = false;
     auto error = cg.Set(CFS_QUOTA_US, quota_s);
     if (error) {
         if (error.Errno != EINVAL || !quota)
