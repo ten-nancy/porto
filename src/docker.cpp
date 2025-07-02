@@ -891,7 +891,7 @@ TError TDockerImage::Status(const TPath &place) {
     return OK;
 }
 
-const std::string getDefaultTargetArch() {
+std::string getDefaultTargetArch() {
 #ifdef __86_64__
     return "amd64";
 #elif __aarch64__
@@ -901,9 +901,21 @@ const std::string getDefaultTargetArch() {
 #endif
 }
 
+std::string defineHttpProto(const std::string &registry) {
+    for (const auto &insecureRegistry: config().daemon().docker_insecure_registry()) {
+        if (registry == insecureRegistry) {
+            return "http://";
+        }
+    }
+    return "https://";
+}
+
 TError TDockerImage::Pull(const TPath &place) {
     TError error;
-    THttpClient client("https://" + Registry);
+    const auto httpProto = defineHttpProto(Registry);
+    L_DBG("PULL proto {} Registry {} ", httpProto, Registry);
+
+    const THttpClient client(httpProto + Registry);
 
     error = DownloadManifest(client);
     if (error)
@@ -1065,7 +1077,7 @@ TError TDockerImage::Remove(const TPath &place) {
     return OK;
 }
 
-const std::string TDockerImage::GetPlatform() {
+std::string TDockerImage::GetPlatform() {
     if (Platform.length() == 0) {
         return getDefaultTargetArch();
     }

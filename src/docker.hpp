@@ -39,7 +39,7 @@ constexpr const char *DOCKER_AUTH_PATH = "https://auth.docker.io/token";
 constexpr const char *DOCKER_AUTH_SERVICE = "registry.docker.io";
 
 struct THttpClient;
-const std::string getDefaultTargetArch();
+std::string getDefaultTargetArch();
 
 struct TDockerImage {
     std::string Digest;
@@ -191,5 +191,5 @@ private:
 
     TError Save(const TPath &place) const;
     TError Load(const TPath &place);
-    const std::string GetPlatform();
+    std::string GetPlatform();
 };

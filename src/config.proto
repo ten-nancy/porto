@@ -210,6 +210,8 @@ message TConfig {
         optional bool enable_fuse = 32;
         optional uint32 fuse_termination_timeout_s = 33;
         optional uint32 fuse_termination_sleep_ms = 34;
+
+        repeated string docker_insecure_registry = 35;
     }
 
     message TContainerCfg {
