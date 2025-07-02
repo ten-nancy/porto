@@ -299,7 +299,7 @@ TError TDockerImage::DownloadManifest(const THttpClient &client) {
             Manifest = manifests;
         } else if ((mediaType == "application/vnd.docker.distribution.manifest.list.v2+json") ||
                    (mediaType == "application/vnd.oci.image.index.v1+json")) {
-            const std::string targetArch = "amd64";
+            const std::string targetArch = GetPlatform();
             const std::string targetOs = "linux";
             bool found = false;
 
@@ -891,6 +891,16 @@ TError TDockerImage::Status(const TPath &place) {
     return OK;
 }
 
+const std::string getDefaultTargetArch() {
+#ifdef __86_64__
+    return "amd64";
+#elif __aarch64__
+    return "arm64";
+#else
+    return "unknown";
+#endif
+}
+
 TError TDockerImage::Pull(const TPath &place) {
     TError error;
     THttpClient client("https://" + Registry);
@@ -1053,4 +1063,11 @@ TError TDockerImage::Remove(const TPath &place) {
     RemoveLayers(place);
 
     return OK;
+}
+
+const std::string TDockerImage::GetPlatform() {
+    if (Platform.length() == 0) {
+        return getDefaultTargetArch();
+    }
+    return Platform;
 }

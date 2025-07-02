@@ -3022,19 +3022,20 @@ public:
         : ICmd(api, "docker-pull", 1, "[-P <place>] <name>", "Pull docker image from a registry",
                "    -P <place>                             optional path to place\n"
                "    -H <auth_path>                         optional auth path (default https://auth.docker.io/token)\n"
-               "    -S <auth_service>                      optional auth service (default registry.docker.io)\n")
+               "    -S <auth_service>                      optional auth service (default registry.docker.io)\n"
+               "    -T <amd64|aarch64>                     optional target platform")
     {}
 
     std::string place;
     std::string auth_path;
     std::string auth_service;
+    std::string platform;
 
     int Execute(TCommandEnviroment *environment) final override {
-        const auto &args = environment->GetOpts({
-            {'P', true, [&](const char *arg) { place = arg; }},
-            {'H', true, [&](const char *arg) { auth_path = arg; }},
-            {'S', true, [&](const char *arg) { auth_service = arg; }},
-        });
+        const auto &args = environment->GetOpts({{'P', true, [&](const char *arg) { place = arg; }},
+                                                 {'H', true, [&](const char *arg) { auth_path = arg; }},
+                                                 {'S', true, [&](const char *arg) { auth_service = arg; }},
+                                                 {'T', true, [&](const char *arg) { platform = arg; }}});
 
         if (args.size() != 1) {
             PrintUsage();
@@ -3046,7 +3047,8 @@ public:
 
         int ret;
         Porto::DockerImage image;
-        ret = Api->PullDockerImage(image, name, place, token, auth_path, auth_service);
+
+        ret = Api->PullDockerImage(image, name, place, token, auth_path, auth_service, platform);
         if (ret)
             PrintError("Can't pull docker image");
         else

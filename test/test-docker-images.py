@@ -21,6 +21,8 @@ PLACE = ""
 
 STORAGE_PATH = "/place/porto_docker/v1"
 
+TARGET_ARCH = "amd64"
+
 conn = porto.Connection(timeout=120)
 
 ConfigurePortod('docker-images', """
@@ -68,7 +70,7 @@ except:
 print("Check python api")
 check_storage_is_empty()
 
-image = conn.PullDockerImage(IMAGE_NAME, place=PLACE)
+image = conn.PullDockerImage(IMAGE_NAME, place=PLACE, platform=TARGET_ARCH)
 check_image(image, IMAGE_DIGEST, [IMAGE_TAG])
 
 for mask in (None, IMAGE_TAG[:-1]+"***", IMAGE_TAG):
@@ -83,7 +85,7 @@ for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
     check_image(image, IMAGE_DIGEST, [IMAGE_TAG])
 
 for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
-    image = conn.PullDockerImage(IMAGE_NAME, place=PLACE)
+    image = conn.PullDockerImage(IMAGE_NAME, place=PLACE, platform=TARGET_ARCH)
     conn.RemoveDockerImage(name, place=PLACE)
     ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, name, place=PLACE)
 
@@ -92,7 +94,7 @@ for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
 print("Check volumes")
 check_storage_is_empty()
 
-image = conn.PullDockerImage(IMAGE_NAME, place=PLACE)
+image = conn.PullDockerImage(IMAGE_NAME, place=PLACE, platform=TARGET_ARCH)
 volume = conn.CreateVolume(image=IMAGE_NAME, layers=[LAYER_NAME], place=PLACE)
 ExpectEq(volume.GetProperty("image"), IMAGE_NAME)
 Expect(LAYER_NAME not in volume.GetProperty("layers").split(";"))
@@ -106,7 +108,7 @@ volume.Destroy()
 print("Check portoctl commands")
 check_storage_is_empty()
 
-image = subprocess.check_output([portoctl, "docker-pull", "-P", PLACE, IMAGE_NAME]).decode("utf-8")[:-1]
+image = subprocess.check_output([portoctl, "docker-pull", "-P", PLACE, "-T", TARGET_ARCH, IMAGE_NAME]).decode("utf-8")[:-1]
 ExpectEq(image, IMAGE_DIGEST)
 
 for mask in ("", IMAGE_TAG[:-1]+"***", IMAGE_TAG):
@@ -120,7 +122,7 @@ for mask in ("", IMAGE_TAG[:-1]+"***", IMAGE_TAG):
         ExpectEq(IMAGE_TAG, images[3])
 
 for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
-    image = subprocess.check_output([portoctl, "docker-pull", "-P", PLACE, IMAGE_NAME]).decode("utf-8")[:-1]
+    image = subprocess.check_output([portoctl, "docker-pull", "-P", PLACE, "-T", TARGET_ARCH, IMAGE_NAME]).decode("utf-8")[:-1]
     stdout = subprocess.check_output([portoctl, "docker-rmi", "-P", PLACE, name]).decode("utf-8")
     ExpectEq(stdout, "")
     ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, image, place=PLACE)
@@ -130,7 +132,7 @@ for name in (IMAGE_NAME, IMAGE_TAG, IMAGE_DIGEST, IMAGE_DIGEST[:12]):
 print("Check k8s pause image")
 check_storage_is_empty()
 
-image = conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
+image = conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE, platform=TARGET_ARCH)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG])
 
 for name in (K8S_IMAGE_TAG, K8S_IMAGE_DIGEST, K8S_IMAGE_DIGEST[:12]):
@@ -138,7 +140,7 @@ for name in (K8S_IMAGE_TAG, K8S_IMAGE_DIGEST, K8S_IMAGE_DIGEST[:12]):
     check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG])
 
 for name in (K8S_IMAGE_TAG, K8S_IMAGE_DIGEST, K8S_IMAGE_DIGEST[:12]):
-    image = conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
+    image = conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE, platform=TARGET_ARCH)
     conn.RemoveDockerImage(name, place=PLACE)
     ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, name, place=PLACE)
 
@@ -147,15 +149,15 @@ for name in (K8S_IMAGE_TAG, K8S_IMAGE_DIGEST, K8S_IMAGE_DIGEST[:12]):
 print("Check tag adding")
 check_storage_is_empty()
 
-conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
-image = conn.PullDockerImage(K8S_IMAGE_ALT_TAG, place=PLACE)
+conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE, platform=TARGET_ARCH)
+image = conn.PullDockerImage(K8S_IMAGE_ALT_TAG, place=PLACE, platform=TARGET_ARCH)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG, K8S_IMAGE_ALT_TAG])
 
 conn.RemoveDockerImage(K8S_IMAGE_TAG, place=PLACE)
 image = conn.DockerImageStatus(K8S_IMAGE_ALT_TAG, place=PLACE)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_ALT_TAG])
 
-conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
+conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE, platform=TARGET_ARCH)
 image = conn.DockerImageStatus(K8S_IMAGE_TAG, place=PLACE)
 check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG, K8S_IMAGE_ALT_TAG])
 
@@ -170,7 +172,7 @@ check_storage_is_empty()
 print("Check OCI mediatypes")
 check_storage_is_empty()
 
-conn.PullDockerImage(UBUNTU_JAMMY_IMAGE_TAG, place=PLACE)
+conn.PullDockerImage(UBUNTU_JAMMY_IMAGE_TAG, place=PLACE, platform=TARGET_ARCH)
 image = conn.DockerImageStatus(UBUNTU_JAMMY_IMAGE_DIGEST, place=PLACE)
 check_image(image, UBUNTU_JAMMY_IMAGE_DIGEST, [UBUNTU_JAMMY_IMAGE_TAG])
 conn.RemoveDockerImage(UBUNTU_JAMMY_IMAGE_DIGEST, place=PLACE)

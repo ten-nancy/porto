@@ -213,7 +213,7 @@ public:
     int ListDockerImages(std::vector<DockerImage> &images, const std::string &place = "", const std::string &mask = "");
     int PullDockerImage(DockerImage &image, const std::string &name, const std::string &place = "",
                         const std::string &auth_token = "", const std::string &auth_host = "",
-                        const std::string &auth_service = "");
+                        const std::string &auth_service = "", const std::string &platform = "");
     int RemoveDockerImage(const std::string &name, const std::string &place = "");
 
     const rpc::TStorageListResponse *ListStorage(const std::string &place = "", const std::string &mask = "");

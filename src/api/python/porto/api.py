@@ -1335,7 +1335,7 @@ class Connection(object):
 
         return self.rpc.call(request).listDockerImages.images
 
-    def PullDockerImage(self, name, place=None, auth_token=None, auth_path=None, auth_service=None):
+    def PullDockerImage(self, name, place=None, auth_token=None, auth_path=None, auth_service=None, platform=None):
         request = rpc_pb2.TContainerRequest()
         request.pullDockerImage.CopyFrom(rpc_pb2.TDockerImagePullRequest())
         request.pullDockerImage.name = name
@@ -1347,6 +1347,8 @@ class Connection(object):
             request.pullDockerImage.auth_path = auth_path
         if auth_service is not None:
             request.pullDockerImage.auth_service = auth_service
+        if platform is not None:
+            request.pullDockerImage.platform = platform
 
         return self.rpc.call(request).pullDockerImage.image
 

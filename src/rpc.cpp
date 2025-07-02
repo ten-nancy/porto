@@ -263,6 +263,8 @@ void TRequest::Parse() {
             opts.push_back("auth_path=" + Req.pulldockerimage().auth_path());
         if (Req.pulldockerimage().has_auth_service())
             opts.push_back("auth_service=" + Req.pulldockerimage().auth_service());
+        if (Req.pulldockerimage().has_platform())
+            opts.push_back("platform=" + Req.pulldockerimage().platform());
     } else if (Req.has_removedockerimage()) {
         Cmd = "RemoveDockerImage";
         opts = {"name=" + Req.removedockerimage().name()};
@@ -1593,7 +1595,7 @@ noinline TError PullDockerImage(const rpc::TDockerImagePullRequest &req, rpc::TD
     if (error)
         return error;
 
-    TDockerImage image(req.name());
+    TDockerImage image(req.name(), req.platform());
 
     if (req.has_auth_token())
         image.AuthToken = req.auth_token();

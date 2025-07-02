@@ -60,6 +60,18 @@ type TPortoGetResponse struct {
 	ErrorMsg string
 }
 
+type DockerImage struct {
+	Name     string
+	Place    string
+	Platform string
+}
+
+type DockerRegistryCredentials struct {
+	AuthToken   string
+	AuthPath    string
+	AuthService string
+}
+
 type PortoError struct {
 	Code    rpc.EError
 	Message string
@@ -152,7 +164,7 @@ type PortoAPI interface {
 
 	DockerImageStatus(name, place string) (*rpc.TDockerImage, error)
 	ListDockerImages(place, mask string) ([]*rpc.TDockerImage, error)
-	PullDockerImage(name, place, authToken, authPath, authService string) (*rpc.TDockerImage, error)
+	PullDockerImage(image DockerImage, creds DockerRegistryCredentials) (*rpc.TDockerImage, error)
 	RemoveDockerImage(name, place string) error
 }
 
@@ -1056,26 +1068,28 @@ func (c *client) ListDockerImages(place, mask string) ([]*rpc.TDockerImage, erro
 	return rsp.GetListDockerImages().GetImages(), nil
 }
 
-func (c *client) PullDockerImage(name, place, authToken, authPath, authService string) (*rpc.TDockerImage, error) {
+func (c *client) PullDockerImage(image DockerImage, creds DockerRegistryCredentials) (*rpc.TDockerImage, error) {
 	req := &rpc.TContainerRequest{
 		PullDockerImage: &rpc.TDockerImagePullRequest{
-			Name: &name,
+			Name: &image.Name,
 		},
 	}
 
-	if place != "" {
-		req.PullDockerImage.Place = &place
+	if image.Place != "" {
+		req.PullDockerImage.Place = &image.Place
 	}
-	if authToken != "" {
-		req.PullDockerImage.AuthToken = &authToken
+	if creds.AuthToken != "" {
+		req.PullDockerImage.AuthToken = &creds.AuthToken
 	}
-	if authPath != "" {
-		req.PullDockerImage.AuthPath = &authPath
+	if creds.AuthPath != "" {
+		req.PullDockerImage.AuthPath = &creds.AuthPath
 	}
-	if authService != "" {
-		req.PullDockerImage.AuthService = &authService
+	if creds.AuthService != "" {
+		req.PullDockerImage.AuthService = &creds.AuthService
 	}
-
+	if image.Platform != "" {
+		req.PullDockerImage.Platform = &image.Platform
+	}
 	rsp, err := c.Call(req)
 	if err != nil {
 		return nil, err

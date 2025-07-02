@@ -852,7 +852,7 @@ int Connection::ListDockerImages(std::vector<DockerImage> &images, const std::st
 
 int Connection::PullDockerImage(DockerImage &image, const std::string &name, const std::string &place,
                                 const std::string &auth_token, const std::string &auth_path,
-                                const std::string &auth_service) {
+                                const std::string &auth_service, const std::string &platform) {
     auto req = Impl->Req.mutable_pulldockerimage();
     req->set_name(name);
     if (place.size())
@@ -863,6 +863,8 @@ int Connection::PullDockerImage(DockerImage &image, const std::string &name, con
         req->set_auth_path(auth_path);
     if (auth_service.size())
         req->set_auth_service(auth_service);
+    if (platform.size())
+        req->set_platform(platform);
     int ret = Impl->Call();
     if (!ret && Impl->Rsp.pulldockerimage().has_image())
         image = DockerImage(Impl->Rsp.pulldockerimage().image());

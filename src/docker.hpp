@@ -39,6 +39,7 @@ constexpr const char *DOCKER_AUTH_PATH = "https://auth.docker.io/token";
 constexpr const char *DOCKER_AUTH_SERVICE = "registry.docker.io";
 
 struct THttpClient;
+const std::string getDefaultTargetArch();
 
 struct TDockerImage {
     std::string Digest;
@@ -48,6 +49,7 @@ struct TDockerImage {
     std::string Repository;
     std::string Name;
     std::string Tag;
+    std::string Platform;
 
     struct TLayer {
         std::string Digest;
@@ -78,15 +80,17 @@ struct TDockerImage {
     std::vector<std::string> Command;
     std::vector<std::string> Env;
 
-    TDockerImage(const std::string &name)
+    TDockerImage(const std::string &name, const std::string &platform = "")
         : Registry(DOCKER_REGISTRY_HOST),
           Repository("library"),
-          Tag("latest")
+          Tag("latest"),
+          Platform(platform)
     {
         ParseName(name);
         // in case registry is docker.io request will be redirected to docker.com
         if (Registry == "docker.io")
             Registry = DOCKER_REGISTRY_HOST;
+        L_DBG("TDockerImage: Platform {}", Platform);
     }
 
     TError GetAuthToken();
@@ -187,4 +191,5 @@ private:
 
     TError Save(const TPath &place) const;
     TError Load(const TPath &place);
+    const std::string GetPlatform();
 };
