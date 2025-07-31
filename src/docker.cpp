@@ -892,12 +892,12 @@ TError TDockerImage::Status(const TPath &place) {
 }
 
 std::string getDefaultTargetArch() {
-#ifdef __86_64__
+#if defined(__x86_64__)
     return "amd64";
 #elif __aarch64__
     return "arm64";
 #else
-    return "unknown";
+    return "amd64";
 #endif
 }
 

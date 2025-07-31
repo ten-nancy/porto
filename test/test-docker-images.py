@@ -1,5 +1,6 @@
 import porto
 from test_common import *
+import platform
 import subprocess
 import shutil
 
@@ -30,6 +31,10 @@ daemon {
     docker_images_support: true
 }
 """)
+
+def is_x86_64():
+    machine = platform.machine()
+    return machine.lower() in ('x86_64', 'amd64')
 
 def check_storage_of_image(digest, tags):
     for tag in tags:
@@ -144,7 +149,6 @@ for name in (K8S_IMAGE_TAG, K8S_IMAGE_DIGEST, K8S_IMAGE_DIGEST[:12]):
     conn.RemoveDockerImage(name, place=PLACE)
     ExpectException(conn.DockerImageStatus, porto.exceptions.DockerImageNotFound, name, place=PLACE)
 
-
 # tag adding
 print("Check tag adding")
 check_storage_is_empty()
@@ -178,3 +182,11 @@ check_image(image, UBUNTU_JAMMY_IMAGE_DIGEST, [UBUNTU_JAMMY_IMAGE_TAG])
 conn.RemoveDockerImage(UBUNTU_JAMMY_IMAGE_DIGEST, place=PLACE)
 
 check_storage_is_empty()
+
+# check empty target platform
+if is_x86_64():
+    print("Check empty target platform")
+    image = conn.PullDockerImage(K8S_IMAGE_TAG, place=PLACE)
+    check_image(image, K8S_IMAGE_DIGEST, [K8S_IMAGE_TAG])
+    conn.RemoveDockerImage(K8S_IMAGE_TAG, place=PLACE)
+    check_storage_is_empty()
