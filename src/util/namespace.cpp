@@ -22,6 +22,16 @@ TError TNamespaceFd::Open(pid_t pid, std::string type) {
     return Open("/proc/" + std::to_string(pid) + "/" + type);
 }
 
+TError TNamespaceFd::Open(pid_t pid) {
+    Close();
+
+    Fd = PidFDOpen(pid, 0);
+    if (Fd < 0)
+        return TError::System("pidfd_open Cannot open pid {} errno {}", pid, errno);
+    PORTO_ASSERT(Fd > 2);
+    return OK;
+}
+
 void TNamespaceFd::Close() {
     if (Fd >= 0) {
         PORTO_ASSERT(Fd > 2);

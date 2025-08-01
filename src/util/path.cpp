@@ -944,7 +944,7 @@ TError TPath::MoveMount(const TPath &target) const {
 }
 
 TError TPath::Bind(const TPath &source, uint64_t mnt_flags) const {
-    L_ACT("mount bind {} {} {}", Path, source, TMount::FormatFlags(mnt_flags));
+    L_ACT("mount bind {} {} {} {}", Path, source, mnt_flags, TMount::FormatFlags(mnt_flags));
     if (mount(source.c_str(), Path.c_str(), NULL, MS_BIND | (uint32_t)mnt_flags, NULL))
         return TError::System("mount({}, {}, {})", source, Path, TMount::FormatFlags(MS_BIND | mnt_flags));
     return OK;
@@ -1367,7 +1367,7 @@ TError TFile::Open(const TPath &path, int flags) {
 TError TFile::OpenPid(pid_t pid) {
     if (Fd >= 0)
         close(Fd);
-    SetFd = syscall(__NR_pidfd_open, pid, 0);
+    SetFd = PidFDOpen(pid, 0);
     if (Fd < 0)
         return TError::System("pid_fd_open({})", pid);
     return OK;

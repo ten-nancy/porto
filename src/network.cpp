@@ -340,6 +340,47 @@ void InitNamespacedNetSysctls() {
     }
 }
 
+TError CheckPath(const std::string &name, std::shared_ptr<TContainer> parent) {
+    TPath path("/var/run/netns/" + name);
+    if (path.Exists())
+        return OK;
+
+    if (!parent)
+        return TError(EError::InvalidValue, "net namespace not found: " + name);
+
+    TNamespaceFd curNs;
+
+    L_DBG("/proc/thread-self/ns/mnt");
+    TError error = curNs.Open("/proc/thread-self/ns/mnt");
+    if (error)
+        return TError(EError::InvalidValue, "net namespace not found for {} {} ", name, error);
+    // fallback, goto parents mount namespace and find it there
+    TNamespaceFd mntNs;
+    L_DBG("Open mnt namespace for {}", parent->Task.Pid);
+    error = mntNs.Open(parent->Task.Pid, "ns/mnt");
+    if (error)
+        return TError(EError::InvalidValue, "Can't open mount namespace for {} {}", parent->Task.Pid, error);
+
+    error = mntNs.SetNs(CLONE_NEWNS);
+    if (error) {
+        error = TError(EError::InvalidValue, "Failed to SetNS(CLONE_NEWNS) for {} {}", parent->Task.Pid, error);
+        goto back;
+    }
+
+    path = TPath("/run/netns/" + name);
+    if (!path.Exists())
+        error = TError(EError::InvalidValue, "net namespace not found in mnt namespace: " + name);
+
+back:
+    L_DBG("Return back");
+    curNs.SetNs(CLONE_NEWNS);
+    if (error) {
+        L_ERR("/run/netns/ doesn't exists");
+        return error;
+    }
+    return OK;
+}
+
 bool TNetClass::IsDisabled() {
     return !config().network().enable_netcls_classid();
 }
@@ -726,8 +767,28 @@ TError TNetwork::New(TNamespaceFd &netns, std::shared_ptr<TNetwork> &net, pid_t 
 
 TError TNetwork::Open(const TPath &path, TNamespaceFd &netns, std::shared_ptr<TNetwork> &net, bool host) {
     TNamespaceFd curNs;
-    TError error;
+    TError error = curNs.Open("/proc/thread-self/ns/net");
+    if (error) {
+        return error;
+    }
+    L_NET("TNetwork::Open {}", path);
+    error = OpenWithParentNs(path, netns, net, curNs, host);
+    curNs.Close();
+    return error;
+}
 
+/*
+  The clue of the following function:
+  it opens /run/netns/cni-uuid in mount ns we entered it's available, but
+  then it tries to remember its self net ns, by opening /proc/thread-self/ns/net,
+  to enter into net ns of /run/netns/cni-uuid
+  it doesn't exists in mount ns, so need to exit from mount ns, or
+  gives current netns, to be able to exit
+*/
+TError TNetwork::OpenWithParentNs(const TPath &path, TNamespaceFd &netns, std::shared_ptr<TNetwork> &net,
+                                  TNamespaceFd &retns, bool host) {
+    TError error;
+    L_NET("TNetwork::OpenWithParentNs {}", path);
     error = netns.Open(path);
     if (error)
         return error;
@@ -740,12 +801,6 @@ TError TNetwork::Open(const TPath &path, TNamespaceFd &netns, std::shared_ptr<TN
     if (it != NetworksIndex.end()) {
         net = it->second;
         return OK;
-    }
-
-    error = curNs.Open("/proc/thread-self/ns/net");
-    if (error) {
-        netns.Close();
-        return error;
     }
 
     error = netns.SetNs(CLONE_NEWNET);
@@ -763,7 +818,7 @@ TError TNetwork::Open(const TPath &path, TNamespaceFd &netns, std::shared_ptr<TN
     } else
         Register(net, inode);
 
-    TError error2 = curNs.SetNs(CLONE_NEWNET);
+    TError error2 = retns.SetNs(CLONE_NEWNET);
     PORTO_ASSERT(!error2);
 
     return error;
@@ -2784,9 +2839,13 @@ TError TNetwork::StartNetwork(TContainer &ct, TTaskEnv &task) {
     if (env.NetIsolate)
         env.Net->RootClass = &ct.NetClass;
 
-    ct.Net->NetUsers.push_back(&ct);
+    if (ct.Net) {
+        ct.Net->NetUsers.push_back(&ct);
+    } else {
+        L_DBG("ct.Net is empty");
+    }
 
-    if (ct.Controllers & CGROUP_NETCLS) {
+    if (ct.Controllers & CGROUP_NETCLS && ct.Net) {
         ct.Net->InitStat(ct.NetClass);
         if (!TNetClass::IsDisabled())
             HostNetwork->RegisterClass(ct.NetClass);
@@ -2798,7 +2857,7 @@ TError TNetwork::StartNetwork(TContainer &ct, TTaskEnv &task) {
 
     task.NetFd = std::move(env.NetNs);
 
-    if (ct.Controllers & CGROUP_NETCLS) {
+    if (ct.Controllers & CGROUP_NETCLS && ct.Net) {
         error = ct.Net->SetupClasses(ct.NetClass);
         if (error)
             return error;
@@ -3033,9 +3092,10 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
             std::string name = StringTrim(settings[1]);
             if (name.find("..") != std::string::npos)
                 return TError(EError::Permission, "'..' not allowed in net namespace path");
-            TPath path("/var/run/netns/" + name);
-            if (!path.Exists())
-                return TError(EError::InvalidValue, "net namespace not found: " + name);
+            error = CheckPath(name, Parent);
+            if (error)
+                return error;
+
             L3Only = false;
             NetNsName = name;
         } else if (type == "steal" || type == "host" /* legacy */) {
@@ -3986,17 +4046,24 @@ TError TNetEnv::OpenNetwork(TContainer &ct) {
     }
 
     if (NetNsName != "") {
-        error = TNetwork::Open("/var/run/netns/" + NetNsName, NetNs, Net);
-        if (Net && Net->NetName.empty())
-            Net->NetName = NetNsName;
-
-        auto lock = Net->LockNet();
-
-        error = ApplySysctl();
+        error = InitNetwork();
         if (error) {
-            lock.unlock();
-            Net->Destroy();
-            return error;
+            return TError(error, "Failed to open network in mnt ns NetNsName:{} NetNs:{} Net:{}", NetNsName,
+                          NetNs.GetFd(), Net);
+        }
+
+        if (Net) {
+            if (Net->NetName.empty())
+                Net->NetName = NetNsName;
+
+            auto lock = Net->LockNet();
+
+            error = ApplySysctl();
+            if (error) {
+                lock.unlock();
+                Net->Destroy();
+                return error;
+            }
         }
 
         return OK;
@@ -4020,6 +4087,60 @@ TError TNetEnv::OpenNetwork(TContainer &ct) {
     }
 
     return TError("Unknown network configuration");
+}
+
+TError TNetEnv::InitNetwork() {
+    TError error = TNetwork::Open("/var/run/netns/" + NetNsName, NetNs, Net);
+    if (!error) {
+        return OK;
+    }
+    L_DBG("Failed to open network ns NetNsName:{} NetNs:{} Net:{} error: {}", NetNsName, NetNs.GetFd(), Net, error);
+    // fallback to parent
+    auto p = Parent.get();
+    if (!p) {
+        L_ERR("No parent, unable to open netns in Parent");
+        return error;
+    }
+    if (!p->Task.Pid) {
+        L_ERR("No pid in Task, unable to open netns in Parent");
+        return error;
+    }
+    TNamespaceFd curNs;
+    pid_t selfPid = GetPid();
+    L_DBG("Open pidfd for self");
+    error = curNs.Open(selfPid);
+    if (error) {
+        return TError(error, "Failed to open self pid");
+    }
+
+    TNamespaceFd mntNs;
+    L_DBG("Open pidfd for {}", Parent->Task.Pid);
+    error = mntNs.Open(Parent->Task.Pid);
+    if (error) {
+        return TError(error, "Failed to open fd {}", Parent->Task.Pid);
+    }
+    error = mntNs.SetNs(CLONE_NEWNS | CLONE_NEWNET);
+    if (error)
+        return TError(error, "Failed to setns {}", Parent->Task.Pid);
+
+    TPath path("/run/netns/" + NetNsName);
+
+    if (!path.Exists())
+        error = TError(EError::InvalidValue, "even in mnt ns net namespace not found: " + NetNsName);
+
+    if (error)
+        goto err;
+
+    error = TNetwork::OpenWithParentNs("/run/netns/" + NetNsName, NetNs, Net, curNs);
+
+    if (error)
+        L_ERR("Failed to open network ns NetNsName:{} NetNs:{} Net:{} error: {}", NetNsName, NetNs.GetFd(), Net, error);
+
+err:
+    L_DBG("return back");
+    TError error2 = curNs.SetNs(CLONE_NEWNS | CLONE_NEWNET);
+    PORTO_ASSERT(!error2);
+    return error;
 }
 
 extern TNetLimitSoft NetLimitSoft;

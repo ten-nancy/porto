@@ -108,6 +108,8 @@ class TVolume: public std::enable_shared_from_this<TVolume>, public TNonCopyable
     TError OpenBackend();
     void CacheQuotaFile();
 
+    TError MountLink(std::shared_ptr<TVolumeLink> link);
+
 public:
     std::unique_ptr<TVolumeBackend> Backend;
     TPath Path;
@@ -214,8 +216,6 @@ public:
     TError Restore(const TKeyValue &node);
 
     static void RestoreAll(void);
-
-    TError MountLink(std::shared_ptr<TVolumeLink> link);
 
     TError UmountLink(std::shared_ptr<TVolumeLink> link, std::list<std::shared_ptr<TVolume>> &unlinked,
                       bool strict = false);

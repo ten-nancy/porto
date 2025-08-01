@@ -25,6 +25,7 @@ void TaintPostFork(std::string message);
 pid_t GetPid();
 pid_t GetPPid();
 pid_t GetTid();
+int PidFDOpen(pid_t pid, unsigned int flags);
 TError GetTaskChildrens(pid_t pid, std::vector<pid_t> &childrens);
 void PrintProc(const std::string &knob, pid_t pid, bool debug = true);
 inline void PrintStack(pid_t pid, bool debug = true) {

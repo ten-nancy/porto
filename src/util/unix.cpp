@@ -36,6 +36,13 @@ extern "C" {
 #include <unistd.h>
 }
 
+#ifndef SYS_pidfd_open
+#ifndef __NR_pidfd_open
+#define __NR_pidfd_open 434
+#endif
+#define SYS_pidfd_open __NR_pidfd_open
+#endif  // SYS_pidfd_open
+
 #ifndef PR_SET_DUMPABLE_INIT_NS
 #define PR_SET_DUMPABLE_INIT_NS 0x59410002
 #endif
@@ -66,6 +73,10 @@ pid_t GetPPid() {
 
 pid_t GetTid() {
     return syscall(SYS_gettid);
+}
+
+int PidFDOpen(pid_t pid, unsigned int flags) {
+    return syscall(SYS_pidfd_open, pid, flags);
 }
 
 TError GetTaskChildrens(pid_t pid, std::vector<pid_t> &childrens) {
