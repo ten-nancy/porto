@@ -36,9 +36,10 @@ protected:
 public:
     // constructors and destructor
     TCgroup() = delete;
-    TCgroup(const TSubsystem *subsystem, const std::string &name)
+    TCgroup(const TSubsystem *subsystem, const std::string &name, bool hasLeaf)
         : Subsystem(subsystem),
-          Name(name)
+          Name(name),
+          HasLeaf(hasLeaf)
     {}
     TCgroup(const TSubsystem *subsystem, std::string &&name)
         : Subsystem(subsystem),
@@ -67,6 +68,7 @@ public:
     bool IsCgroup2() const;
     bool IsSecondary() const;
     bool IsSubsystem(uint64_t kind) const;
+    bool HasLeaf;
 
     // getters
     std::string Type() const;
@@ -161,9 +163,9 @@ public:
     }
 
     std::unique_ptr<const TCgroup> RootCgroup() const;
-    std::unique_ptr<const TCgroup> Cgroup(const std::string &name) const;
+    std::unique_ptr<const TCgroup> Cgroup(const std::string &name, bool hasLeaf) const;
 
-    TError TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cg) const;
+    TError TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cg, bool hasLeaf) const;
     bool IsBound(const TCgroup &cg) const;
 
     static std::string Format(uint64_t controllers) {

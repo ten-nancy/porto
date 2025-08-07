@@ -240,6 +240,8 @@ Porto provides API for label lookup, atomic compare-and-set, atomic increment an
     - *false*         - use parent namespace (default)
     - *true*          - create new namespace
 
+* **children_allowed** - allow nested containers, default: *true*
+
 * **cgroupfs** - mount cgroup fs in container:
     - *none* - (default) do not mount
     - *ro* - mount read only

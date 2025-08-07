@@ -100,7 +100,7 @@ const TSubsystem *TCgroup::GetSubsystem() const {
 }
 
 std::unique_ptr<const TCgroup> TCgroup::GetUniquePtr() const {
-    return HasSubsystem() ? GetSubsystem()->Cgroup(GetName()) : nullptr;
+    return HasSubsystem() ? GetSubsystem()->Cgroup(GetName(), HasLeaf) : nullptr;
 }
 
 // TCgroup processes
@@ -266,8 +266,8 @@ public:
     // constructors and destructor
     // TCgroup1() = delete;
     TCgroup1() = default;
-    TCgroup1(const TSubsystem *subsystem, const std::string &name)
-        : TCgroup(subsystem, name)
+    TCgroup1(const TSubsystem *subsystem, const std::string &name, bool hasLeaf)
+        : TCgroup(subsystem, name, hasLeaf)
     {}
     ~TCgroup1() = default;
 
@@ -284,7 +284,7 @@ public:
     TError GetCount(uint64_t &count, bool thread = false) const override;
 
     std::unique_ptr<const TCgroup> Leaf() const override {
-        return std::unique_ptr<const TCgroup>(new TCgroup1(Subsystem, Name));
+        return std::unique_ptr<const TCgroup>(new TCgroup1(Subsystem, Name, HasLeaf));
     }
 };
 
@@ -558,13 +558,13 @@ TError TCgroup1::GetCount(uint64_t &count, bool thread) const {
 class TCgroup2: public TCgroup {
     // cgroup2 specified
     TPath LeafPath() const;
-    static std::string LeafKnob(const std::string &knob);
+    static std::string LeafKnob(const std::string &knob, bool hasLeaf);
 
 public:
     // constructors and destructor
     TCgroup2() = delete;
-    TCgroup2(const TSubsystem *subsystem, const std::string &name)
-        : TCgroup(subsystem, name)
+    TCgroup2(const TSubsystem *subsystem, const std::string &name, bool hasLeaf)
+        : TCgroup(subsystem, name, hasLeaf)
     {}
     ~TCgroup2() = default;
 
@@ -582,7 +582,10 @@ public:
     TError GetCount(uint64_t &count, bool thread = false) const override;
 
     std::unique_ptr<const TCgroup> Leaf() const override {
-        return std::unique_ptr<const TCgroup>(new TCgroup2(Subsystem, Name + "/leaf"));
+        if (!HasLeaf)
+            return std::unique_ptr<const TCgroup>(new TCgroup2(Subsystem, Name, HasLeaf));
+
+        return std::unique_ptr<const TCgroup>(new TCgroup2(Subsystem, Name + "/leaf", HasLeaf));
     }
 
     // controllers
@@ -606,10 +609,16 @@ public:
 // TCgroup2 cgroup2 specified
 
 TPath TCgroup2::LeafPath() const {
+    if (!HasLeaf)
+        return Path();
+
     return Path() / LEAF;
 }
 
-std::string TCgroup2::LeafKnob(const std::string &knob) {
+std::string TCgroup2::LeafKnob(const std::string &knob, bool hasLeaf) {
+    if (!hasLeaf)
+        return knob;
+
     return fmt::format("{}/{}", LEAF, knob);
 }
 
@@ -629,23 +638,27 @@ TError TCgroup2::Create() const {
     if (error)
         return TError(error, "Cannot create cgroup {}", *this);
 
-    L_CG("Create leaf cgroup {}", LeafPath());
-    error = LeafPath().Mkdir(0755);
-    if (error) {
-        (void)Path().Rmdir();
-        return TError(error, "Cannot create leaf of cgroup {}", *this);
+    if (HasLeaf) {
+        L_CG("Create leaf cgroup {}", LeafPath());
+        error = LeafPath().Mkdir(0755);
+        if (error) {
+            (void)Path().Rmdir();
+            return TError(error, "Cannot create leaf of cgroup {}", *this);
+        }
     }
 
     error = InitializeControllers();
     if (error) {
-        (void)LeafPath().Rmdir();
+        if (HasLeaf)
+            (void)LeafPath().Rmdir();
         (void)Path().Rmdir();
         return TError(error, "Cannot initialize controllers of cgroup {}", *this);
     }
 
     error = InitializeSubsystems();
     if (error) {
-        (void)LeafPath().Rmdir();
+        if (HasLeaf)
+            (void)LeafPath().Rmdir();
         (void)Path().Rmdir();
         return TError(error, "Cannot initialize cgroup {}", *this);
     }
@@ -661,7 +674,6 @@ TError TCgroup2::Remove() const {
         return OK;
 
     L_CG("Remove cgroup {}", *this);
-
     error = LeafPath().Rmdir();
 
     std::vector<pid_t> startTasks;
@@ -704,9 +716,11 @@ TError TCgroup2::Remove() const {
         }
     }
 
-    error = Path().Rmdir();
-    if (error && error.Errno != ENOENT)
-        L_WRN("Cannot remove cgroup {}: {}", *this, error);
+    if (HasLeaf) {
+        error = Path().Rmdir();
+        if (error && error.Errno != ENOENT)
+            L_WRN("Cannot remove cgroup {}: {}", *this, error);
+    }
 
     return OK;
 }
@@ -717,16 +731,18 @@ TError TCgroup2::Attach(pid_t pid, bool thread) const {
     L_CG("Attach {} {} to {}", thread ? "thread" : "process", pid, *this);
     TError error;
 
-    // TODO(kndrvt): remove this backward compatibility later
-    TPath leafPath = LeafPath();
-    if (!leafPath.PathExists()) {
-        L_CG("Create leaf cgroup {}", leafPath);
-        error = leafPath.Mkdir(0755);
-        if (error)
-            L_ERR("Cannot create leaf of cgroup {}", *this);
+    if (HasLeaf) {
+        // TODO(kndrvt): remove this backward compatibility later
+        TPath leafPath = LeafPath();
+        if (!leafPath.PathExists()) {
+            L_CG("Create leaf cgroup {}", leafPath);
+            error = leafPath.Mkdir(0755);
+            if (error)
+                L_ERR("Cannot create leaf of cgroup {}", *this);
+        }
     }
 
-    error = SetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS), {pid});
+    error = SetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS, HasLeaf), {pid});
     if (error)
         L_ERR("Cannot attach {} {} to {} : {}", thread ? "thread" : "process", pid, *this, error);
 
@@ -736,14 +752,16 @@ TError TCgroup2::Attach(pid_t pid, bool thread) const {
 TError TCgroup2::AttachAll(const TCgroup &cg, bool thread) const {
     L_CG("Attach all processes from {} to {}", cg, *this);
 
-    // TODO(kndrvt): remove this backward compatibility later
     TError error;
-    TPath leafPath = LeafPath();
-    if (!leafPath.PathExists()) {
-        L_CG("Create leaf cgroup {}", leafPath);
-        error = leafPath.Mkdir(0755);
-        if (error)
-            L_ERR("Cannot create leaf of cgroup {}", *this);
+    if (HasLeaf) {
+        // TODO(kndrvt): remove this backward compatibility later
+        TPath leafPath = LeafPath();
+        if (!leafPath.PathExists()) {
+            L_CG("Create leaf cgroup {}", leafPath);
+            error = leafPath.Mkdir(0755);
+            if (error)
+                L_ERR("Cannot create leaf of cgroup {}", *this);
+        }
     }
 
     std::vector<pid_t> pids, prev;
@@ -761,7 +779,7 @@ TError TCgroup2::AttachAll(const TCgroup &cg, bool thread) const {
 
         retry = false;
         for (auto pid: pids) {
-            error = SetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS), {pid});
+            error = SetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS, HasLeaf), {pid});
             if (error && error.Errno != ESRCH)
                 return error;
             retry = retry || std::find(prev.begin(), prev.end(), pid) == prev.end();
@@ -847,11 +865,11 @@ TError TCgroup2::KillAll(int signal, bool) const {
 }
 
 TError TCgroup2::GetProcesses(std::vector<pid_t> &pids) const {
-    return GetPids(LeafKnob(CGROUP_PROCS), pids);
+    return GetPids(LeafKnob(CGROUP_PROCS, HasLeaf), pids);
 }
 
 TError TCgroup2::GetTasks(std::vector<pid_t> &pids) const {
-    return GetPids(LeafKnob(CGROUP_THEADS), pids);
+    return GetPids(LeafKnob(CGROUP_THEADS, HasLeaf), pids);
 }
 
 TError TCgroup2::GetCount(uint64_t &count, bool thread) const {
@@ -861,7 +879,7 @@ TError TCgroup2::GetCount(uint64_t &count, bool thread) const {
     TError error;
     std::vector<pid_t> pids;
 
-    error = GetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS), pids);
+    error = GetPids(LeafKnob(thread ? CGROUP_THEADS : CGROUP_PROCS, HasLeaf), pids);
     if (error)
         return error;
 
@@ -976,19 +994,19 @@ TError TCgroup2::InitializeSubsystems() const {
 }
 
 std::unique_ptr<const TCgroup> TSubsystem::RootCgroup() const {
-    return Cgroup(IsCgroup2() ? "/porto" : "/");
+    return Cgroup(IsCgroup2() ? "/porto" : "/", false);
 }
 
-std::unique_ptr<const TCgroup> TSubsystem::Cgroup(const std::string &name) const {
+std::unique_ptr<const TCgroup> TSubsystem::Cgroup(const std::string &name, bool hasLeaf) const {
     PORTO_ASSERT(name[0] == '/');
     if (CgroupDriver.UseCgroup2() && IsCgroup2())
-        return std::unique_ptr<const TCgroup2>(new TCgroup2(this, name));
+        return std::unique_ptr<const TCgroup2>(new TCgroup2(this, name, hasLeaf));
     else
-        return std::unique_ptr<const TCgroup1>(new TCgroup1(this, name));
+        return std::unique_ptr<const TCgroup1>(new TCgroup1(this, name, hasLeaf));
 }
 
 // TODO(kndrvt): remove leaf if exists
-TError TSubsystem::TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cgroup) const {
+TError TSubsystem::TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cgroup, bool hasLeaf) const {
     std::vector<std::string> lines;
     auto cg_file = TPath("/proc/" + std::to_string(pid) + "/cgroup");
     auto type = CgroupDriver.UseCgroup2() && IsCgroup2() ? "" : TestOption();
@@ -1020,7 +1038,7 @@ TError TSubsystem::TaskCgroup(pid_t pid, std::unique_ptr<const TCgroup> &cgroup)
                 if (type == "" && cgroup_path.BaseName() == LEAF)
                     cgroup_path = cgroup_path.DirName();
                 found = true;
-                cgroup = Cgroup(cgroup_path.ToString());
+                cgroup = Cgroup(cgroup_path.ToString(), hasLeaf);
             }
         }
     }
@@ -1211,7 +1229,7 @@ TError TMemorySubsystem::GetAnonUsage(const TCgroup &cg, uint64_t &usage) const 
 }
 
 bool TMemorySubsystem::SupportAnonOnly() const {
-    return Cgroup(PORTO_DAEMON_CGROUP)->Has(ANON_ONLY);
+    return Cgroup(PORTO_DAEMON_CGROUP, false)->Has(ANON_ONLY);
 }
 
 TError TMemorySubsystem::SetAnonOnly(const TCgroup &cg, bool val) const {
@@ -2294,7 +2312,7 @@ TError TPidsSubsystem::SetLimit(const TCgroup &cg, uint64_t limit) const {
 // Systemd
 
 TError TSystemdSubsystem::InitializeSubsystem() {
-    TError error = TaskCgroup(getpid(), PortoService);
+    TError error = TaskCgroup(getpid(), PortoService, false);
     if (!error)
         L_CG("porto service: {}", *PortoService);
     return error;
@@ -2470,7 +2488,7 @@ TError TCgroupDriver::InitializeCgroups() {
     TPath("/usr/sbin/cgclear").Chmod(0);
 
     {
-        auto cg = FreezerSubsystem->Cgroup(PORTO_CGROUP_PREFIX);
+        auto cg = FreezerSubsystem->Cgroup(PORTO_CGROUP_PREFIX, false);
         if (!cg->Exists()) {
             error = CreateCgroup(*cg);
             if (error)
@@ -2479,7 +2497,7 @@ TError TCgroupDriver::InitializeCgroups() {
     }
 
     if (Cgroup2Subsystem->Supported) {
-        auto cg = Cgroup2Subsystem->Cgroup(PORTO_CGROUP_PREFIX);
+        auto cg = Cgroup2Subsystem->Cgroup(PORTO_CGROUP_PREFIX, false);
         if (!cg->Exists()) {
             error = CreateCgroup(*cg);
             if (error)
@@ -2504,7 +2522,7 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
         if (!hy)
             continue;
 
-        auto cg = hy->Cgroup(PORTO_DAEMON_CGROUP);
+        auto cg = hy->Cgroup(PORTO_DAEMON_CGROUP, false);
         error = RecreateCgroup(*cg);
         if (error)
             return error;
@@ -2520,12 +2538,12 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
             return error;
     }
 
-    auto cg = MemorySubsystem->Cgroup(PORTO_DAEMON_CGROUP);
+    auto cg = MemorySubsystem->Cgroup(PORTO_DAEMON_CGROUP, false);
     TError error = MemorySubsystem->SetLimit(*cg, config().daemon().memory_limit());
     if (error)
         return error;
 
-    cg = MemorySubsystem->Cgroup(PORTO_HELPERS_CGROUP);
+    cg = MemorySubsystem->Cgroup(PORTO_HELPERS_CGROUP, false);
     error = RecreateCgroup(*cg);
     if (error)
         return error;
@@ -2673,14 +2691,15 @@ std::unique_ptr<const TCgroup> TCgroupDriver::GetContainerCgroup(const TContaine
 
     if (subsystem->Controllers & (CGROUP_FREEZER | CGROUP2)) {
         if (container.JobMode)
-            return subsystem->Cgroup(std::string(PORTO_CGROUP_PREFIX) + "/" + container.Parent->Name);
-        return subsystem->Cgroup(std::string(PORTO_CGROUP_PREFIX) + "/" + container.Name);
+            return subsystem->Cgroup(std::string(PORTO_CGROUP_PREFIX) + "/" + container.Parent->Name,
+                                     container.ChildrenAllowed);
+        return subsystem->Cgroup(std::string(PORTO_CGROUP_PREFIX) + "/" + container.Name, container.ChildrenAllowed);
     }
 
     if (subsystem->Controllers & CGROUP_SYSTEMD) {
         if (container.Controllers & CGROUP_SYSTEMD)
             return subsystem->Cgroup(std::string(PORTO_CGROUP_PREFIX) + "%" +
-                                     StringReplaceAll(container.Name, "/", "%"));
+                                         StringReplaceAll(container.Name, "/", "%"), container.ChildrenAllowed);
 
         return SystemdSubsystem->PortoService->GetUniquePtr();
     }
@@ -2698,7 +2717,7 @@ std::unique_ptr<const TCgroup> TCgroupDriver::GetContainerCgroup(const TContaine
     if (cg.empty())
         return subsystem->RootCgroup();
 
-    return subsystem->Cgroup(std::string(PORTO_CGROUP_PREFIX) + "%" + cg);
+    return subsystem->Cgroup(std::string(PORTO_CGROUP_PREFIX) + "%" + cg, container.ChildrenAllowed);
 }
 
 std::list<std::unique_ptr<const TCgroup>> TCgroupDriver::GetContainerCgroups(const TContainer &container) const {
@@ -2778,7 +2797,7 @@ TError TCgroupDriver::RecreateCgroup(const TCgroup &cg) const {
         return cg.Create();
 
     TError error;
-    auto tmpcg = cg.GetSubsystem()->Cgroup(cg.GetName() + "_tmp");
+    auto tmpcg = cg.GetSubsystem()->Cgroup(cg.GetName() + "_tmp", cg.HasLeaf);
     auto cleanup = [&](const TError &error) -> TError {
         (void)cg.AttachAll(*tmpcg);
         (void)tmpcg->KillAll(SIGKILL);
@@ -2910,7 +2929,7 @@ TError TCgroupDriver::CgroupSubtree(const TCgroup &cg, std::list<std::unique_ptr
         if (StringEndsWith(name, LEAF) && cg.IsCgroup2())
             continue;
 
-        cgroups.push_back(cg.GetSubsystem()->Cgroup(name));
+        cgroups.push_back(cg.GetSubsystem()->Cgroup(name, cg.HasLeaf));
     }
 
     return OK;

@@ -188,10 +188,11 @@ TError TContainer::FindTaskContainer(pid_t pid, std::shared_ptr<TContainer> &ct,
     TError error;
     std::unique_ptr<const TCgroup> cg;
 
+    auto childrenAllowed = CL ? CL->ClientContainer->ChildrenAllowed : true;
     if (CgroupDriver.Cgroup2Subsystem->IsDisabled())
-        error = CgroupDriver.FreezerSubsystem->TaskCgroup(pid, cg);
+        error = CgroupDriver.FreezerSubsystem->TaskCgroup(pid, cg, childrenAllowed);
     else
-        error = CgroupDriver.Cgroup2Subsystem->TaskCgroup(pid, cg);
+        error = CgroupDriver.Cgroup2Subsystem->TaskCgroup(pid, cg, childrenAllowed);
     if (error)
         return error;
 
@@ -733,7 +734,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
             auto cpuCg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpuSubsystem.get());
             std::unique_ptr<const TCgroup> cg;
 
-            if (!CgroupDriver.CpuSubsystem->TaskCgroup(ct->Task.Pid, cg) && *cg != *cpuCg) {
+            if (!CgroupDriver.CpuSubsystem->TaskCgroup(ct->Task.Pid, cg, ct->ChildrenAllowed) && *cg != *cpuCg) {
                 auto freezerCg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.FreezerSubsystem.get());
                 if (!CgroupDriver.CpuSubsystem->HasRtGroup) {
                     std::vector<pid_t> prev, pids;
@@ -766,7 +767,7 @@ TError TContainer::Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct)
         /* Disable memory guarantee in old cgroup */
         if (ct->MemGuarantee) {
             std::unique_ptr<const TCgroup> memCg;
-            if (!CgroupDriver.MemorySubsystem->TaskCgroup(ct->Task.Pid, memCg) &&
+            if (!CgroupDriver.MemorySubsystem->TaskCgroup(ct->Task.Pid, memCg, ct->ChildrenAllowed) &&
                 *memCg != *CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get()))
                 CgroupDriver.MemorySubsystem->SetGuarantee(*memCg, 0);
         }
@@ -4473,7 +4474,7 @@ void TContainer::SyncState() {
     } else if (WaitTask.IsZombie()) {
         L("Task is zombie");
         Task.Pid = 0;
-    } else if (CgroupDriver.FreezerSubsystem->TaskCgroup(WaitTask.Pid, taskCg)) {
+    } else if (CgroupDriver.FreezerSubsystem->TaskCgroup(WaitTask.Pid, taskCg, ChildrenAllowed)) {
         L("Cannot check freezer");
         Reap(false);
     } else if (*taskCg != *freezerCg) {

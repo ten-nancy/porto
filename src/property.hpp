@@ -197,6 +197,7 @@ constexpr const char *P_DEATH_TIME = "death_time";
 constexpr const char *P_CHANGE_TIME = "change_time";
 constexpr const char *P_PORTO_STAT = "porto_stat";
 constexpr const char *P_PORTO_CPU_JAIL_STATE = "porto_cpu_jail_state";
+constexpr const char *P_CHILDREN_ALLOWED = "children_allowed";
 constexpr const char *P_CGROUPS = "cgroups";
 constexpr const char *P_PROCESS_COUNT = "process_count";
 constexpr const char *P_THREAD_COUNT = "thread_count";
@@ -311,6 +312,7 @@ enum class EProperty {
     SECCOMP,
     SECCOMP_NAME,
     SESSION_INFO,
+    CHILDREN_ALLOWED,
     NR_PROPERTIES,
 };
 

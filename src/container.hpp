@@ -146,6 +146,7 @@ public:
     const std::string FirstName;
 
     EContainerState State = EContainerState::Stopped;
+    bool ChildrenAllowed = true;
     std::atomic<int> RunningChildren;
     std::atomic<int> StartingChildren;
 

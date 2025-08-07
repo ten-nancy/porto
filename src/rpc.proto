@@ -697,6 +697,8 @@ message TContainerSpec {
     optional seccomp.TProfile seccomp      = 86;
     optional string           seccomp_name = 87;
     optional string           session_info = 88;
+
+    optional bool children_allowed = 92;
 }
 
 message TContainer {

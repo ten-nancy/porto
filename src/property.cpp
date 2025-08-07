@@ -7127,14 +7127,14 @@ void TPortoStat::Populate(TUintMap &m) const {
     }
 
     uint64_t usage = 0;
-    auto cg = CgroupDriver.MemorySubsystem->Cgroup(PORTO_DAEMON_CGROUP);
+    auto cg = CgroupDriver.MemorySubsystem->Cgroup(PORTO_DAEMON_CGROUP, CT->ChildrenAllowed);
     TError error = CgroupDriver.MemorySubsystem->Usage(*cg, usage);
     if (error)
         L_ERR("Can't get memory usage of portod");
     m["memory_usage_mb"] = usage / 1024 / 1024;
 
     usage = 0;
-    cg = CgroupDriver.CpuacctSubsystem->Cgroup(PORTO_DAEMON_CGROUP);
+    cg = CgroupDriver.CpuacctSubsystem->Cgroup(PORTO_DAEMON_CGROUP, CT->ChildrenAllowed);
     error = CgroupDriver.CpuacctSubsystem->Usage(*cg, usage);
     if (error)
         L_ERR("Can't get cpu usage of portod");
@@ -7387,6 +7387,48 @@ public:
         }
     }
 } static Taint;
+
+class TChildrenAllowed: public TProperty {
+public:
+    TChildrenAllowed()
+        : TProperty(P_CHILDREN_ALLOWED, EProperty::CHILDREN_ALLOWED, "Allow nested containers")
+    {}
+
+    TError Reset() override {
+        return Set(true);
+    }
+
+    TError Get(std::string &value) const override {
+        value = BoolToString(CT->ChildrenAllowed);
+        return OK;
+    }
+
+    TError Set(bool value) {
+        CT->ChildrenAllowed = value;
+        CT->SetProp(EProperty::CHILDREN_ALLOWED);
+        return OK;
+    }
+
+    TError Set(const std::string &value) override {
+        bool val;
+        TError error = StringToBool(value, val);
+        if (error)
+            return error;
+        return Set(val);
+    }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        spec.set_children_allowed(CT->ChildrenAllowed);
+    }
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_children_allowed();
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        return Set(spec.children_allowed());
+    }
+} static ChildrenAllowed;
 
 void InitContainerProperties(void) {
     for (auto prop: ContainerProperties)
