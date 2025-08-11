@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_set>
 
 #include "config.hpp"
@@ -2321,7 +2322,12 @@ TError TSystemdSubsystem::InitializeSubsystem() {
 // Cgroup Driver
 
 TError TCgroupDriver::InitializeCgroups() {
-    TPath root("/sys/fs/cgroup");
+    std::string cgroup_root = "/sys/fs/cgroup";
+    if (config().daemon().has_cgroupfs_root_path()) {
+        cgroup_root = config().daemon().cgroupfs_root_path();
+    }
+    L_DBG("Initializing cgroup driver with cgroupfs root: {}", cgroup_root);
+    TPath root(cgroup_root);
     std::vector<TMount> mounts;
     TMount mount;
     TError error;

@@ -212,6 +212,7 @@ message TConfig {
         optional uint32 fuse_termination_sleep_ms = 34;
 
         repeated string docker_insecure_registry = 35;
+        optional string cgroupfs_root_path = 36;
     }
 
     message TContainerCfg {

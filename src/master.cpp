@@ -47,15 +47,6 @@ bool CheckPortoAlive() {
     return !conn.GetVersion(ver, rev);
 }
 
-static bool RunningInContainer() {
-    if (getpid() == 1)
-        return getenv("container") != nullptr;
-    std::string env;
-    if (TPath("/proc/1/environ").ReadAll(env))
-        return false;
-    return StringStartsWith(env, "container=") || env.find(std::string("\0container=", 11)) != std::string::npos;
-}
-
 bool SanityCheck() {
     if (getuid() != 0) {
         std::cerr << "Need root privileges to start" << std::endl;
@@ -64,11 +55,6 @@ bool SanityCheck() {
 
     if (!MasterPidFile.Read() && MasterPidFile.Pid != getpid() && CheckPortoAlive()) {
         std::cerr << "Another instance of portod is running!" << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    if (RunningInContainer()) {
-        std::cerr << "Cannot start in container" << std::endl;
         return EXIT_FAILURE;
     }
 
