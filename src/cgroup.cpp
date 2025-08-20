@@ -1826,33 +1826,13 @@ TError TCpusetSubsystem::SetCpus(const TCgroup &cg, const std::string &cpus) con
     TPath copy;
     std::string value;
 
-    if (cpus == "") {
-        if (IsCgroup2())
-            copy = TPath("/sys/devices/system/cpu/present");
-        else
-            // cgroup v1 does not support overcommit, so dirty hack is used
-            copy = cg.Path().DirName() / CPUS;
-    }
-
-    if (cpus == "all")
-        copy = TPath("/sys/devices/system/cpu/present");
-
-    if (StringStartsWith(cpus, "node ")) {
-        int id;
-        error = StringToInt(cpus.substr(5), id);
-        if (error)
-            return error;
-
-        copy = TPath("/sys/devices/system/node/node" + std::to_string(id) + "/cpulist");
-    }
-
-    if (!copy.IsEmpty()) {
-        error = copy.ReadAll(value);
+    if (cpus.empty()) {
+        auto parent = cg.Path().DirName() / (IsCgroup2() ? CPUS_EFFECTIVE : CPUS);
+        error = parent.ReadAll(value);
         if (error)
             return error;
 
         value = StringTrim(value);
-
     } else
         value = cpus;
 

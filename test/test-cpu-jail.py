@@ -262,6 +262,12 @@ try:
     b.Destroy()
     a.Destroy()
 
+    a = conn.Run('a', cpu_set='jail 2')
+    b = conn.Run('a/b', controllers='cpuset')
+
+    a.SetProperty('cpu_set', 'jail 1')
+    a.Destroy()
+
 finally:
     for ct in [c, b, a]:
         try:
