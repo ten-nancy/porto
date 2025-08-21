@@ -305,7 +305,7 @@ std::string GetCgKnob(const std::string &subsys, const std::string &name, const 
 }
 
 bool HaveCgKnob(const std::string &subsys, const std::string &knob) {
-    return TPath(CgRoot(subsys, "") + knob).Exists();
+    return TPath(CgRoot(subsys, "/") + knob).Exists();
 }
 
 int GetVmRss(const std::string &pid) {
@@ -593,7 +593,7 @@ void TestDaemon(Porto::Connection &api) {
 
 static bool HaveMaxRss() {
     std::vector<std::string> lines;
-    TError error = TPath(CgRoot("memory", "") + "memory.stat").ReadLines(lines);
+    TError error = TPath(CgRoot("memory", "/") + "memory.stat").ReadLines(lines);
     if (error)
         return false;
 

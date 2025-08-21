@@ -3840,7 +3840,7 @@ TError TContainer::Resume() {
         if (CgroupDriver.FreezerSubsystem->IsSelfFreezing(*cg))
             CgroupDriver.FreezerSubsystem->Thaw(*cg, false);
         if (ct->State == EContainerState::Paused) {
-            ct->SetState(IsMeta() ? EContainerState::Meta : EContainerState::Running);
+            ct->SetState(ct->IsMeta() ? EContainerState::Meta : EContainerState::Running);
         }
         error = ct->Save();
         if (error)

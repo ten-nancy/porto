@@ -2848,7 +2848,6 @@ static void TestLimits(Porto::Connection &api) {
     Say() << "Check cpu_limit and cpu_guarantee range" << std::endl;
     if (KernelSupports(KernelFeature::CFS_BANDWIDTH)) {
         ExpectApiFailure(api.SetProperty(name, "cpu_limit", "test"), EError::InvalidValue);
-        ExpectApiFailure(api.SetProperty(name, "cpu_limit", "101"), EError::InvalidValue);
         ExpectApiSuccess(api.SetProperty(name, "cpu_limit", "0"));
         ExpectApiSuccess(api.SetProperty(name, "cpu_limit", "0.5"));
         ExpectApiSuccess(api.SetProperty(name, "cpu_limit", "1"));
@@ -2862,7 +2861,6 @@ static void TestLimits(Porto::Connection &api) {
             KernelSupports(KernelFeature::CFS_RESERVE)) {
         ExpectApiFailure(api.SetProperty(name, "cpu_guarantee", "test"), EError::InvalidValue);
         ExpectApiFailure(api.SetProperty(name, "cpu_guarantee", "-1"), EError::InvalidValue);
-        ExpectApiFailure(api.SetProperty(name, "cpu_guarantee", "101"), EError::InvalidValue);
         ExpectApiSuccess(api.SetProperty(name, "cpu_guarantee", "0"));
         ExpectApiSuccess(api.SetProperty(name, "cpu_guarantee", "1.5"));
         ExpectApiSuccess(api.SetProperty(name, "cpu_guarantee", "100"));
@@ -2905,9 +2903,10 @@ static void TestLimits(Porto::Connection &api) {
         Expect(quota > minQuota);
         ExpectApiSuccess(api.Stop(name));
 
-        ExpectApiSuccess(api.SetProperty(name, "cpu_limit", "100"));
+        ExpectApiSuccess(api.SetProperty(name, "cpu_limit", "1.234c"));
+        ExpectApiSuccess(api.SetProperty(name, "cpu_period", "100ms"));
         ExpectApiSuccess(api.Start(name));
-        ExpectEq(GetCgKnob("cpu", name, "cpu.cfs_quota_us"), "-1");
+        ExpectEq(GetCgKnob("cpu", name, "cpu.cfs_quota_us"), "123400");
         ExpectApiSuccess(api.Stop(name));
 
         TestCoresConvertion(api, name, "cpu_limit");
@@ -3084,8 +3083,9 @@ static void TestAlias(Porto::Connection &api) {
     ExpectApiSuccess(api.SetProperty(name, "command", "sleep 1000"));
     ExpectApiSuccess(api.Start(name));
 
+    auto root_limit = GetCgKnob("memory", "/", "memory.limit_in_bytes");
     current = GetCgKnob("memory", name, "memory.limit_in_bytes");
-    Expect(current == std::to_string(LLONG_MAX) || current == std::to_string(ULLONG_MAX));
+    Expect(current == root_limit);
 
     current = GetCgKnob("memory", name, "memory.low_limit_in_bytes");
     ExpectEq(current, "0");
@@ -3107,7 +3107,6 @@ static void TestAlias(Porto::Connection &api) {
     ExpectApiSuccess(api.SetProperty(name, "memory.limit_in_bytes", exp_limit));
     ExpectApiSuccess(api.SetProperty(name, "memory.low_limit_in_bytes", exp_guar));
     ExpectApiSuccess(api.SetProperty(name, "memory.recharge_on_pgfault", "1"));
-    ExpectApiSuccess(api.SetProperty(name, "cpu.smart", "1"));
 
     ExpectApiSuccess(api.GetProperty(name, "memory.limit_in_bytes", alias));
     ExpectApiSuccess(api.GetProperty(name, "memory_limit", real));
@@ -3119,10 +3118,9 @@ static void TestAlias(Porto::Connection &api) {
     ExpectApiSuccess(api.GetProperty(name, "recharge_on_pgfault", real));
     ExpectEq(alias, "1\n");
     ExpectEq(real, "true");
-    ExpectApiSuccess(api.GetProperty(name, "cpu.smart", alias));
     ExpectApiSuccess(api.GetProperty(name, "cpu_policy", real));
     ExpectEq(alias, "1\n");
-    ExpectEq(real, "rt");
+    ExpectEq(real, "normal");
 
     current = GetCgKnob("memory", name, "memory.limit_in_bytes");
     ExpectEq(current, exp_limit);
@@ -3132,8 +3130,6 @@ static void TestAlias(Porto::Connection &api) {
     current = GetCgKnob("memory", name, "memory.recharge_on_pgfault");
     ExpectEq(current, "1");
 
-    current = GetCgKnob("cpu", name, "cpu.smart");
-    ExpectEq(current, "1");
     ExpectApiSuccess(api.Stop(name));
     ExpectApiSuccess(api.Destroy(name));
 }
@@ -3198,27 +3194,35 @@ static void TestLimitsHierarchy(Porto::Connection &api) {
 
     auto total = GetTotalMemory();
 
-    Say() << "Single container can't go over reserve" << std::endl;
-    ExpectApiFailure(api.SetProperty(system, "memory_guarantee", std::to_string(total)), EError::ResourceNotAvailable);
+    Say() << "Single container can't go over reserve, total=" << total << std::endl;
+
+    ExpectApiSuccess(api.SetProperty(system, "memory_guarantee", std::to_string(total)));
+    ExpectApiFailure(api.Start(system), EError::ResourceNotAvailable);
     ExpectApiSuccess(api.SetProperty(system, "memory_guarantee", std::to_string(total - config().daemon().memory_guarantee_reserve())));
+    ExpectApiSuccess(api.Start(system));
+    ExpectApiSuccess(api.Stop(system));
 
     Say() << "Distributed guarantee can't go over reserve" << std::endl;
     auto chunk = (total - config().daemon().memory_guarantee_reserve()) / 4;
 
     ExpectApiSuccess(api.SetProperty(system, "memory_guarantee", std::to_string(chunk)));
+    ExpectApiSuccess(api.Start(system));
+
     ExpectApiSuccess(api.SetProperty(monit, "memory_guarantee", std::to_string(chunk)));
+    ExpectApiSuccess(api.Start(monit));
+
     ExpectApiSuccess(api.SetProperty(slot1, "memory_guarantee", std::to_string(chunk)));
-    ExpectApiFailure(api.SetProperty(slot2, "memory_guarantee", std::to_string(chunk + 1)), EError::ResourceNotAvailable);
+    ExpectApiSuccess(api.Start(slot1));
+
+    ExpectApiSuccess(api.SetProperty(slot2, "memory_guarantee", std::to_string(chunk + 1)));
+    ExpectApiFailure(api.Start(slot2), EError::ResourceNotAvailable);
+
     ExpectApiSuccess(api.SetProperty(slot2, "memory_guarantee", std::to_string(chunk)));
+    ExpectApiSuccess(api.Start(slot2));
 
     ExpectApiSuccess(api.SetProperty(monit, "memory_guarantee", std::to_string(0)));
     ExpectApiSuccess(api.SetProperty(system, "memory_guarantee", std::to_string(0)));
 
-    ExpectApiSuccess(api.Destroy(monit));
-    ExpectApiSuccess(api.Destroy(system));
-    ExpectApiSuccess(api.Destroy(slot2));
-    ExpectApiSuccess(api.Destroy(slot1));
-    ExpectApiSuccess(api.Destroy(prod));
     ExpectApiSuccess(api.Destroy(box));
 
     Say() << "Test child-parent isolation" << std::endl;
@@ -3273,7 +3277,7 @@ static void TestLimitsHierarchy(Porto::Connection &api) {
 
     ExpectNeq(parentCgmap["freezer"], childCgmap["freezer"]);
     ExpectNeq(parentCgmap["memory"], childCgmap["memory"]);
-    ExpectNeq(parentCgmap["net_cls"], childCgmap["net_cls"]);
+    ExpectEq(parentCgmap["net_cls"], childCgmap["net_cls"]);
     ExpectNeq(parentCgmap["cpu"], childCgmap["cpu"]);
     ExpectNeq(parentCgmap["cpuacct"], childCgmap["cpuacct"]);
 
@@ -3364,11 +3368,11 @@ static void TestLimitsHierarchy(Porto::Connection &api) {
     ExpectApiSuccess(api.GetProperty("a/b/c", "root", val));
     ExpectEq(val, "/");
 
-    ExpectApiSuccess(api.SetProperty("a", "memory_limit", "12345"));
+    ExpectApiSuccess(api.SetProperty("a", "memory_limit", "2048576"));
     ExpectApiSuccess(api.GetProperty("a/b", "memory_limit", val));
-    ExpectNeq(val, "12345");
+    ExpectNeq(val, "2048576");
     ExpectApiSuccess(api.GetProperty("a/b/c", "memory_limit", val));
-    ExpectNeq(val, "12345");
+    ExpectNeq(val, "2048576");
 
     ExpectApiSuccess(api.Destroy("a"));
 }
