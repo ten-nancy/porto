@@ -501,7 +501,7 @@ If devices_explicit is False, then
 Porto client authentication is based on task pid, uid, gid received via
 **socket(7)** SO\_PEERCRED and task freezer cgroup from /proc/pid/cgroup.
 
-Requests from host are executed in behalf or client task uid:gid.
+Requests from host are executed in behalf of client task uid:gid.
 
 Requests from containers are executed in behalf of container's
 **owner\_user**:**owner\_group**.
