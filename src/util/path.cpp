@@ -630,14 +630,6 @@ TError TPath::MkdirTmp(const TPath &parent, const std::string &prefix, unsigned 
     return OK;
 }
 
-TError TPath::CreateTmpDirInplace() {
-    char *tmpDirPathAddr = mkdtemp(&Path[0]);
-    if (tmpDirPathAddr == NULL)
-        return TError::System("Can`t create tmp dir: {}", Path);
-
-    return OK;
-}
-
 TError TPath::Rmdir() const {
     if (rmdir(Path.c_str()) < 0)
         return TError::System("rmdir(" + Path + ")");
@@ -1994,54 +1986,6 @@ TError TFile::StatAt(const TPath &path, bool follow, struct stat &st) const {
 bool TFile::ExistsAt(const TPath &path) const {
     struct stat st;
     return !StatAt(path, false, st);
-}
-
-bool TFile::FileIsDirectoryFollowAt(const TPath &filePathObject) const {
-    const char *filePath = filePathObject.c_str();
-    if (filePath == NULL)
-        return false;
-    if (filePath[0] == '/')
-        filePath++;
-
-    struct stat statbuf;
-    int returnCode = fstatat(Fd, filePath, &statbuf, 0);
-    if (returnCode == -1)
-        return false;
-
-    return S_ISDIR(statbuf.st_mode);
-}
-
-bool TFile::FileExistsAt(const TPath &filePathObject) const {
-    const char *filePath = filePathObject.c_str();
-    if (filePath == NULL)
-        return false;
-    if (filePath[0] == '/')
-        filePath++;
-
-    int returnCode = syscall(__NR_faccessat, Fd, filePath, F_OK, 0);
-    if (returnCode == -1)
-        return false;
-
-    return true;
-}
-
-TError TFile::OpenTree(const TPath &filePathObject, int flags) {
-    if (Fd >= 0)
-        Close();
-
-    SetFd = syscall(__NR_open_tree, 0, filePathObject.c_str(), flags);
-    if (Fd < 0)
-        return TError::System("Can`t open_tree {}", filePathObject.ToString());
-
-    return OK;
-}
-
-TError TFile::MoveMount(const TPath &dirPathObject) {
-    int returnCode = syscall(__NR_move_mount, Fd, "", 0, dirPathObject.c_str(), MOVE_MOUNT_F_EMPTY_PATH);
-    if (returnCode == -1)
-        return TError::System("Can`t move_mount {}", RealPath().ToString());
-
-    return OK;
 }
 
 TError TFile::StatFS(TStatFS &result) const {

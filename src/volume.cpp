@@ -5,7 +5,6 @@
 #include <future>
 #include <memory>
 #include <sstream>
-#include <stack>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,7 +30,6 @@ extern "C" {
 #include <linux/falloc.h>
 #include <linux/kdev_t.h>
 #include <linux/loop.h>
-#include <linux/mount.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
@@ -903,48 +901,6 @@ public:
     }
 };
 
-class MountHandleAttacher {
-public:
-    MountHandleAttacher() = default;
-    ~MountHandleAttacher();
-
-    TError Attach(TFile &mountHandle, TPath &tmpDirPathObject);
-
-private:
-    std::stack<TPath> TmpDirPathObjects;
-};
-
-TError MountHandleAttacher::Attach(TFile &mountHandle, TPath &tmpDirPathObject) {
-    TError error = tmpDirPathObject.CreateTmpDirInplace();
-    if (error)
-        return error;
-
-    error = mountHandle.MoveMount(tmpDirPathObject);
-    if (error) {
-        tmpDirPathObject.Rmdir();
-        return error;
-    }
-
-    TmpDirPathObjects.push(tmpDirPathObject);
-    return OK;
-}
-
-MountHandleAttacher::~MountHandleAttacher()
-{
-    while (!TmpDirPathObjects.empty()) {
-        TPath tmpDirPathObject;
-
-        tmpDirPathObject = TmpDirPathObjects.top();
-        TError error = tmpDirPathObject.Umount(MNT_DETACH);
-        if (error)
-            L_ERR(error.ToString().c_str());
-        error = tmpDirPathObject.Rmdir();
-        if (error)
-            L_ERR(error.ToString().c_str());
-        TmpDirPathObjects.pop();
-    }
-}
-
 /* TVolumeOverlayBackend - project quota + overlayfs */
 
 class TVolumeOverlayBackend: public TVolumeBackend {
@@ -978,44 +934,20 @@ public:
         return OK;
     }
 
-    TError OpenLayers(std::vector<TFile> &pins, MountHandleAttacher &mountHandler) {
+    TError OpenLayers(std::vector<TFile> &pins) {
         EStorageType layerType = Volume->GetLayerType();
         std::set<std::pair<dev_t, ino_t>> seen;
-        pid_t root_pid;
 
-        root_pid = CL->GetRootPid();
         for (auto &name: Volume->Layers) {
             TFile pin;
 
             if (name[0] == '/') {
-                TFile mountHandle;
-                TMountNamespace containerMountNamespace;
-                TPath tmpDirPathObject{"/run/porto/XXXXXX"};
-                TPath filePathObject{name};
-
-                containerMountNamespace.Enter(root_pid);
-                TError error = mountHandle.OpenTree(filePathObject, OPEN_TREE_CLONE);
-                containerMountNamespace.Leave();
+                auto error = pin.OpenDir(name);
                 if (error)
                     return error;
-
-                error = mountHandler.Attach(mountHandle, tmpDirPathObject);
+                error = CL->ReadAccess(pin);
                 if (error)
                     return error;
-
-                error = pin.OpenDir(tmpDirPathObject);
-                if (error)
-                    return error;
-
-                error = pin.ReadAccess(CL->TaskCred);
-                if (error) {
-                    TPath pathToLayer;
-
-                    pathToLayer = pin.RealPath();
-                    auto link = Volume->ResolveOrigin(pathToLayer);
-                    if (!link || CL->CanControl(link->Volume->VolumeOwner))
-                        return error;
-                }
             } else {
                 TStorage layer;
                 layer.Open(layerType, Volume->Place, name);
@@ -1060,8 +992,7 @@ public:
         TFile upperFd, workFd, cowFd;
 
         std::vector<TFile> pins;
-        MountHandleAttacher mountHandler;
-        auto error = OpenLayers(pins, mountHandler);
+        auto error = OpenLayers(pins);
         if (error)
             return error;
 
@@ -2446,19 +2377,8 @@ TError TVolume::Configure(const TPath &target_root) {
         if (!layer.IsNormal())
             return TError(EError::InvalidPath, "Layer path must be normalized");
         if (layer.IsAbsolute()) {
-            TPath rootPathObject{CL->RootPathMagicLink()};
-            TFile rootDirObject;
-
-            error = rootDirObject.OpenDir(rootPathObject);
-            if (error)
-                return error;
-
-            if (!rootDirObject.FileExistsAt(layer))
-                return TError{EError::LayerNotFound, layer.ToString()};
-            if (IsSystemPath(layer))
-                return TError{EError::InvalidPath, "Layer stored inside system directory: {}", layer.ToString()};
-            if (!rootDirObject.FileIsDirectoryFollowAt(layer) && BackendType != "squash")
-                return TError{EError::InvalidPath, "Layer file must be a directory: {}", layer.ToString()};
+            layer = CL->ResolvePath(layer);
+            l = layer.ToString();
         } else {
             error = TStorage::CheckName(l);
             if (error)
@@ -2466,14 +2386,13 @@ TError TVolume::Configure(const TPath &target_root) {
             TStorage layer_storage;
             layer_storage.Open(layerType, Place, l);
             layer = layer_storage.Path;
-
-            if (!layer.Exists())
-                return TError(EError::LayerNotFound, "Layer not found {}", layer.ToString());
-            if (IsSystemPath(layer))
-                return TError(EError::InvalidPath, "Layer path {} in system directory", layer.ToString());
-            if (!layer.IsDirectoryFollow() && BackendType != "squash")
-                return TError(EError::InvalidPath, "Layer must be a directory");
         }
+        if (!layer.Exists())
+            return TError(EError::LayerNotFound, "Layer not found " + layer.ToString());
+        if (IsSystemPath(layer))
+            return TError(EError::InvalidPath, "Layer path {} in system directory", layer);
+        if (!layer.IsDirectoryFollow() && BackendType != "squash")
+            return TError(EError::InvalidPath, "Layer must be a directory");
         /* Permissions will be cheked during build */
     }
 
