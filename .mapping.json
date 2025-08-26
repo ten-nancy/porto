@@ -77,6 +77,7 @@
   "src/api/go/porto/go.mod":"infra/porto/porto/src/api/go/porto/go.mod",
   "src/api/go/porto/go.sum":"infra/porto/porto/src/api/go/porto/go.sum",
   "src/api/go/porto/pkg/rpc/rpc.pb.go":"infra/porto/porto/src/api/go/porto/pkg/rpc/rpc.pb.go",
+  "src/api/go/porto/pkg/seccomp/seccomp.pb.go":"infra/porto/porto/src/api/go/porto/pkg/seccomp/seccomp.pb.go",
   "src/api/go/porto/porto.go":"infra/porto/porto/src/api/go/porto/porto.go",
   "src/api/go/porto/porto_test.go":"infra/porto/porto/src/api/go/porto/porto_test.go",
   "src/api/python/CMakeLists.txt":"infra/porto/porto/src/api/python/CMakeLists.txt",
