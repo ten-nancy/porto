@@ -105,44 +105,46 @@ TNetLimitSoftOfNet::TNetLimitSoftOfNet()
 
 TNetLimitSoftOfNet::~TNetLimitSoftOfNet() {}
 
-static TError SetupNetMap(struct bpf_object *obj, uint64_t key, uint32_t rate_in_kb_s);
+static TError SetupNetMap(struct bpf_object *obj, uint64_t key, uint32_t rate_in_bytes_per_s);
 
-TError TNetLimitSoft::SetupNet(uint64_t key, uint32_t rate_in_kb_s) {
+TError TNetLimitSoft::SetupNet(uint64_t key, uint32_t rate_in_bytes_per_s) {
     struct bpf_object *obj = Impl->BpfObject;
 
-    TError err = SetupNetMap(obj, key, rate_in_kb_s);
+    TError err = SetupNetMap(obj, key, rate_in_bytes_per_s);
     if (err)
         return err;
 
     return OK;
 }
 
-static TError SetupNetMap(struct bpf_object *obj, uint64_t key, uint32_t rate_in_kb_s) {
+static TError SetupNetMap(struct bpf_object *obj, uint64_t key, uint32_t rate_in_bytes_per_s) {
     if (!obj)
         return TError(EError::Unknown,
                       "Failed to set network soft limit in TNetLimitSoft::SetupNetMap({}, {}) -- failed to load bpf "
-                      "object previously", key, rate_in_kb_s);
+                      "object previously", key, rate_in_bytes_per_s);
 
     struct bpf_map *map = bpf_object__find_map_by_name(obj, "netlimit_soft_m");
     if (!map)
         return TError(
             EError::Unknown,
             "Failed to set network soft limit in TNetLimitSoft::SetupNetMap({}, {}) -- no bpf map 'netlimit_soft_m'",
-            key, rate_in_kb_s);
+            key, rate_in_bytes_per_s);
+
+    const double k = (1 << 20) / 1e9;
 
     struct netlimit_param {
         uint64_t lasttime; /* In ns */
         uint32_t rate;     /* In bytes per NS << 20 */
         uint32_t padding;
         uint64_t continuously_dropped;  // packets
-    } value = {0, rate_in_kb_s, 0, 0};
+    } value = {0, (uint32_t)std::lround(k * rate_in_bytes_per_s), 0, 0};
 
     int err = bpf_map_update_elem(bpf_map__fd(map), &key, &value, BPF_ANY);
 
     if (err)
         return TError(EError::Unknown,
                       "Failed to set network soft limit in TNetLimitSoft::SetupNetMap({}, {}) -- can not write to bpf "
-                      "map 'netlimit_soft_m'", key, rate_in_kb_s);
+                      "map 'netlimit_soft_m'", key, rate_in_bytes_per_s);
 
     return OK;
 }

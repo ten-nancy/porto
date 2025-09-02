@@ -564,7 +564,7 @@ public:
     static TJailCpuState GetJailCpuState();
 
 private:
-    TError SetupNetLimitSoft(uint64_t kbs);
+    TError SetupNetLimitSoft(uint64_t bps);
 };
 
 extern MeasuredMutex ContainersMutex;

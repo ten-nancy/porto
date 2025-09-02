@@ -250,7 +250,7 @@ public:
     TError WaitRepair();
 
     TError SetupNetLimitSoft();
-    TError UpdateNetLimitSoft(uint32_t kbs);
+    TError UpdateNetLimitSoft(uint32_t bps);
     TError SetupNetLimitSoftInterface(int ifindex);
 
     TError SetupQueue(TNetDevice &dev, bool force);

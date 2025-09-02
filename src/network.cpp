@@ -4181,7 +4181,7 @@ TError TNetwork::SetupNetLimitSoft() {
     return OK;
 }
 
-TError TNetwork::UpdateNetLimitSoft(uint32_t kbs) {
+TError TNetwork::UpdateNetLimitSoft(uint32_t bps) {
     if (NetLimitSoft.IsDisabled() || NetLimitSoftOfNet.IsDisabled())
         return OK;
 
@@ -4189,7 +4189,7 @@ TError TNetwork::UpdateNetLimitSoft(uint32_t kbs) {
 
     auto netid = NetInode;
 
-    NetLimitSoftValue = kbs;
+    NetLimitSoftValue = bps;
 
     error = NetLimitSoft.SetupNet(netid, NetLimitSoftValue);
     if (error)

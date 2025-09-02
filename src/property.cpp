@@ -6215,7 +6215,7 @@ public:
 class TNetLimitSoftProp: public TProperty {
 public:
     TNetLimitSoftProp()
-        : TProperty(P_NET_LIMIT_SOFT, EProperty::NET_LIMIT_SOFT, "Network soft limit: int (kb/s)")
+        : TProperty(P_NET_LIMIT_SOFT, EProperty::NET_LIMIT_SOFT, "Network soft limit: int (bytes/s)")
     {
         IsDynamic = true;
     }

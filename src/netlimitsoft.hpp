@@ -26,7 +26,7 @@ public:
     bool IsDisabled();
     TError Setup(const std::string &bpf_program_elf_path);
     TError SetupNetLimitSoftOfNet(TNetLimitSoftOfNet &netlimit);
-    TError SetupNet(uint64_t key, uint32_t rate_in_kb_s);
+    TError SetupNet(uint64_t key, uint32_t rate_in_bytes_per_s);
 
 private:
     class TImpl;
