@@ -36,12 +36,7 @@ protected:
 public:
     // constructors and destructor
     TCgroup() = delete;
-    TCgroup(const TSubsystem *subsystem, const std::string &name, bool hasLeaf)
-        : Subsystem(subsystem),
-          Name(name),
-          HasLeaf(hasLeaf)
-    {}
-    TCgroup(const TSubsystem *subsystem, std::string &&name)
+    TCgroup(const TSubsystem *subsystem, const std::string &name)
         : Subsystem(subsystem),
           Name(name)
     {}
@@ -68,7 +63,6 @@ public:
     bool IsCgroup2() const;
     bool IsSecondary() const;
     bool IsSubsystem(uint64_t kind) const;
-    bool HasLeaf;
 
     // getters
     std::string Type() const;
@@ -96,6 +90,7 @@ public:
     TPath Knob(const std::string &knob) const;
     bool Has(const std::string &knob) const;
 
+    virtual bool HasLeaf() const = 0;
     virtual std::unique_ptr<const TCgroup> Leaf() const = 0;
 
     TError Get(const std::string &knob, std::string &value) const;
