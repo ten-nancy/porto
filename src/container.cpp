@@ -3504,8 +3504,12 @@ TError TContainer::PrepareRuntimeResources() {
 void TContainer::FreeRuntimeResources() {
     TError error;
 
-    CollectMemoryEvents();
-    ShutdownOom();
+    // TODO(ovov): FreeRuntimeResources must be called only for
+    // container with runtime resources
+    if (OomEvent) {
+        CollectMemoryEvents();
+        ShutdownOom();
+    }
 
     error = UpdateSoftLimit();
     if (error)
