@@ -140,8 +140,10 @@ static int UpgradeMaster() {
     if (kill(ServerPid, SIGHUP) < 0) {
         L_ERR("Cannot send SIGHUP to porto: {}", strerror(errno));
     } else {
+        uint64_t start = GetCurrentTimeMs();
         if (waitpid(ServerPid, NULL, 0) != ServerPid)
             L_ERR("Cannot wait for porto exit status: {}", strerror(errno));
+        Statistics->ShutdownTime += GetCurrentTimeMs() - start;
     }
 
     std::vector<const char *> args = {PORTO_BINARY_PATH};

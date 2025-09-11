@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.hpp"
+#include "metrics/metrics.hpp"
 
 class TClient;
 
@@ -25,7 +26,7 @@ public:
     void Classify();
     void Parse();
     TError Check();
-    void Handle();
+    void Handle(TMetricFabric<TCounter> &count, TCounter &execTime, TCounter &waitTime, TCounter &lockTime);
     void ChangeId();
 };
 

@@ -40,6 +40,8 @@ protected:
             client.StartRequest();
             TContainer::Event(event);
             client.FinishRequest();
+
+            MetricsRegistry->EventsQueued--;
             return true;
         }
 
@@ -51,6 +53,11 @@ public:
         : TWorker("portod-EV", nr),
           client("<event>")
     {}
+
+    void Push(TEvent &&event) override {
+        MetricsRegistry->EventsQueued++;
+        return TWorker::Push(std::move(event));
+    }
 };
 
 std::string TEvent::GetMsg() const {

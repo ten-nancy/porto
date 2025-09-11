@@ -1,7 +1,6 @@
 project(util)
 cmake_minimum_required(VERSION 3.5)
 
-add_subdirectory(prometheus-cpp-lite)
 add_subdirectory(nlohmann-safe)
 
 set(UTIL_BASE_SRCS error.cpp log.cpp path.cpp signal.cpp unix.cpp string.cpp proc.cpp socket.cpp)

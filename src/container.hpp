@@ -88,6 +88,7 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
 
     // data
     TError UpdateSoftLimit();
+    void LogStateChange(EContainerState next) const;
     void SetState(EContainerState next);
 
     TError ApplyUlimits();

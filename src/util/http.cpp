@@ -2,12 +2,9 @@
 
 #include <regex>
 
+#include "cpp-httplib/httplib.h"
 #include "util/log.hpp"
 #include "util/string.hpp"
-
-#define CPPHTTPLIB_NO_EXCEPTIONS
-#define CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND 5
-#include "cpp-httplib/httplib.h"
 
 TUri::TUri(const std::string &uri) {
     TError error;

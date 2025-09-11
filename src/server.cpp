@@ -257,6 +257,10 @@ static void ServerLoop() {
     TStorage::StartAsyncRemover();
     EventQueue->Start();
 
+    error = StartMetricsServer(PORTO_METRICS_SOCKET_PATH);
+    if (error)
+        L_WRN("Failed start metrics server: {}", error);
+
     if (config().daemon().log_rotate_ms()) {
         TEvent ev(EEventType::RotateLogs);
         EventQueue->Add(config().daemon().log_rotate_ms(), ev);
@@ -717,6 +721,16 @@ void PrepareServer() {
     }
 
     NetLimitSoftInitialize();
+
+    {
+        std::map<const std::string, const std::string> labels;
+        if (config().has_metrics()) {
+            for (auto &pair: config().metrics().global_tags())
+                labels.emplace(pair.first, pair.second);
+        }
+        MetricsRegistry = std::unique_ptr<TMetricsRegistry>(new TMetricsRegistry(labels));
+        MetricsRegistry->Version.WithLabels({{"version", PORTO_VERSION}}) = 1;
+    }
 }
 
 class TRestoreWorker: public TWorker<TKeyValue *> {
@@ -734,6 +748,7 @@ protected:
         if (error) {
             L_ERR("Cannot restore {}: {}", node->Name, error);
             Statistics->ContainerLost++;
+            MetricsRegistry->ContainerLost++;
             node->Path.Unlink();
         }
         client.FinishRequest();
@@ -935,6 +950,8 @@ void CleanupServer() {
         }
     }
 
+    StopMetricsServer();
+
     StopAsyncUmounter();
     if (config().daemon().enable_nbd())
         StopNbd();
@@ -948,8 +965,10 @@ void CleanupServer() {
 }
 
 int Server() {
+    uint64_t start = GetCurrentTimeMs();
     PrepareServer();
     RestoreState();
+    Statistics->RestoreTime += GetCurrentTimeMs() - start;
     ServerLoop();
 
     CleanupServer();

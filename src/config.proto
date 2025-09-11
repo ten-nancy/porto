@@ -361,6 +361,11 @@ message TConfig {
         optional uint64 sync_size = 7;
     }
 
+    message TMetricsCfg {
+            map<string, string> global_tags = 1;
+            map<string, string> client_patterns = 2;
+    }
+
     optional TNetworkCfg network = 1;
     optional TFileCfg master_pid = 2 [deprecated=true];
     optional TFileCfg slave_pid = 3 [deprecated=true];
@@ -380,4 +385,5 @@ message TConfig {
     optional uint64 keyvalue_size = 17;
     optional TCoreCfg core = 18;
     optional string linux_version = 19;
+    optional TMetricsCfg metrics = 20;
 }

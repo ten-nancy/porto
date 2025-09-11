@@ -3228,6 +3228,7 @@ TError TVolume::Destroy() {
         VolumeById.erase(volume->Id);
         if (Volumes.size() != VolumeById.size())
             L_WRN("VolumeById size mismatch: {} != {}", Volumes.size(), VolumeById.size());
+        MetricsRegistry->Volumes.WithLabels({{"backend", volume->BackendType}})--;
 
         /* Remove common link */
         if (VolumeLinks.erase(volume->Path))
@@ -3901,6 +3902,7 @@ TError TVolume::Restore(const TKeyValue &node) {
     if (VolumeLinks.find(Path) != VolumeLinks.end())
         L_WRN("Duplicate volume link: {}", Path);
 
+    MetricsRegistry->Volumes.WithLabels({{"backend", BackendType}})++;
     Volumes[Path] = shared_from_this();
     VolumeById[Id] = shared_from_this();
     if (Volumes.size() != VolumeById.size())
@@ -4149,6 +4151,8 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec, std::shared_ptr<TVolume> &v
     /* release owner */
     CL->ReleaseContainer();
 
+    MetricsRegistry->Volumes.WithLabels({{"backend", volume->BackendType}})++;
+
     if (error)
         goto undo;
 
@@ -4369,6 +4373,7 @@ void TVolume::RestoreAll(void) {
 
     for (auto &volume: broken_volumes) {
         Statistics->VolumeLost++;
+        MetricsRegistry->VolumeLost++;
         error = volume->Destroy();
         if (error)
             L_WRN("Volume {} destroy: {}", volume->Path, error);

@@ -100,19 +100,19 @@ if(USE_SYSTEM_OPENSSL)
 	find_package(OpenSSL REQUIRED)
 else()
 	if(NOT OPENSSL_TGZ_URL)
-	    set(OPENSSL_TGZ_URL "https://github.com/openssl/openssl/archive/refs/tags/OpenSSL_1_1_1o.tar.gz")
+	    set(OPENSSL_TGZ_URL "https://github.com/openssl/openssl/archive/refs/tags/openssl-3.0.2.tar.gz")
 	endif()
 
 	ExternalProject_Add(openssl
 	    URL ${OPENSSL_TGZ_URL}
-	    URL_MD5 8c7daf923abc12d4492e82d576c779f2
+	    URL_MD5 af9db7f303a21eea84dfafa5a714f27f
 	    CONFIGURE_COMMAND <SOURCE_DIR>/config --prefix=<INSTALL_DIR> no-dso
 	    BUILD_COMMAND $(MAKE)
 	    INSTALL_COMMAND $(MAKE) install_sw)
 	ExternalProject_Get_Property(openssl INSTALL_DIR)
 	include_directories(${INSTALL_DIR}/include)
-	SET(LIBSSL ${INSTALL_DIR}/lib/libssl.a)
-	SET(LIBCRYPTO ${INSTALL_DIR}/lib/libcrypto.a)
+	SET(LIBSSL ${INSTALL_DIR}/lib64/libssl.a)
+	SET(LIBCRYPTO ${INSTALL_DIR}/lib64/libcrypto.a)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCPPHTTPLIB_OPENSSL_SUPPORT")
 endif()
 

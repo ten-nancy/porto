@@ -8,6 +8,7 @@
 #include "container.hpp"
 #include "epoll.hpp"
 #include "fmt/ostream.h"
+#include "metrics/metrics.hpp"
 #include "util/cred.hpp"
 #include "util/unix.hpp"
 #include "waiter.hpp"
@@ -21,6 +22,7 @@ class TRequest;
 class TClient: public std::enable_shared_from_this<TClient>, public TEpollSource {
 public:
     std::string Id;
+    std::string Name;
     TCred Cred;
     TCred TaskCred;
     pid_t Pid = 0;

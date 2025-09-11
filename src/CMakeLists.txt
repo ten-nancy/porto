@@ -35,6 +35,9 @@ macro(protobuf_gen_cpp_choose)
 	endif()
 endmacro()
 
+add_definitions(-DCPPHTTPLIB_NO_EXCEPTIONS)
+add_definitions(-DCPPHTTPLIB_CONNECTION_TIMEOUT_SECOND=5)
+add_definitions(-DCPPHTTPLIB_USE_POLL)
 protobuf_gen_cpp_choose(RPC_PROTO_SRCS RPC_PROTO_HDRS rpc.proto seccomp.proto)
 add_library(rpc_proto STATIC ${RPC_PROTO_SRCS})
 add_dependencies(rpc_proto libprotobuf)
@@ -68,6 +71,12 @@ add_subdirectory(api/cpp)
 add_subdirectory(util)
 add_subdirectory(fmt)
 
+add_subdirectory(util/prometheus-cpp-lite/core)
+add_subdirectory(util/prometheus-cpp-lite/3rdpatry/http-client-lite)
+add_subdirectory(metrics)
+
+add_dependencies(metrics openssl rpc_proto)
+
 include_directories(${libporto_SOURCE_DIR})
 find_library(LIBSECCOMP NAMES libseccomp.a)
 
@@ -80,7 +89,7 @@ add_library(portocore main.cpp master.cpp server.cpp core.cpp cgroup.cpp rpc.cpp
 
 find_library(LIBTCMALLOC NAMES libtcmalloc_minimal.a)
 target_link_libraries(portocore nlohmann-safe version porto utilbase util config
-		      rpc_proto kv_proto
+		      rpc_proto kv_proto metrics
 		      rt fmt ${PROTOBUF_STATIC_LIBRARY} ${LIBNL} ${LIBNL_ROUTE} ${LIBNL_IDIAG} ${LIBSSL} ${LIBCRYPTO}
 		      ${LIBBPF} ${LIBELF} ${LIBZ} ${LIBTCMALLOC} ${LIBNL_GENL} ${LIBSECCOMP} pthread)
 

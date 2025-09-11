@@ -100,6 +100,8 @@ struct TStatistics {
     std::atomic<uint64_t> StartTimeouts;
 
     std::atomic<uint64_t> L3StatLost;
+    std::atomic<uint64_t> ShutdownTime;
+    std::atomic<uint64_t> RestoreTime;
     /* --- add new fields at the end --- */
 };
 

@@ -16,6 +16,7 @@
 #include "event.hpp"
 #include "filesystem.hpp"
 #include "kvalue.hpp"
+#include "metrics/metrics.hpp"
 #include "network.hpp"
 #include "portod.hpp"
 #include "property.hpp"
@@ -77,6 +78,32 @@ static std::vector<unsigned>
     JailCpuPermutationUsage; /* how many containers are jailed at JailCpuPermutation[cpu] core */
 
 static TError CommitSubtreeCpus(const TCgroup &root, std::list<std::shared_ptr<TContainer>> &subtree);
+
+#include <iostream>
+
+std::vector<TGauge> MakeStateMetrics() {
+    std::vector<TGauge> metrics;
+    for (int i = int(EContainerState::Stopped); i <= int(EContainerState::Destroyed); ++i) {
+        auto state = EContainerState(i);
+        metrics.push_back(MetricsRegistry->Containers.WithLabels({{"state", TContainer::StateName(state)}}));
+    }
+    return metrics;
+}
+
+static std::mutex StateMetricsMutex;
+static std::atomic_bool StateMetricsInit;
+static std::vector<TGauge> StateMetrics;
+
+static TGauge &GetStateMetric(EContainerState state) {
+    if (!StateMetricsInit.load()) {
+        StateMetricsMutex.lock();
+        if (!StateMetricsInit.load())
+            StateMetrics = MakeStateMetrics();
+        StateMetricsInit.store(true);
+        StateMetricsMutex.unlock();
+    }
+    return StateMetrics[int(state)];
+}
 
 /* return true if index specified for property */
 static bool ParsePropertyName(std::string &name, std::string &idx) {
@@ -362,6 +389,7 @@ void TContainer::Register() {
     if (Parent)
         Parent->Children.emplace_back(shared_from_this());
     Statistics->ContainersCreated++;
+    MetricsRegistry->ContainersCreated++;
 }
 
 void TContainer::Unregister() {
@@ -375,6 +403,7 @@ void TContainer::Unregister() {
         L_WRN("Cannot put {} id: {}", Slug, error);
 
     PORTO_ASSERT(State == EContainerState::Stopped);
+    GetStateMetric(State)--;
     State = EContainerState::Destroyed;
 }
 
@@ -568,7 +597,6 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
 TContainer::~TContainer() {
     PORTO_ASSERT(Net == nullptr);
     PORTO_ASSERT(!NetClass.Registered);
-    Statistics->ContainersCount--;
     if (TaintFlags.TaintCounted && Statistics->ContainersTainted)
         Statistics->ContainersTainted--;
 }
@@ -658,6 +686,7 @@ TError TContainer::Create(const std::string &name, std::shared_ptr<TContainer> &
         parent->UnlockAction(true);
 
     TContainerWaiter::ReportAll(*ct);
+    GetStateMetric(ct->State)++;
 
     return OK;
 
@@ -1059,11 +1088,18 @@ TError TContainer::UpdateSoftLimit() {
     return OK;
 }
 
+void TContainer::LogStateChange(EContainerState next) const {
+    L_ACT("Change CT{} state {} -> {}", Slug, StateName(State), StateName(next));
+
+    GetStateMetric(State)--;
+    GetStateMetric(next)++;
+}
+
 void TContainer::SetState(EContainerState next) {
     if (State == next)
         return;
 
-    L_ACT("Change {} state {} -> {}", Slug, StateName(State), StateName(next));
+    LogStateChange(next);
 
     LockStateWrite();
 
@@ -3428,6 +3464,7 @@ TError TContainer::Start() {
     }
 
     Statistics->ContainersStarted++;
+    MetricsRegistry->ContainersStarted++;
 
     return OK;
 
@@ -3439,6 +3476,7 @@ err_prepare:
     StartError = error;
     SetState(EContainerState::Stopped);
     Statistics->ContainersFailedStart++;
+    MetricsRegistry->ContainersFailedStart++;
 
     return error;
 }
@@ -3874,7 +3912,7 @@ TError TContainer::MayRespawn() {
 TError TContainer::ScheduleRespawn() {
     TError error = MayRespawn();
     if (!error) {
-        L_ACT("Change {} state {} -> {}", Slug, StateName(State), StateName(EContainerState::Respawning));
+        LogStateChange(EContainerState::Respawning);
         State = EContainerState::Respawning;
         if (Parent->State == EContainerState::Respawning) {
             L_ACT("Respawn {} after respawning parent", Slug);
@@ -3956,6 +3994,7 @@ TError TContainer::Respawn() {
     }
 
     Statistics->ContainersStarted++;
+    MetricsRegistry->ContainersStarted++;
 
     for (auto &child: Childs()) {
         child->LockStateWrite();
@@ -3977,6 +4016,7 @@ err_prepare:
     SetProp(EProperty::DEATH_TIME);
 
     Statistics->ContainersFailedStart++;
+    MetricsRegistry->ContainersFailedStart++;
     L("Cannot respawn {} - {}", Slug, error);
     AccountErrorType(error);
     SetState(EContainerState::Dead);
@@ -4362,6 +4402,7 @@ TError TContainer::Load(const TKeyValue &node) {
     }
 
     if (state != EContainerState::Destroyed) {
+        GetStateMetric(State)++;
         UnlockState();
         SetState(state);
         LockStateWrite();

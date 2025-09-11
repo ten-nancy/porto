@@ -3,6 +3,7 @@
 #include <google/protobuf/descriptor.h>
 
 #include <algorithm>
+#include <regex>
 
 #include "cgroup.hpp"
 #include "client.hpp"
@@ -11,6 +12,7 @@
 #include "docker.hpp"
 #include "event.hpp"
 #include "helpers.hpp"
+#include "metrics/metrics.hpp"
 #include "portod.hpp"
 #include "property.hpp"
 #include "storage.hpp"
@@ -1149,6 +1151,7 @@ noinline TError CreateVolume(const rpc::TVolumeCreateRequest &req, rpc::TContain
         cfg[V_PATH] = req.path();
 
     Statistics->VolumesCreated++;
+    MetricsRegistry->VolumesCreated++;
 
     error = TVolume::VerifyConfig(cfg);
     if (error)
@@ -1320,6 +1323,7 @@ noinline TError ListVolumes(const rpc::TVolumeListRequest &req, rpc::TContainerR
 
 noinline TError NewVolume(const rpc::TNewVolumeRequest &req, rpc::TNewVolumeResponse &rsp) {
     Statistics->VolumesCreated++;
+    MetricsRegistry->VolumesCreated++;
 
     std::shared_ptr<TVolume> volume;
     TError error = TVolume::Create(req.volume(), volume);
@@ -2052,7 +2056,27 @@ TError TRequest::Check() {
     return OK;
 }
 
-void TRequest::Handle() {
+static std::vector<std::pair<std::regex, std::string>> ClientPatterns;
+
+void BuildClientPatterns() {
+    if (!config().has_metrics())
+        return;
+
+    for (auto &pair: config().metrics().client_patterns()) {
+        ClientPatterns.emplace_back(std::regex(pair.first), pair.second);
+    }
+}
+
+std::string TransformClientName(const std::string &name) {
+    for (const auto &pair: ClientPatterns) {
+        auto &pattern = pair.first;
+        if (std::regex_match(name, pattern))
+            return pair.second;
+    }
+    return "...";
+}
+
+void TRequest::Handle(TMetricFabric<TCounter> &count, TCounter &execTime, TCounter &waitTime, TCounter &lockTime) {
     rpc::TContainerResponse rsp;
     TError error;
 
@@ -2222,10 +2246,27 @@ void TRequest::Handle() {
     uint64_t WaitTime = StartTime - QueueTime;
     uint64_t ExecTime = FinishTime - StartTime;
 
+    execTime += ExecTime;
+    waitTime += WaitTime;
+    lockTime += LockTimer::Get();
+
     Statistics->RequestsQueued--;
     Statistics->ExecTime += ExecTime;
     Statistics->WaitTime += WaitTime;
     Statistics->LockTime += LockTimer::Get();
+
+    std::map<const std::string, const std::string> labels = {
+        {"client", TransformClientName(Client->Name)},
+    };
+
+    if (RequestTime > 300000)
+        labels.emplace("long", "5m");
+    else if (RequestTime > 30000)
+        labels.emplace("long", "30s");
+    else if (RequestTime > 3000)
+        labels.emplace("long", "3s");
+    else if (RequestTime > 1000)
+        labels.emplace("long", "1s");
 
     if (!specRequest) {
         Statistics->RequestsCompleted++;
@@ -2262,9 +2303,9 @@ void TRequest::Handle() {
     if (error) {
         if (!rsp.IsInitialized())
             rsp.Clear();
-        if (!specRequest)
+        if (!specRequest) {
             Statistics->RequestsFailed++;
-        else {
+        } else {
             Statistics->SpecRequestsFailed++;
             if (error == EError::Unknown)
                 Statistics->SpecRequestsFailedUnknown++;
@@ -2273,8 +2314,12 @@ void TRequest::Handle() {
             else if (error == EError::ContainerDoesNotExist)
                 Statistics->SpecRequestsFailedContainerDoesNotExist++;
         }
-        AccountErrorType(error);
     }
+    if (error)
+        labels.emplace("error", error == EError::Unknown ? "unknown" : "...");
+    count.WithLabels(labels)++;
+
+    AccountErrorType(error);
 
     rsp.set_error(error.Error);
     rsp.set_errormsg(error.Message());
@@ -2321,10 +2366,22 @@ class TRequestQueue {
     std::mutex Mutex;
     bool ShouldStop = false;
     const std::string Name;
+    TGauge RequestQueued;
+    TMetricFabric<TCounter> RequestCount;
+    TCounter ExecTime;
+    TCounter WaitTime;
+    TCounter LockTime;
+    TGauge RequestTopRunning;
 
 public:
     TRequestQueue(const std::string &name)
-        : Name(name)
+        : Name(name),
+          RequestQueued(MetricsRegistry->RequestQueued.WithLabels({{"queue", name}})),
+          RequestCount(MetricsRegistry->Requests.Add({{"queue", name}})),
+          ExecTime(MetricsRegistry->RequestExecTime.WithLabels({{"queue", name}})),
+          WaitTime(MetricsRegistry->RequestWaitTime.WithLabels({{"queue", name}})),
+          LockTime(MetricsRegistry->RequestLockTime.WithLabels({{"queue", name}})),
+          RequestTopRunning(MetricsRegistry->RequestTopRunning.WithLabels({{"queue", name}}))
     {}
 
     void Start(int thread_count) {
@@ -2345,6 +2402,7 @@ public:
     }
 
     void Enqueue(std::unique_ptr<TRequest> &request) {
+        RequestQueued++;
         Mutex.lock();
         Queue.push(std::move(request));
         Mutex.unlock();
@@ -2365,7 +2423,8 @@ public:
             StartTime[index] = GetCurrentTimeMs();
             lock.unlock();
             request->ChangeId();
-            request->Handle();
+            RequestQueued--;
+            request->Handle(RequestCount, ExecTime, WaitTime, LockTime);
             request = nullptr;
             lock.lock();
             StartTime[index] = 0;
@@ -2374,34 +2433,50 @@ public:
     }
 
     uint64_t TopRunningTime() {
-        uint64_t now = GetCurrentTimeMs();
         uint64_t ret = 0;
-        auto lock = std::unique_lock<std::mutex>(Mutex);
-        for (auto start: StartTime) {
-            if (start)
-                ret = std::max(ret, now - start);
+        {
+            auto lock = std::unique_lock<std::mutex>(Mutex);
+            auto now = GetCurrentTimeMs();
+
+            for (auto start: StartTime) {
+                if (start > now)
+                    ret = std::max(ret, now - start);
+            }
         }
+        RequestTopRunning = ret;
         return ret;
     }
 };
 
-static TRequestQueue RwQueue("portod-RW");
-static TRequestQueue RoQueue("portod-RO");
-static TRequestQueue IoQueue("portod-IO");
-static TRequestQueue VlQueue("portod-VL");  // queue for volume operations
+static std::unique_ptr<TRequestQueue> RwQueue;
+static std::unique_ptr<TRequestQueue> RoQueue;
+static std::unique_ptr<TRequestQueue> IoQueue;
+static std::unique_ptr<TRequestQueue> VlQueue;
+
+// TODO(ovov): remove after c++17
+template <typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args &&...args) {
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
 
 void StartRpcQueue() {
-    RwQueue.Start(config().daemon().rw_threads());
-    RoQueue.Start(config().daemon().ro_threads());
-    IoQueue.Start(config().daemon().io_threads());
-    VlQueue.Start(config().daemon().vl_threads());
+    BuildClientPatterns();
+
+    RwQueue = make_unique<TRequestQueue>("portod-RW");
+    RoQueue = make_unique<TRequestQueue>("portod-RO");
+    IoQueue = make_unique<TRequestQueue>("portod-IO");
+    VlQueue = make_unique<TRequestQueue>("portod-Vl");
+    RwQueue->Start(config().daemon().rw_threads());
+    RoQueue->Start(config().daemon().ro_threads());
+    IoQueue->Start(config().daemon().io_threads());
+    VlQueue->Start(config().daemon().vl_threads());
 }
 
 void StopRpcQueue() {
-    RwQueue.Stop();
-    RoQueue.Stop();
-    IoQueue.Stop();
-    VlQueue.Stop();
+    RwQueue->Stop();
+    RoQueue->Stop();
+    IoQueue->Stop();
+    VlQueue->Stop();
 }
 
 void QueueRpcRequest(std::unique_ptr<TRequest> &request) {
@@ -2409,20 +2484,16 @@ void QueueRpcRequest(std::unique_ptr<TRequest> &request) {
     request->QueueTime = GetCurrentTimeMs();
     request->Classify();
     if (request->RoReq)
-        RoQueue.Enqueue(request);
+        RoQueue->Enqueue(request);
     else if (request->IoReq)
-        IoQueue.Enqueue(request);
+        IoQueue->Enqueue(request);
     else if (request->VlReq)
-        VlQueue.Enqueue(request);
+        VlQueue->Enqueue(request);
     else
-        RwQueue.Enqueue(request);
+        RwQueue->Enqueue(request);
 }
 
 uint64_t RpcRequestsTopRunningTime() {
-    auto rw = RwQueue.TopRunningTime();
-    auto ro = RoQueue.TopRunningTime();
-    auto io = IoQueue.TopRunningTime();
-    auto vl = VlQueue.TopRunningTime();
-
-    return std::max({rw, ro, io, vl});
+    return std::max(
+        {RwQueue->TopRunningTime(), RoQueue->TopRunningTime(), IoQueue->TopRunningTime(), VlQueue->TopRunningTime()});
 }

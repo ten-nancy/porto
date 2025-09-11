@@ -36,8 +36,10 @@ TClient::TClient(int fd)
 {
     ConnectionTime = GetCurrentTimeMs();
     ActivityTimeMs = ConnectionTime;
-    if (fd >= 0)
+    if (fd >= 0) {
         Statistics->ClientsCount++;
+        MetricsRegistry->Clients++;
+    }
 }
 
 TClient::TClient(const std::string &special) {
@@ -67,6 +69,7 @@ void TClient::CloseConnectionLocked(bool serverShutdown) {
         Closed = true;
 
         Statistics->ClientsCount--;
+        MetricsRegistry->Clients--;
         if (ClientContainer)
             ClientContainer->ClientsCount--;
     }
@@ -168,6 +171,7 @@ TError TClient::IdentifyClient() {
             AccessLevel = EAccessLevel::ReadOnly;
     }
 
+    Name = fmt::format("{}@{}", Comm, SplitString(ct->Name, '/')[0]);
     Id = fmt::format("CL{}:{}({}) {}", Fd, Comm, Pid, ct->Slug);
 
     if (AccessLevel <= EAccessLevel::ReadOnly || Verbose) {
