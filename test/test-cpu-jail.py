@@ -268,9 +268,19 @@ try:
     a.SetProperty('cpu_set', 'jail 1')
     a.Destroy()
 
+    a = conn.Run('foo')
+    b = conn.Run('foo/bar')
+    c = conn.Run('foo/baz', command='true')
+    c.Wait()
+
+    ExpectEq(c['state'], 'dead')
+
+    a['cpu_set'] = 'jail 1'
+    a.Destroy()
+
 finally:
     for ct in [c, b, a]:
         try:
             ct.Destroy()
-        except:
+        except Exception:
             pass

@@ -1772,8 +1772,7 @@ class TCgroupAffinityIndex {
 public:
     TCgroupAffinityIndex(const std::list<std::shared_ptr<TContainer>> &subtree) {
         for (auto &ct: subtree) {
-            if (ct->State == EContainerState::Stopped || ct->State == EContainerState::Dead ||
-                !(ct->Controllers & CGROUP_CPUSET))
+            if (!ct->HasResources() || !(ct->Controllers & CGROUP_CPUSET))
                 continue;
 
             auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpusetSubsystem.get());
@@ -1793,11 +1792,14 @@ public:
         if (it == Index.end())
             return false;
         // exact match or some other ancestor
-        if (name != it->first && !StringStartsWith(cg.GetName(), it->first))
-            return false;
+        for (auto it = Index.lower_bound(name); it != Index.end(); ++it) {
+            if (!StringStartsWith(name, it->first))
+                continue;
 
-        affinity = it->second;
-        return true;
+            affinity = it->second;
+            return true;
+        }
+        return false;
     }
 };
 
