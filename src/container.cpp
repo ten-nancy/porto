@@ -4251,6 +4251,8 @@ TError TContainer::Load(const rpc::TContainerSpec &spec, bool restoreOnError) {
         if (error)
             break;
     }
+    if (error)
+        L_DBG("Cannot load {}", error);
     SanitizeCapabilities();
     UnlockState();
     CT = nullptr;
@@ -4258,11 +4260,20 @@ TError TContainer::Load(const rpc::TContainerSpec &spec, bool restoreOnError) {
     if (!error && HasResources())
         error = ApplyDynamicProperties();
 
+    if (error)
+        L_DBG("Cannot ApplyDynamicProperties {}", error);
+
     if (!error)
         error = Save();
 
-    if (error && restoreOnError)
-        Load(oldSpec, false);
+    if (error)
+        L_DBG("Cannot Save {}", error);
+
+    if (error && restoreOnError) {
+        TError loadError = Load(oldSpec, false);
+        if (loadError)
+            L_DBG("Cannot Load oldspec {}", loadError);
+    }
 
     return error;
 }
