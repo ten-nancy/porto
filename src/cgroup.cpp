@@ -2468,7 +2468,7 @@ TError TCgroupDriver::InitializeCgroups() {
     }
 
     if (Cgroup2Subsystem->Supported) {
-        auto cg = Cgroup2Subsystem->Cgroup(PORTO_CGROUP_PREFIX, false);
+        auto cg = Cgroup2Subsystem->Cgroup(PORTO_CGROUP_PREFIX, true);
         if (!cg->Exists()) {
             error = CreateCgroup(*cg);
             if (error)
