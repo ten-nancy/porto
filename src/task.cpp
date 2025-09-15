@@ -30,7 +30,7 @@ extern "C" {
 std::string to_string(TTaskEnv::EMsgCode code) {
     switch (code) {
     case TTaskEnv::EMsgCode::Error:
-        return "Error";
+        return "Result";
     case TTaskEnv::EMsgCode::WaitPid:
         return "WaitPid";
     case TTaskEnv::EMsgCode::TaskPid:
@@ -98,7 +98,7 @@ void TTaskEnv::ReportPid(EMsgCode type) {
     AbortOnError(Sock.SendPidFd(pidFd));
 }
 
-void TTaskEnv::ReportError(const TError &error) {
+TError TTaskEnv::ReportError(const TError &error) {
     auto error2 = Sock.SendInt(int(EMsgCode::Error));
     if (!error2)
         error2 = Sock.SendError(error);
@@ -108,6 +108,9 @@ void TTaskEnv::ReportError(const TError &error) {
         L_ERR("Failed send error: {}", error2);
         _exit(EXIT_FAILURE);
     }
+    // Wait ack from portod.  We dont want to exit before portod
+    // handles pidfd that we цe could have sent earlier
+    return Sock.RecvZero();
 }
 
 void TTaskEnv::Abort(const TError &error) {
@@ -115,7 +118,7 @@ void TTaskEnv::Abort(const TError &error) {
 
     L("abort due to {}", error);
 
-    ReportError(error);
+    (void)ReportError(error);
     _exit(EXIT_FAILURE);
 }
 
@@ -211,7 +214,6 @@ TError TTaskEnv::ChildExec() {
         };
         TFile::CloseAllExcept({PortoInit.Fd, LogFile.Fd, Sock.Fd});
         ReportError(OK);
-        AbortOnError(Sock.RecvZero());
         L("Exec portoinit meta {}", CT->Slug);
         fexecve(PortoInit.Fd, (char *const *)args, envp);
         Abort(TError::System("fexec portoinit"));
@@ -288,7 +290,6 @@ TError TTaskEnv::ChildExec() {
     }
 
     ReportError(OK);
-    AbortOnError(Sock.RecvZero());
 
     L("Exec '{}'", argv[0]);
     execvpe(argv[0], (char *const *)argv.data(), envp);
@@ -709,10 +710,15 @@ TError TTaskEnv::CommunicateChild(TPidFd &waitPidFd, TPidFd &taskPidFd) {
 
         switch (code) {
         case EMsgCode::Error: {
-            childError = MasterSock.RecvError();  // child sends ok before final exec
+            // Child sends error in case of failure. Otherwise child
+            // sends OK before final exec
+            childError = MasterSock.RecvError();
+            // Send ack
+            auto error = MasterSock.SendZero();
+            // If child failed don’t bother with ack
             if (childError)
                 return childError;
-            auto error = MasterSock.SendZero();
+            // If child succeeded check ack
             if (error)
                 return error;
             break;

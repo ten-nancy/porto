@@ -65,7 +65,7 @@ struct TTaskEnv {
     TError ChildExec();
 
     void ReportPid(EMsgCode type);
-    void ReportError(const TError &error);
+    TError ReportError(const TError &error);
     void Abort(const TError &error);
     void AbortOnError(const TError &error);
 
