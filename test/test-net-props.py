@@ -38,3 +38,10 @@ assert str(ct4.GetProperty('net_rx_limit_bound')) == 'default: 7607418880'
 ct6 = c.CreateWeakContainer('test-net-props3/child/child/child')
 assert str(ct6.GetProperty('net_limit_bound')) == 'default: 7607418880'
 assert str(ct6.GetProperty('net_rx_limit_bound')) == 'default: 7255'
+
+
+# test too long hostname
+with test_common.CreateContainer(c, name='foobar') as ct:
+    ct['hostname'] = 'a' * 100 + '.example.com'
+    test_common.ExpectException(ct.Start, porto.exceptions.InvalidValue)
+

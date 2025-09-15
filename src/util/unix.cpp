@@ -241,8 +241,11 @@ std::string GetHostName() {
 
 TError SetHostName(const std::string &name) {
     int ret = sethostname(name.c_str(), name.length());
-    if (ret < 0)
+    if (ret < 0) {
+        if (errno == EINVAL)
+            return TError(EError::InvalidValue, "hostname '{}' is too long", name);
         return TError::System("sethostname(" + name + ")");
+    }
 
     return OK;
 }
