@@ -1148,6 +1148,10 @@ TError TContainer::Destroy(std::list<std::shared_ptr<TVolume>> &unlinked) {
 
     L_ACT("Destroy {}", Slug);
 
+    // Maybe it is better to return OK?
+    if (State == EContainerState::Destroyed)
+        return TError(EError::ContainerDoesNotExist, "Container was destroyed");
+
     if (State != EContainerState::Stopped) {
         error = Stop(0);
         if (error)
