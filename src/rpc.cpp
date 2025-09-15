@@ -2439,7 +2439,7 @@ public:
             auto now = GetCurrentTimeMs();
 
             for (auto start: StartTime) {
-                if (start > now)
+                if (start > 0 && start < now)
                     ret = std::max(ret, now - start);
             }
         }
