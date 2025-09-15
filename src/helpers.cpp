@@ -85,9 +85,8 @@ TError RunCommand(const std::vector<std::string> &command, const std::vector<std
 
     SetProcessName("portod-" + command[0]);
 
-    auto childrenAllowed = CL ? CL->ClientContainer->ChildrenAllowed : true;
     if (CgroupDriver.IsInitialized()) {
-        auto memcg = CgroupDriver.MemorySubsystem->Cgroup(memCgroup, childrenAllowed);
+        auto memcg = CgroupDriver.MemorySubsystem->Cgroup(memCgroup, false);
         error = memcg->Attach(GetPid());
         if (error)
             HelperError(err, "Cannot attach to helper cgroup", error);

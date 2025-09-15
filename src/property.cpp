@@ -7128,14 +7128,14 @@ void TPortoStat::Populate(TUintMap &m) const {
     }
 
     uint64_t usage = 0;
-    auto cg = CgroupDriver.MemorySubsystem->Cgroup(PORTO_DAEMON_CGROUP, CT->ChildrenAllowed);
+    auto cg = CgroupDriver.MemorySubsystem->Cgroup(PORTO_DAEMON_CGROUP, false);
     TError error = CgroupDriver.MemorySubsystem->Usage(*cg, usage);
     if (error)
         L_ERR("Can't get memory usage of portod");
     m["memory_usage_mb"] = usage / 1024 / 1024;
 
     usage = 0;
-    cg = CgroupDriver.CpuacctSubsystem->Cgroup(PORTO_DAEMON_CGROUP, CT->ChildrenAllowed);
+    cg = CgroupDriver.CpuacctSubsystem->Cgroup(PORTO_DAEMON_CGROUP, false);
     error = CgroupDriver.CpuacctSubsystem->Usage(*cg, usage);
     if (error)
         L_ERR("Can't get cpu usage of portod");
