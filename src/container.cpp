@@ -59,9 +59,9 @@ TIdMap ContainerIdMap(1, CONTAINER_ID_MAX);
 std::vector<ExtraProperty> ExtraProperties;
 std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 
-std::unordered_set<std::string> SupportedExtraProperties = {
-    "cgroupfs", "command", "max_respawns", "userns", "unshare_on_exec", "resolv_conf", "capabilities",
-};
+std::unordered_set<std::string> SupportedExtraProperties = {"cgroupfs",     "command",         "max_respawns",
+                                                            "userns",       "unshare_on_exec", "resolv_conf",
+                                                            "capabilities", "cpu_weight",      "controllers"};
 
 std::mutex CpuAffinityMutex;
 static bool HyperThreadingEnabled = false;    /* hyperthreading is disabled in vms and sandbox tests */
