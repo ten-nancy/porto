@@ -2479,6 +2479,15 @@ TError TCgroupDriver::InitializeCgroups() {
     return error;
 }
 
+static unsigned long getDaemonCpuGuarantee() {
+    int nproc = GetNumCores();
+    if (nproc <= 32)
+        return 8;
+    if (nproc <= 80)
+        return 16;
+    return 32;
+}
+
 TError TCgroupDriver::InitializeDaemonCgroups() {
     std::vector<const TSubsystem *> DaemonSubsystems = {FreezerSubsystem.get(), MemorySubsystem.get(),
                                                         CpuacctSubsystem.get(), PerfSubsystem.get()};
@@ -2513,6 +2522,16 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
     TError error = MemorySubsystem->SetLimit(*cg, config().daemon().memory_limit());
     if (error)
         return error;
+
+    cg = CpuSubsystem->Cgroup(PORTO_DAEMON_CGROUP, false);
+    auto cpuGuarntee = getDaemonCpuGuarantee() * CPU_POWER_PER_SEC;
+    error = CpuSubsystem->SetGuarantee(*cg, cpuGuarntee);
+    if (error)
+        L_ERR("Cannot set daemon cpu guarantee: {}", error);
+
+    error = CpuSubsystem->SetShares(*cg, "normal", 100, cpuGuarntee);
+    if (error)
+        L_ERR("Cannot set daemon cpu guarantee: {}", error);
 
     cg = MemorySubsystem->Cgroup(PORTO_HELPERS_CGROUP, false);
     error = RecreateCgroup(*cg);
