@@ -1704,14 +1704,17 @@ TError TCpuSubsystem::SetGuarantee(const TCgroup &cg, uint64_t guarantee) {
 }
 
 TError TCpuSubsystem::SetShares(const TCgroup &cg, const std::string &policy, uint64_t weight, uint64_t guarantee) {
-    uint64_t shares = BaseShares * guarantee * weight / (100 * CPU_POWER_PER_SEC);
+    uint64_t shares = std::max(MinShares, BaseShares * guarantee / CPU_POWER_PER_SEC);
+
+    if (policy != "idle")
+        shares = (shares * weight) / 100;
 
     if (policy == "rt" || policy == "high" || policy == "iso")
         shares *= 16;
     else if (policy == "idle")
-        shares = BaseShares / 16;
+        shares = MinShares;
 
-    shares = std::min(std::max(shares, MinShares), MaxShares);
+    shares = std::min(shares, MaxShares);
     return cg.SetUint64(IsCgroup2() ? WEIGHT : SHARES, shares);
 }
 
