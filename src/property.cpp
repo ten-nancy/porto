@@ -7055,10 +7055,10 @@ TError TPortoStat::GetIndexed(const std::string &index, std::string &value) {
 class TPortoCpuJailState: public TProperty {
 public:
     TError Get(std::string &value) const override {
-        auto state = GetJailCpuState();
+        auto usage = GetJailCpuUsage();
         value += "core jails\n";
-        for (unsigned i = 0; i < state.Permutation.size(); i++)
-            value += fmt::format("{:<4d} {:02d}\n", state.Permutation[i], state.Usage[i]);
+        for (unsigned cpu = 0; cpu < usage.size(); cpu++)
+            value += fmt::format("{:<4d} {:02d}\n", cpu, usage[cpu]);
         return OK;
     }
     TPortoCpuJailState()

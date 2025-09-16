@@ -25,6 +25,12 @@ static std::vector<unsigned> JailCpuPermutation;
 static std::vector<unsigned> CpuToJailPermutationIndex;
 /* how many containers are jailed at JailCpuPermutation[cpu] core */
 static std::vector<unsigned> JailCpuPermutationUsage;
+/* how many containers are jailed at cpu */
+static std::vector<unsigned> JailCpuUsage;
+
+static std::vector<unsigned> NodeRequest; /* numa node -> total jail weight */
+static std::vector<unsigned> NodeUsage;   /* numa node -> total jail usage */
+static unsigned UnboundRequest = 0;
 
 static inline std::unique_lock<std::mutex> LockJailState() {
     return std::unique_lock<std::mutex>(JailStateLock);
@@ -43,6 +49,8 @@ TError BuildCpuTopology() {
 
     NodeThreads.resize(NumaNodes.Size());
     ThreadsNode.resize(HostCpus.Size());
+    NodeRequest.resize(NumaNodes.Size());
+    NodeUsage.resize(NumaNodes.Size());
 
     for (unsigned node = 0; node < NumaNodes.Size(); node++) {
         if (!NumaNodes.Get(node))
@@ -103,7 +111,7 @@ TError BuildCpuTopology() {
         }
     }
 
-    JailCpuPermutationUsage.resize(JailCpuPermutation.size());
+    JailCpuUsage.resize(JailCpuPermutation.size());
     return OK;
 }
 
@@ -180,7 +188,7 @@ public:
         : Node(node)
     {}
 
-    bool HasNode(void) const override {
+    bool NodeBound() const override {
         return true;
     }
 
@@ -208,47 +216,57 @@ public:
 class TJailSpec: public TCpuSetSpec {
     const unsigned Size;
     const int Node;
-    TBitMap Allocated;
+    unsigned &Request;
+    std::shared_ptr<const TBitMap> Allocated;
 
-    static void UpdateJailCpuState(const TBitMap &curr, const TBitMap &next) {
+    void UpdateJailCpuState(const TBitMap &curr, const TBitMap &next) const {
         PORTO_LOCKED(JailStateLock);
 
         for (unsigned cpu = 0; cpu < std::max(curr.Size(), next.Size()); ++cpu) {
             if (curr.Get(cpu) == next.Get(cpu))
                 continue;
 
-            auto index = CpuToJailPermutationIndex[cpu];
-            if (curr.Get(cpu)) {
-                PORTO_ASSERT(JailCpuPermutationUsage[index] > 0);
-                JailCpuPermutationUsage[index]--;
-            } else
-                JailCpuPermutationUsage[index]++;
+            auto node = ThreadsNode[cpu];
+            auto d = next.Get(cpu) ? 1 : -1;
+
+            PORTO_ASSERT(next.Get(cpu) || JailCpuUsage[cpu] > 0);
+
+            JailCpuUsage[cpu] += d;
+            Request += d;
+            NodeUsage[node] += d;
         }
     }
 
     TError NextJailCpu(TBitMap &affinity) const {
-        unsigned minUsage = UINT_MAX, minIndex;
+        // (cpu_usage, node_usage)
+        std::tuple<unsigned, unsigned> bestScore(UINT_MAX, UINT_MAX);
+        unsigned bestCpu = UINT_MAX;
 
-        for (unsigned i = 0; i < JailCpuPermutationUsage.size(); ++i) {
-            int cpu = JailCpuPermutation[i];
-
+        for (unsigned cpu = 0; cpu < JailCpuUsage.size(); ++cpu) {
             if (affinity.Get(cpu))
                 continue;
 
             if (Node >= 0 && ThreadsNode[cpu] != (unsigned)Node)
                 continue;
 
-            if (JailCpuPermutationUsage[i] < minUsage) {
-                minIndex = i;
-                minUsage = JailCpuPermutationUsage[i];
+            auto node = ThreadsNode[cpu];
+            auto score = std::make_tuple(JailCpuUsage[cpu], NodeUsage[node]);
+
+            if (score < bestScore) {
+                bestCpu = cpu;
+                bestScore = score;
             }
         }
 
-        if (minUsage == UINT_MAX)
+        if (!HostCpus.Get(bestCpu))
             return TError("Failed allocate cpu to jail");
 
-        JailCpuPermutationUsage[minIndex]++;
-        affinity.Set(JailCpuPermutation[minIndex]);
+        JailCpuUsage[bestCpu]++;
+        Request++;
+        NodeUsage[ThreadsNode[bestCpu]]++;
+
+        affinity.Set(bestCpu);
+
         return OK;
     }
 
@@ -265,26 +283,30 @@ class TJailSpec: public TCpuSetSpec {
 public:
     TJailSpec(unsigned size, int node)
         : Size(size),
-          Node(node)
+          Node(node),
+          Request(Node < 0 ? UnboundRequest : NodeRequest[Node])
     {}
 
-    bool HasNode() const override {
+    bool NodeBound() const override {
         return Node >= 0;
     }
 
     TError Allocate(const TBitMap &current, TBitMap &target) override {
-        if (Satisfies(current) && Allocated != current) {
+        // Allocated is not protected from concurrent updates. Thus
+        // ct->TargetCpuSpec->Allocate must be protected by ActionLock
+        // for now.
+        if (Satisfies(current) && (!Allocated || *Allocated != current)) {
             L("Jail restore allocation {}", current.Format());
             {
                 auto lock = LockJailState();
-                UpdateJailCpuState(Allocated, current);
+                UpdateJailCpuState(Allocated ? *Allocated : TBitMap(), current);
             }
-            Allocated = current;
+            Allocated = std::make_shared<const TBitMap>(current);
         }
 
-        if (Allocated.Size() > 0) {
-            L("Jail cached allocation: {}", Allocated.Format());
-            target = Allocated;
+        if (Allocated) {
+            L("Jail cached allocation: {}", Allocated->Format());
+            target = *Allocated;
             return OK;
         }
 
@@ -301,22 +323,22 @@ public:
 
         lock.unlock();
 
-        Allocated = target;
-        L("Jail new allocation: {}", Allocated.Format());
+        Allocated = std::make_shared<const TBitMap>(target);
+        L("Jail new allocation: {}", Allocated->Format());
 
         return OK;
     }
 
     void Release() override {
-        if (Allocated.Size() == 0)
+        if (!Allocated)
             return;
 
-        L("Jail release allocation: {}", Allocated.Format());
+        L("Jail release allocation: {}", Allocated->Format());
         {
             auto lock = LockJailState();
-            UpdateJailCpuState(Allocated, {});
+            UpdateJailCpuState(*Allocated, {});
         }
-        Allocated.Clear();
+        Allocated.reset();
     }
 
     TError Validate(TContainer &container) override {
@@ -338,6 +360,10 @@ public:
         }
 
         return OK;
+    }
+
+    std::shared_ptr<const TBitMap> GetAllocation() const override {
+        return Allocated;
     }
 
     std::string ToString() const override {
@@ -492,9 +518,9 @@ std::shared_ptr<TCpuSetSpec> TCpuSetSpec::Load(const TContainer &container, cons
     return nullptr;
 }
 
-TJailCpuState GetJailCpuState() {
+std::vector<unsigned> GetJailCpuUsage() {
     auto lock = LockJailState();
-    return {JailCpuPermutation, JailCpuPermutationUsage};
+    return JailCpuUsage;
 }
 
 static TError Widen(const TCgroup &cgroup, TBitMap &current, const TBitMap &target) {
@@ -505,7 +531,7 @@ static TError Widen(const TCgroup &cgroup, TBitMap &current, const TBitMap &targ
     return CgroupDriver.CpusetSubsystem->SetCpus(cgroup, current);
 }
 
-static TError ApplyCgSubtreeCpus(const TCgroup &cgroup, const TBitMap &affinity) {
+static TError ApplyCgSubtreeCpus(const TCgroup &cgroup, const TBitMap &target) {
     std::vector<std::unique_ptr<const TCgroup>> children;
     auto error = cgroup.Children(children);
 
@@ -514,22 +540,28 @@ static TError ApplyCgSubtreeCpus(const TCgroup &cgroup, const TBitMap &affinity)
     if (error)
         return error;
 
-    error = Widen(cgroup, current, affinity);
+    if (target == current)
+        return OK;
+
+    if (children.empty())
+        return CgroupDriver.CpusetSubsystem->SetCpus(cgroup, target);
+
+    error = Widen(cgroup, current, target);
     if (error)
         return error;
 
     for (auto &child: children) {
-        auto error = ApplyCgSubtreeCpus(*child, affinity);
+        auto error = ApplyCgSubtreeCpus(*child, target);
         if (error)
             return error;
     }
 
-    if (current != affinity)
-        return CgroupDriver.CpusetSubsystem->SetCpus(cgroup, affinity);
+    if (current != target)
+        return CgroupDriver.CpusetSubsystem->SetCpus(cgroup, target);
     return OK;
 }
 
-TError ApplySubtreeCpus(TContainer &container) {
+TError ApplySubtreeCpus(TContainer &container, bool restore) {
     if (!container.HasResources())
         return OK;
 
@@ -546,10 +578,11 @@ TError ApplySubtreeCpus(TContainer &container) {
             return error;
 
         container.CpuSetSpec->Release();
-        error = container.TargetCpuSetSpec->Allocate(current, target);
+        error = container.TargetCpuSetSpec->Allocate(restore ? current : TBitMap(), target);
         if (error)
             return error;
         container.CpuSetSpec = container.TargetCpuSetSpec;
+        L("{} current={} target={}", container.Slug, current.Format(), target.Format());
 
         if (current == target)
             return OK;
@@ -564,7 +597,7 @@ TError ApplySubtreeCpus(TContainer &container) {
     }
 
     for (auto &child: container.Children) {
-        auto error = ApplySubtreeCpus(*child);
+        auto error = ApplySubtreeCpus(*child, restore);
         if (error)
             return error;
     }
@@ -581,13 +614,13 @@ TError ApplySubtreeCpus(TContainer &container) {
     return OK;
 }
 
-TError ApplyCpuSet(TContainer &container) {
+TError ApplyCpuSet(TContainer &container, bool restore) {
     auto cpuSetSpec = container.CpuSetSpec;
-    auto error = ApplySubtreeCpus(container);
+    auto error = ApplySubtreeCpus(container, restore);
     if (error) {
         L_ERR("Failed apply cpu_set: {}", error);
         container.TargetCpuSetSpec = cpuSetSpec;
-        auto error2 = ApplySubtreeCpus(container);
+        auto error2 = ApplySubtreeCpus(container, restore);
         if (error2)
             L_ERR("Failed rollback cpu_set for {}: {}", container.Slug, error2);
     }
@@ -605,4 +638,135 @@ TBitMap GetNoSmtCpus(const TBitMap &cpuAffinity) {
     }
 
     return noSmt;
+}
+
+// Get optimal per-node request
+static std::vector<unsigned> getNodeRequest(const std::vector<unsigned> &nodeUsage) {
+    PORTO_LOCKED(JailStateLock);
+
+    auto nodeRequest = NodeRequest;
+
+    auto cmp = [&](unsigned n1, unsigned n2) {
+        if (nodeRequest[n1] == nodeRequest[n2])
+            return nodeUsage[n1] < nodeUsage[n2];
+        return nodeRequest[n1] > nodeRequest[n2];
+    };
+
+    std::vector<unsigned> nodes;
+    for (unsigned n = 0; n < NumaNodes.Size(); ++n) {
+        if (!NumaNodes.Get(n))
+            continue;
+        nodes.push_back(n);
+        std::push_heap(nodes.begin(), nodes.end(), cmp);
+    }
+
+    for (unsigned i = 0; i < UnboundRequest; ++i) {
+        pop_heap(nodes.begin(), nodes.end(), cmp);
+        auto node = nodes.back();
+        nodeRequest[node] += 1;
+
+        push_heap(nodes.begin(), nodes.end(), cmp);
+    }
+
+    return nodeRequest;
+}
+
+// Returns vector of pairs (cpu, overload)
+std::vector<std::pair<unsigned, unsigned>> FindUnbalancedJailCpus() {
+    auto lock = LockJailState();
+
+    auto nodeRequest = getNodeRequest(NodeUsage);
+    std::vector<std::pair<unsigned, unsigned>> unbalanced;
+
+    for (unsigned n = 0; n < NumaNodes.Size(); ++n) {
+        if (!NumaNodes.Get(n))
+            continue;
+
+        auto nodeUnbalanced = NodeUsage[n] > nodeRequest[n];
+        // Whole node is overloaded, need move jails to another node
+        if (nodeUnbalanced) {
+            auto imbalance = (NodeUsage[n] - nodeRequest[n]) / NodeThreads[n].Weight();
+            L("Node {} is unbalanced: usage={} request={}", n, NodeUsage[n], nodeRequest[n]);
+            for (unsigned cpu = 0; cpu < NodeThreads[n].Size(); ++cpu) {
+                if (!NodeThreads[n].Get(cpu))
+                    continue;
+
+                unbalanced.push_back(std::make_pair(cpu, imbalance));
+            }
+            continue;
+        }
+        // Try find overload inside node
+        unsigned minUsage = UINT_MAX, maxUsage = 0;
+        std::vector<unsigned> maxUsageCpus;
+        for (unsigned cpu = 0; cpu < NodeThreads[n].Size(); ++cpu) {
+            if (!NodeThreads[n].Get(cpu))
+                continue;
+
+            unsigned usage = JailCpuUsage[cpu];
+            if (usage >= maxUsage) {
+                if (usage > maxUsage)
+                    maxUsageCpus.clear();
+
+                maxUsage = usage;
+                maxUsageCpus.push_back(cpu);
+            }
+            if (minUsage)
+                minUsage = usage;
+        }
+        auto delta = maxUsage - minUsage;
+        if (delta < 2)
+            continue;  // balanced
+
+        for (auto cpu: maxUsageCpus)
+            unbalanced.push_back(std::make_pair(cpu, delta - 1));
+    }
+
+    return unbalanced;
+}
+
+std::shared_ptr<TContainer> FindUnbalancedJailContainer(
+    const std::vector<std::pair<unsigned, unsigned>> unbalancedCpus) {
+    auto ctLock = LockContainers();
+    auto containers = Containers;
+    ctLock.unlock();
+
+    auto score = [&unbalancedCpus](const TBitMap &allocation, bool nodeBound) {
+        unsigned ctOverload = 0;
+        for (auto &pair: unbalancedCpus) {
+            auto cpu = pair.first;
+            auto overload = pair.second;
+
+            if (allocation.Get(cpu))
+                ctOverload += overload;
+        }
+
+        if (!ctOverload)
+            return std::make_tuple(0, 0U);
+
+        return std::make_tuple(int(nodeBound), ctOverload);
+    };
+
+    auto maxScore = std::make_tuple(0, 0);
+    std::shared_ptr<TContainer> unbalancedCt;
+
+    for (auto &it: containers) {
+        auto &ct = it.second;
+        auto spec = ct->CpuSetSpec;
+
+        auto allocation = spec->GetAllocation();
+        if (!allocation)
+            continue;
+
+        auto state = ct->State.load();
+        if (state != EContainerState::Running && state != EContainerState::Meta)
+            continue;
+
+        auto s = score(*allocation, spec->NodeBound());
+        if (s > maxScore) {
+            unbalancedCt = ct;
+            maxScore = s;
+        }
+    }
+
+    return unbalancedCt;
 }

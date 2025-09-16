@@ -131,7 +131,7 @@ public:
     const std::string Slug;
     const std::string FirstName;
 
-    EContainerState State = EContainerState::Stopped;
+    std::atomic<EContainerState> State{EContainerState::Stopped};
     bool ChildrenAllowed = true;
     std::atomic<int> RunningChildren;
     std::atomic<int> StartingChildren;
@@ -537,6 +537,7 @@ public:
     static TError Restore(const TKeyValue &kv, std::shared_ptr<TContainer> &ct);
 
     static void Event(const TEvent &event);
+    static void RebalanceJail();
 
 private:
     TError SetupNetLimitSoft(uint64_t bps);
@@ -552,3 +553,6 @@ extern std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 static inline std::unique_lock<std::mutex> LockContainers() {
     return ContainersMutex.UniqueLock();
 }
+
+void StartRebalanceJailLoop();
+void StopRebalanceJailLoop();

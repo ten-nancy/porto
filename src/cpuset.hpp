@@ -17,7 +17,7 @@ public:
     static std::shared_ptr<TCpuSetSpec> Parse(const TContainer &container, const std::string &text);
     static std::shared_ptr<TCpuSetSpec> Load(const TContainer &container, const rpc::TContainerCpuSet &value);
 
-    virtual bool HasNode() const {
+    virtual bool NodeBound() const {
         return false;
     }
     virtual TError Allocate(const TBitMap &current, TBitMap &target) = 0;
@@ -25,19 +25,17 @@ public:
     virtual TError Validate(TContainer &container) = 0;
     virtual std::string ToString() const = 0;
     virtual void Dump(rpc::TContainerCpuSet &value) const = 0;
-};
 
-struct TJailCpuState {
-    std::vector<unsigned> Permutation;
-    std::vector<unsigned> Usage;
-
-    TJailCpuState(const std::vector<unsigned> &permutation, std::vector<unsigned> usage)
-        : Permutation(permutation),
-          Usage(usage)
-    {}
+    virtual std::shared_ptr<const TBitMap> GetAllocation() const {
+        return nullptr;
+    }
 };
 
 TError BuildCpuTopology();
-TJailCpuState GetJailCpuState();
-TError ApplyCpuSet(TContainer &container);
+std::vector<unsigned> GetJailCpuUsage();
+TError ApplyCpuSet(TContainer &container, bool restore);
 TBitMap GetNoSmtCpus(const TBitMap &cpuAffinity);
+
+std::vector<std::pair<unsigned, unsigned>> FindUnbalancedJailCpus();
+std::shared_ptr<TContainer> FindUnbalancedJailContainer(
+    const std::vector<std::pair<unsigned, unsigned>> unbalancedCpus);

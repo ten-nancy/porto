@@ -1085,7 +1085,7 @@ void TContainer::SetState(EContainerState next) {
 
     LockStateWrite();
 
-    auto prev = State;
+    auto prev = State.load();
     State = next;
 
     if (prev == EContainerState::Starting || next == EContainerState::Starting) {
@@ -1837,18 +1837,21 @@ TError TContainer::SetSeccomp(const std::string &name) {
     return OK;
 }
 
+static std::condition_variable RebalanceJailCv;
+
 TError TContainer::ApplyDynamicProperties(bool onRestore) {
     auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
     auto blkcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.BlkioSubsystem.get());
     TError error;
 
     if (TestPropDirty(EProperty::CPU_SET)) {
-        error = ApplyCpuSet(*this);
+        error = ApplyCpuSet(*this, true);
         if (error)
             return error;
 
+        RebalanceJailCv.notify_all();
         if ((Controllers & CGROUP_MEMORY) && CgroupDriver.MemorySubsystem->SupportNumaBalance() &&
-            CpuSetSpec->HasNode()) {
+            CpuSetSpec->NodeBound()) {
             auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
             if (config().container().enable_numa_migration() && !RootPath.IsRoot())
                 error = CgroupDriver.MemorySubsystem->SetNumaBalance(*memcg, 0, 0);
@@ -3101,7 +3104,10 @@ TError TContainer::FreeResources(bool ignore) {
             return error;
     }
 
-    CpuSetSpec->Release();
+    if (CpuSetSpec->GetAllocation()) {
+        CpuSetSpec->Release();
+        RebalanceJailCv.notify_all();
+    }
 
     RemoveWorkDir();
 
@@ -4079,7 +4085,7 @@ void TContainer::SyncState() {
         }
     }
 
-    switch (Parent ? Parent->State : EContainerState::Meta) {
+    switch (Parent ? Parent->State.load() : EContainerState::Meta) {
     case EContainerState::Stopped:
         if (State != EContainerState::Stopped)
             Stop(0); /* Also stop paused */
@@ -4444,4 +4450,75 @@ TTuple TContainer::Taint() {
         taint.push_back("Container with bind mount source which allows suid in host");
 
     return taint;
+}
+
+static std::thread RebalanceJailThread;
+static std::atomic<bool> NeedStopRebalanceJailLoop(false);
+static std::mutex RebalanceJailLock;
+
+void TContainer::RebalanceJail() {
+    static constexpr size_t maxRetries = 32;
+
+    for (size_t retry = 0; retry < maxRetries && !NeedStopRebalanceJailLoop; ++retry) {
+        auto unbalanced = FindUnbalancedJailCpus();
+
+        if (unbalanced.empty())
+            return;
+
+        L("Try {}, number of unbalanced cpu: {}", retry + 1, unbalanced.size());
+
+        auto ct = FindUnbalancedJailContainer(unbalanced);
+        if (!ct)
+            continue;
+
+        L_ACT("Rejail {}", ct->Slug);
+        MetricsRegistry->Rebalanced++;
+
+        auto ctLock = LockContainers();
+        auto error = ct->LockAction(ctLock);
+        ctLock.unlock();
+
+        if (error)
+            continue;
+        if (ct->IsRunningOrMeta()) {
+            ct->CpuSetSpec->Release();
+            auto error = ApplyCpuSet(*ct, false);
+            if (error)
+                L_ERR("Jail cpus failed: {}", error);
+        }
+        ct->UnlockAction();
+    }
+}
+
+void RebalanceJailLoop() {
+    SetProcessName("portod-JL");
+
+    const uint64_t interval = 60000;
+
+    while (!NeedStopRebalanceJailLoop) {
+        auto deadline = GetCurrentTimeMs() + interval;
+
+        TContainer::RebalanceJail();
+
+        {
+            std::unique_lock<std::mutex> lock(RebalanceJailLock);
+            if (NeedStopRebalanceJailLoop)
+                break;
+            RebalanceJailCv.wait_for(lock, std::chrono::milliseconds(deadline - GetCurrentTimeMs()));
+        }
+    }
+}
+
+void StartRebalanceJailLoop() {
+    NeedStopRebalanceJailLoop = false;
+    RebalanceJailThread = std::thread(RebalanceJailLoop);
+}
+
+void StopRebalanceJailLoop() {
+    {
+        std::unique_lock<std::mutex> lock(RebalanceJailLock);
+        NeedStopRebalanceJailLoop = true;
+    }
+    RebalanceJailCv.notify_all();
+    RebalanceJailThread.join();
 }

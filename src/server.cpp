@@ -252,6 +252,7 @@ static void ServerLoop() {
             return;
         }
     }
+    StartRebalanceJailLoop();
     StartStatFsLoop();
     StartRpcQueue();
     TStorage::StartAsyncRemover();
@@ -384,6 +385,7 @@ exit:
     EventQueue->Stop();
     StopRpcQueue();
     StopStatFsLoop();
+    StopRebalanceJailLoop();
     TStorage::StopAsyncRemover();
 }
 

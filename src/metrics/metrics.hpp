@@ -115,6 +115,8 @@ public:
 
     TGauge Clients = TGauge(*this, "client_count");
 
+    TCounter Rebalanced = TCounter(*this, "cpuset_rebalances_total");
+
     TMetricFabric<TGauge> Volumes = TMetricFabric<TGauge>(*this, "volume_count");
     TCounter VolumesCreated = TCounter(*this, "volume_created_rate");
 
