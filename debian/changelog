@@ -1,3 +1,61 @@
+porto (5.3.52) unstable; urgency=low
+  [ ovov ]
+      metrics: do not log
+      cpuset: get rid of jail permutation
+      metrics: fix names
+      cpuset: fix rebalance
+      container: rebalance cpu_set jail
+      volume, nbd: do not reconnect on build timeout
+      cpuset: refactoring
+      rpc: fix TopRunningTime
+      helper: fix leaf handling
+      task: keep child alive until server handles error
+      util/unix: return InvalidValue on trying to set too long hostname
+      cgroup: handle min shares corner case wrt to cpu_weight
+      container: add cpu_weight and controllers to extra-properites
+      portod, cgroup: set daemon cpu guarantee
+      container: return error on destroying destroyed container
+      cgroup: create leaf for porto cgroup
+      portod: add prometheus metrics
+      container: fix cpuset apply
+      container: collect oom kills only if oom monitor is alive
+      update build images
+      cgroup: fix migration to HasLeaf
+      Revert "volume: allow to use private binds as layers"
+      container: fix resuming meta container
+      cgroup: fix handling of empty cpuset in cgroup v2
+      container: set cpu.cfs_quota_us to -1 when cpu_limit=0
+      stream: non-blocking open of stdout/stderr
+      util/string: fix CpuPowerToString
+      cgroup: fix need_quota_change init value
+      container: fix oom logging in cgroup-v2
+      container: wait at least for 50ms between respawns
+      cgroup: fix TCpuSubsystem::SetLimit
+      util/path: optimize TFile::CloseAllExcept
+  [ alexperevalov ]
+      Set Parent container for TNetEnv
+      Fix rpc.pb.go and seccomp.pb.go generation 
+      portoshim in porto container
+      Enter into nested netns for kube containers
+      Fix default docker pull arch
+      Insecure registries support in portod
+      Target Platform for docker-pull
+  [ warwish ]
+      cgroup: consider cgroup_root_path for subsys init
+      service: remove !virtualization constraint
+      porto: allow to run portod inside porto container
+      build: add cmake_minimum_required to all CMakeLists.txt
+  [ ivan42 ]
+      net_soft_limit property is in bytes now
+  [ dschervov ]
+      PORTO-1429: reduce cgroup v2 controllers quantity
+      volume: allow to use private binds as layers
+  [ dmitrygx ]
+      GPUINFRA-751: launch NetwrokIfUpScript inside network watchdog and turn on for YATI RoCE hosts
+  last commit: 01624f61349f3f361f509fedacf459fcf876a7e1
+
+ -- Porto Team <porto@yandex-team.ru>  Tue, 16 Sep 2025 05:34:14 -0000
+
 porto (5.3.51) unstable; urgency=low
   [ ovov ]
       container: cpu_guarantee_bound depends on cpu controller
