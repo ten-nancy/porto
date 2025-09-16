@@ -116,7 +116,6 @@ std::unique_ptr<TMetricsRegistry> MetricsRegistry;
 
 static void Handle(const httplib::Request&, httplib::Response& res) {
     try {
-        L("Metrics request");
         prometheus::TextSerializer textSerializer;
         std::stringstream ss;
 
