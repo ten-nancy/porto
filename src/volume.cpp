@@ -1474,10 +1474,39 @@ class TVolumeNbdBackend: public TVolumeBackend {
         return nullptr;
     }
 
+    struct TBuildInfo {
+        std::atomic<uint64_t> DeadlineMs;
+        std::atomic<uint64_t> PendingReconnect;
+        std::atomic<bool> Reconn;
+
+        TBuildInfo(uint64_t deadlineMs)
+            : DeadlineMs(deadlineMs),
+              PendingReconnect(0),
+              Reconn(false)
+        {}
+    };
+
+    // TODO(ovov): move to atomic<weak_ptr> on c++20
+    std::mutex BuildInfoMutex;
+    std::weak_ptr<TBuildInfo> BuildInfo;
+
+    TError OpenSocket(TPath &path, TFile &pin) {
+        auto error = pin.OpenPath(path);
+        if (error) {
+            if (error.Errno == ENOENT)
+                return TError(EError::NbdSocketUnavaliable, "No such path");
+            return error;
+        }
+        error = pin.WriteAccess(Root, Cred);
+        if (error)
+            return error;
+        path = pin.ProcPath();
+        return OK;
+    }
+
 public:
     TNbdConnParams NbdConnParams;
     std::string FilesystemType;
-    std::atomic_ulong Reconns;
 
     TError Configure() override {
         TError error;
@@ -1584,16 +1613,18 @@ public:
         auto params = NbdConnParams;
 
         if (params.UnixPath) {
-            auto error = pin.OpenPath(params.UnixPath);
-            if (!error)
-                error = pin.WriteAccess(Root, Cred);
+            auto error = OpenSocket(params.UnixPath, pin);
             if (error)
                 return error;
-            params.UnixPath = pin.ProcPath();
         }
 
         L_ACT("nbd connect {}", Volume->Storage);
+
         uint64_t deadlineMs = GetCurrentTimeMs() + NbdConnParams.ConnTimeout * 1000;
+
+        auto buildInfo = std::make_shared<TBuildInfo>(deadlineMs);
+        BuildInfo = buildInfo;
+
         auto error = NbdConn.ConnectDevice(params, deadlineMs, index);
         if (error)
             return error;
@@ -1607,10 +1638,23 @@ public:
 
         error = Volume->InternalPath.Mount(GetDevice(), FilesystemType, Volume->GetMountFlags(), {});
         if (error.Errno == EIO)
-            return TError(Reconns ? EError::NbdSocketTimeout : EError::InvalidFilesystem, "Cannot mount nbd device: {}",
-                          error);
+            return TError(buildInfo->Reconn ? EError::NbdSocketTimeout : EError::InvalidFilesystem,
+                          "Cannot mount nbd device: {}", error);
         else if (error.Errno == EINVAL)
             return TError(EError::InvalidFilesystem, "Cannot mount nbd device: {}", error);
+
+        // Check for pending reconnects
+        {
+            auto biLock = std::unique_lock<std::mutex>(BuildInfoMutex);
+            BuildInfo.reset();
+        }
+        auto disconnected = buildInfo->PendingReconnect.load();
+        if (disconnected > 0) {
+            L_ACT("nbd reconnect {}", disconnected);
+            params.NumConnections = disconnected;
+            return NbdConn.ReconnectDevice(params, deadlineMs, index);
+        }
+
         return error;
     }
 
@@ -1619,26 +1663,37 @@ public:
         auto params = NbdConnParams;
 
         if (params.UnixPath) {
-            auto error = pin.OpenPath(params.UnixPath);
-            if (!error)
-                error = pin.WriteAccess(Root, Cred);
+            auto error = OpenSocket(params.UnixPath, pin);
             if (error)
                 return error;
-            params.UnixPath = pin.ProcPath();
         }
         params.NumConnections = numConnections;
 
-        Reconns += numConnections;
+        auto deadlineMs = GetCurrentTimeMs() + params.ConnTimeout * 1000;
         L_ACT("nbd: reconnect nbd{} connections {}", Volume->DeviceIndex, numConnections);
-        uint64_t deadlineMs = GetCurrentTimeMs() + params.ConnTimeout * 1000;
         return NbdConn.ReconnectDevice(params, deadlineMs, Volume->DeviceIndex);
     }
 
-    static TError Rebuild(int deviceIndex, int numConnections) {
+    static TError HandleDisconnect(int deviceIndex, int numConnections) {
         auto volume = ResolveNbd(deviceIndex);
         if (!volume)
             return TError(EError::VolumeNotFound);
         auto backend = static_cast<TVolumeNbdBackend *>(volume->Backend.get());
+
+        // Disconnect can happen during mounting, handle this!
+        {
+            auto biLock = std::unique_lock<std::mutex>(backend->BuildInfoMutex);
+            auto bi = backend->BuildInfo.lock();
+            if (bi) {
+                bi->Reconn = true;
+
+                if (GetCurrentTimeMs() >= bi->DeadlineMs) {
+                    bi->PendingReconnect += numConnections;
+                    return TError(EError::VolumeNotFound);
+                }
+            }
+        }
+
         return backend->Rebuild(numConnections);
     }
 
@@ -1767,14 +1822,12 @@ public:
         if (req.DueMs > GetCurrentTimeMs())
             return false;
 
-        auto error = TVolumeNbdBackend::Rebuild(req.DeviceIndex, req.NumConnections);
+        auto error = TVolumeNbdBackend::HandleDisconnect(req.DeviceIndex, req.NumConnections);
         if (error.Error == EError::VolumeNotFound)
             return true;
         if (error) {
             L_WRN("nbd: failed reconnect nbd{}: {}", req.DeviceIndex, error);
             Push(req.NextRetry());
-        } else {
-            L("nbd: nbd{} reconnected {} connections", req.DeviceIndex, req.NumConnections);
         }
         return true;
     }
