@@ -58,6 +58,17 @@ public:
         MetricsRegistry->EventsQueued++;
         return TWorker::Push(std::move(event));
     }
+
+    uint64_t TopWaiting() {
+        auto lock = ScopedLock();
+        if (Queue.empty())
+            return 0;
+        auto request = Queue.top();
+        auto now = GetCurrentTimeMs();
+        if (now > request.DueMs)
+            return now - request.DueMs;
+        return 0;
+    }
 };
 
 std::string TEvent::GetMsg() const {
@@ -103,4 +114,8 @@ void TEventQueue::Start() {
 
 void TEventQueue::Stop() {
     Worker->Stop();
+}
+
+uint64_t TEventQueue::TopWaiting() {
+    return Worker->TopWaiting();
 }

@@ -138,3 +138,5 @@ constexpr unsigned PORTO_LABEL_COUNT_MAX = 100;
 
 extern void AckExitStatus(int pid);
 extern bool PortoNlSocketReused;
+
+uint64_t EventQueueTopWaitingTime();

@@ -93,37 +93,38 @@ public:
 
     TMetricFabric<TGauge> Version = TMetricFabric<TGauge>(*this, "version");
 
-    TCounter Reloads       = TCounter(*this, "reload_count");
-    TCounter ShutdownTime  = TCounter(*this, "reload_shutdown_ms");
-    TCounter RestoreTime  = TCounter(*this, "reload_restore_ms");
-    TCounter ContainerLost = TCounter(*this, "container_lost_count");
-    TCounter VolumeLost    = TCounter(*this, "volume_lost_count");
+    TCounter Reloads       = TCounter(*this, "daemon_reloads_total");
+    TCounter ShutdownTime  = TCounter(*this, "daemon_reload_shutdown_ms_total");
+    TCounter RestoreTime  = TCounter(*this, "daemon_reload_restore_ms_total");
+    TCounter ContainerLost = TCounter(*this, "containers_lost_total");
+    TCounter VolumeLost    = TCounter(*this, "volumes_lost_total");
 
-    TMetricFabric<TGauge> Containers = TMetricFabric<TGauge>(*this, "container_count");
-    TCounter ContainersCreated     = TCounter(*this, "container_created_rate");
-    TCounter ContainersStarted     = TCounter(*this, "container_started_rate");
-    TCounter ContainersFailedStart = TCounter(*this, "container_start_failed_rate");
+    TMetricFabric<TGauge> Containers = TMetricFabric<TGauge>(*this, "containers");
+    TCounter ContainersCreated     = TCounter(*this, "containers_created_total");
+    TCounter ContainersStarted     = TCounter(*this, "containers_started_total");
+    TCounter ContainersFailedStart = TCounter(*this, "containers_start_failed_total");
 
-    TMetricFabric<TCounter> Requests        = TMetricFabric<TCounter>(*this, "request_rate");
-    TMetricFabric<TCounter> RequestWaitTime = TMetricFabric<TCounter>(*this, "request_wait_time");
-    TMetricFabric<TCounter> RequestExecTime = TMetricFabric<TCounter>(*this, "request_exec_time");
-    TMetricFabric<TCounter> RequestLockTime = TMetricFabric<TCounter>(*this, "request_lock_time");
-    TMetricFabric<TGauge> RequestTopRunning = TMetricFabric<TGauge>(*this, "request_top_running_time");
-    TMetricFabric<TGauge> RequestQueued     = TMetricFabric<TGauge>(*this, "request_queued");
+    TMetricFabric<TCounter> Requests        = TMetricFabric<TCounter>(*this, "requests_total");
+    TMetricFabric<TCounter> RequestWaitTime = TMetricFabric<TCounter>(*this, "requests_wait_ms_total");
+    TMetricFabric<TCounter> RequestExecTime = TMetricFabric<TCounter>(*this, "requests_exec_ms_total");
+    TMetricFabric<TCounter> RequestLockTime = TMetricFabric<TCounter>(*this, "requests_lock_ms_total");
+    TMetricFabric<TGauge> RequestTopRunning = TMetricFabric<TGauge>(*this, "requests_top_running_ms");
+    TMetricFabric<TGauge> RequestQueued     = TMetricFabric<TGauge>(*this, "requests_queued");
 
     TGauge EventsQueued = TGauge(*this, "events_queued");
+    TGauge EventsTopWaiting = TGauge(*this, "events_top_waiting_ms");
 
-    TGauge Clients = TGauge(*this, "client_count");
+    TGauge Clients = TGauge(*this, "clients");
 
     TCounter Rebalanced = TCounter(*this, "cpuset_rebalances_total");
 
-    TMetricFabric<TGauge> Volumes = TMetricFabric<TGauge>(*this, "volume_count");
-    TCounter VolumesCreated = TCounter(*this, "volume_created_rate");
+    TMetricFabric<TGauge> Volumes = TMetricFabric<TGauge>(*this, "volumes");
+    TCounter VolumesCreated = TCounter(*this, "volumes_created_total");
 
-    TCounter Errors = TCounter(*this, "error_total_count");
-    TCounter CgErrors = TCounter(*this, "error_cgroup_count");
-    TCounter Warnings = TCounter(*this, "warning_total_count");
-    TCounter Taints = TCounter(*this, "taint_total_count");
+    TCounter Errors = TCounter(*this, "errors_total");
+    TCounter CgErrors = TCounter(*this, "cgroup_errors_total");
+    TCounter Warnings = TCounter(*this, "warnings_total");
+    TCounter Taints = TCounter(*this, "taints_total");
 };
 
 

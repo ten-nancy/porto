@@ -121,6 +121,7 @@ static void Handle(const httplib::Request&, httplib::Response& res) {
         std::stringstream ss;
 
         (void)RpcRequestsTopRunningTime();
+        MetricsRegistry->EventsTopWaiting = EventQueueTopWaitingTime();
         MetricsRegistry->Reloads += Statistics->PortoStarts - MetricsRegistry->Reloads;
         MetricsRegistry->ShutdownTime += Statistics->ShutdownTime - MetricsRegistry->ShutdownTime;
         MetricsRegistry->RestoreTime += Statistics->RestoreTime - MetricsRegistry->RestoreTime;

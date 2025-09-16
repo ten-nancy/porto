@@ -42,6 +42,12 @@ pid_t ServerPid;
 std::unique_ptr<TEpollLoop> EpollLoop;
 std::unique_ptr<TEventQueue> EventQueue;
 
+uint64_t EventQueueTopWaitingTime() {
+    if (EventQueue)
+        return EventQueue->TopWaiting();
+    return 0;
+}
+
 std::mutex TidsMutex;
 
 bool DiscardState = false;

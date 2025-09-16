@@ -57,4 +57,6 @@ public:
     void Stop();
 
     void Add(uint64_t timeoutMs, const TEvent &e);
+
+    uint64_t TopWaiting();
 };
