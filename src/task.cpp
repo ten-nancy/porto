@@ -595,11 +595,12 @@ TError TTaskEnv::DoFork1() {
         if (error)
             return error;
 
+        auto nosmt = GetNoSmtCpus(affinity);
         cpu_set_t taskMask;
-        affinity.FillCpuSet(&taskMask);
+        nosmt.FillCpuSet(&taskMask);
 
         if (sched_setaffinity(0, sizeof(taskMask), &taskMask))
-            return TError::System("sched_setaffinity");
+            return TError::System("sched_setaffinity({})", nosmt.Format());
     }
 
     if (SetIoPrio(0, CT->IoPrio))

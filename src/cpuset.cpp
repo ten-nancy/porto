@@ -7,33 +7,43 @@
 #include "util/log.hpp"
 #include "util/path.hpp"
 
-bool HyperThreadingEnabled = false;           /* hyperthreading is disabled in vms and sandbox tests */
-static std::vector<unsigned> NeighborThreads; /* cpu -> neighbor hyperthread */
+bool HyperThreadingEnabled = false;
+
+/* cpu -> neighbor hyperthreads */
+static std::vector<std::vector<unsigned>> NeighborThreads;
 
 static TBitMap HostCpus;
-
 static TBitMap NumaNodes;
+
 /* numa node -> list of cpus */
 static std::vector<TBitMap> NodeThreads;
 /* cpu -> numa node */
 static std::vector<unsigned> ThreadsNode;
 
 static std::mutex JailStateLock;
-/* 0,8,16,24,1,9,17,25,2,10,18,26,... */
-static std::vector<unsigned> JailCpuPermutation;
-/* cpu -> index in JailCpuPermutation */
-static std::vector<unsigned> CpuToJailPermutationIndex;
-/* how many containers are jailed at JailCpuPermutation[cpu] core */
-static std::vector<unsigned> JailCpuPermutationUsage;
 /* how many containers are jailed at cpu */
 static std::vector<unsigned> JailCpuUsage;
 
-static std::vector<unsigned> NodeRequest; /* numa node -> total jail weight */
-static std::vector<unsigned> NodeUsage;   /* numa node -> total jail usage */
+/* numa node -> total jail request */
+static std::vector<unsigned> NodeRequest;
+/* numa node -> total jail usage */
+static std::vector<unsigned> NodeUsage;
 static unsigned UnboundRequest = 0;
 
 static inline std::unique_lock<std::mutex> LockJailState() {
     return std::unique_lock<std::mutex>(JailStateLock);
+}
+
+// check if affinity has cpu neighbor
+static inline bool HasNeigh(const TBitMap &affinity, unsigned cpu) {
+    if (!HyperThreadingEnabled)
+        return false;
+
+    for (auto sibling: NeighborThreads[cpu]) {
+        if (affinity.Get(sibling))
+            return true;
+    }
+    return false;
 }
 
 TError BuildCpuTopology() {
@@ -82,36 +92,14 @@ TError BuildCpuTopology() {
 
         if (neighbors.Weight() > 1) {
             HyperThreadingEnabled = true;
-            NeighborThreads[cpu] = neighbors.FirstBitIndex(cpu + 1);
+            for (unsigned sibling = 0; sibling < HostCpus.Size(); ++sibling)
+                if (neighbors.Get(sibling) && sibling != cpu)
+                    NeighborThreads[cpu].push_back(sibling);
         }
     }
 
-    JailCpuPermutation.resize(HostCpus.Size());
-    CpuToJailPermutationIndex.resize(HostCpus.Size());
+    JailCpuUsage.resize(HostCpus.Size());
 
-    std::vector<unsigned> nodeThreadsIter(NumaNodes.Size());
-    for (unsigned i = 0; i != HostCpus.Size() / NumaNodes.Size(); i += HyperThreadingEnabled ? 2 : 1) {
-        unsigned j = 0;
-        for (unsigned node = 0; node < NumaNodes.Size(); node++) {
-            if (!NumaNodes.Get(node))
-                continue;
-
-            int cpu = NodeThreads[node].FirstBitIndex(nodeThreadsIter[node]);
-            unsigned index = i * NumaNodes.Size() + j;
-            JailCpuPermutation[index] = cpu;
-            CpuToJailPermutationIndex[cpu] = index;
-            if (HyperThreadingEnabled) {
-                index = (i + 1) * NumaNodes.Size() + j;
-                JailCpuPermutation[index] = NeighborThreads[cpu];
-                CpuToJailPermutationIndex[NeighborThreads[cpu]] = index;
-            }
-
-            nodeThreadsIter[node] = cpu + 1;
-            ++j;
-        }
-    }
-
-    JailCpuUsage.resize(JailCpuPermutation.size());
     return OK;
 }
 
@@ -238,8 +226,8 @@ class TJailSpec: public TCpuSetSpec {
     }
 
     TError NextJailCpu(TBitMap &affinity) const {
-        // (cpu_usage, node_usage)
-        std::tuple<unsigned, unsigned> bestScore(UINT_MAX, UINT_MAX);
+        // (cpu_usage, node_usage, !has_sibling)
+        std::tuple<unsigned, unsigned, bool> bestScore(UINT_MAX, UINT_MAX, true);
         unsigned bestCpu = UINT_MAX;
 
         for (unsigned cpu = 0; cpu < JailCpuUsage.size(); ++cpu) {
@@ -250,7 +238,7 @@ class TJailSpec: public TCpuSetSpec {
                 continue;
 
             auto node = ThreadsNode[cpu];
-            auto score = std::make_tuple(JailCpuUsage[cpu], NodeUsage[node]);
+            auto score = std::make_tuple(JailCpuUsage[cpu], NodeUsage[node], !HasNeigh(affinity, cpu));
 
             if (score < bestScore) {
                 bestCpu = cpu;
@@ -628,13 +616,13 @@ TError ApplyCpuSet(TContainer &container, bool restore) {
 }
 
 TBitMap GetNoSmtCpus(const TBitMap &cpuAffinity) {
-    TBitMap noSmt;
+    if (!HyperThreadingEnabled)
+        return cpuAffinity;
 
-    noSmt.Set(cpuAffinity);
+    TBitMap noSmt;
     for (unsigned cpu = 0; cpu < cpuAffinity.Size(); cpu++) {
-        if (noSmt.Get(cpu)) {
-            noSmt.Set(NeighborThreads[cpu], false);
-        }
+        if (cpuAffinity.Get(cpu) && !HasNeigh(noSmt, cpu))
+            noSmt.Set(cpu);
     }
 
     return noSmt;
