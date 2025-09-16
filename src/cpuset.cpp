@@ -671,6 +671,10 @@ static std::vector<unsigned> getNodeRequest(const std::vector<unsigned> &nodeUsa
     return nodeRequest;
 }
 
+static unsigned ceildiv(unsigned x, unsigned y) {
+    return x / y + !!(x % y);
+}
+
 // Returns vector of pairs (cpu, overload)
 std::vector<std::pair<unsigned, unsigned>> FindUnbalancedJailCpus() {
     auto lock = LockJailState();
@@ -685,7 +689,7 @@ std::vector<std::pair<unsigned, unsigned>> FindUnbalancedJailCpus() {
         auto nodeUnbalanced = NodeUsage[n] > nodeRequest[n];
         // Whole node is overloaded, need move jails to another node
         if (nodeUnbalanced) {
-            auto imbalance = (NodeUsage[n] - nodeRequest[n]) / NodeThreads[n].Weight();
+            auto imbalance = ceildiv(NodeUsage[n] - nodeRequest[n], NodeThreads[n].Weight());
             L("Node {} is unbalanced: usage={} request={}", n, NodeUsage[n], nodeRequest[n]);
             for (unsigned cpu = 0; cpu < NodeThreads[n].Size(); ++cpu) {
                 if (!NodeThreads[n].Get(cpu))
@@ -743,7 +747,7 @@ std::shared_ptr<TContainer> FindUnbalancedJailContainer(
         if (!ctOverload)
             return std::make_tuple(0, 0U);
 
-        return std::make_tuple(int(nodeBound), ctOverload);
+        return std::make_tuple(int(!nodeBound), ctOverload);
     };
 
     auto maxScore = std::make_tuple(0, 0);
