@@ -43,7 +43,7 @@ knobs = {
     "cpu_guarantee" : "0.756c",
     "cpu_limit" : "0.9c",
     "cpu_policy" : "normal",
-    "cpu_set" : "1-2,4",
+    "cpu_set" : "0-1,3",
     "cwd" : "/var/log/../../home",
     "devices" : "/dev/loop0 rwm /dev/loop_alice 0660 porto-alice porto-alice; "\
                 "/dev/loop1 rwm /dev/loop_bob 0660 porto-bob porto-bob; ",

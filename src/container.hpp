@@ -8,6 +8,7 @@
 
 #include "cgroup.hpp"
 #include "device.hpp"
+#include "metrics/metrics.hpp"
 #include "network.hpp"
 #include "property.hpp"
 #include "seccomp.hpp"
@@ -21,6 +22,7 @@
 class TEpollSource;
 class TEvent;
 class TClient;
+class TCpuSetSpec;
 class TVolume;
 class TVolumeLink;
 class TKeyValue;
@@ -39,12 +41,6 @@ enum class EContainerState {
     Paused,
     Meta,
     Destroyed,
-};
-
-enum class ECpuSetType {
-    Inherit,
-    Node,
-    Absolute,
 };
 
 enum class ECgroupFs {
@@ -110,17 +106,6 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
 
     void Reap(bool oomKilled);
     void Exit(int status, bool oomKilled);
-
-    TError BuildCpuTopology();
-    TError ReserveCpus(unsigned nr_threads, unsigned nr_cores, TBitMap &threads, TBitMap &cores);
-    void SetAffinity(const TBitMap &affinity);
-    TError ApplyCpuSet();
-
-    void UpdateJailCpuStateLocked(const TBitMap &affinity, bool release = false);
-    TError NextJailCpu(TBitMap &affinity, int node = -1);
-    TError JailCpus();
-    void UnjailCpus(const TBitMap &affinity);
-    void UnjailCpusLocked(const TBitMap &affinity);
 
     TError SetCpuGuarantee(uint64_t guarantee);
     TError ApplyCpuGuarantee();
@@ -286,12 +271,9 @@ public:
     uint64_t CpuGuaranteeCur = 0;
     uint64_t CpuWeight = 100;
 
-    /* Under CpuAffinityMutex */
-    ECpuSetType CpuSetType = ECpuSetType::Inherit;
-    int CpuSetArg = 0;
-    int CpuJail = 0;
-    int NewCpuJail = 0;
-    TBitMap CpuAffinity;
+    std::shared_ptr<TCpuSetSpec> CpuSetSpec;
+    std::shared_ptr<TCpuSetSpec> TargetCpuSetSpec;
+    TBitMap TargetCpuAffinity;
 
     bool AutoRespawn = false;
     int64_t RespawnLimit = -1;
@@ -474,6 +456,8 @@ public:
     TError GetProcessCount(uint64_t &count) const;
     TError GetVmStat(TVmStat &stat) const;
 
+    TError GetCpuAffinity(TBitMap &affinity) const;
+
     TError StartTask();
     TError StartParents();
     TError PrepareStart();
@@ -493,6 +477,9 @@ public:
     TError ApplyResolvConf() const;
     TError SetSymlink(const TPath &symlink, const TPath &target);
 
+    bool HasControllers(uint64_t controllers) const {
+        return (Controllers & controllers) == controllers;
+    }
     TError SetControllers(uint64_t controllers);
     TError SetDeviceConf(const TDevices &devices, bool merge);
     TError EnableFuse(bool value);
@@ -521,7 +508,6 @@ public:
     TError Load(const TKeyValue &node);
 
     void ChooseSchedPolicy();
-    TBitMap GetNoSmtCpus();
 
     /* protected with VolumesLock and container lock */
     std::list<std::shared_ptr<TVolumeLink>> VolumeLinks;
@@ -552,18 +538,6 @@ public:
 
     static void Event(const TEvent &event);
 
-    struct TJailCpuState {
-        std::vector<unsigned> Permutation;
-        std::vector<unsigned> Usage;
-
-        TJailCpuState(const std::vector<unsigned> &permutation, std::vector<unsigned> usage)
-            : Permutation(permutation),
-              Usage(usage)
-        {}
-    };
-
-    static TJailCpuState GetJailCpuState();
-
 private:
     TError SetupNetLimitSoft(uint64_t bps);
 };
@@ -577,10 +551,4 @@ extern std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 
 static inline std::unique_lock<std::mutex> LockContainers() {
     return ContainersMutex.UniqueLock();
-}
-
-extern std::mutex CpuAffinityMutex;
-
-static inline std::unique_lock<std::mutex> LockCpuAffinity() {
-    return std::unique_lock<std::mutex>(CpuAffinityMutex);
 }

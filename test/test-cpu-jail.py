@@ -37,8 +37,7 @@ try:
     a = conn.Create('a')
     ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail')
     ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail 0')
-    a.SetProperty('cpu_set', 'jail {}'.format(CPUNR))
-    ExpectException(a.Start, porto.exceptions.ResourceNotAvailable)
+    ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail {}'.format(CPUNR))
     a.SetProperty('cpu_set', '')
     a.Start()
 

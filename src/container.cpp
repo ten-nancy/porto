@@ -11,6 +11,7 @@
 #include "cgroup.hpp"
 #include "client.hpp"
 #include "config.hpp"
+#include "cpuset.hpp"
 #include "device.hpp"
 #include "epoll.hpp"
 #include "event.hpp"
@@ -62,24 +63,6 @@ std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 std::unordered_set<std::string> SupportedExtraProperties = {"cgroupfs",     "command",         "max_respawns",
                                                             "userns",       "unshare_on_exec", "resolv_conf",
                                                             "capabilities", "cpu_weight",      "controllers"};
-
-std::mutex CpuAffinityMutex;
-static bool HyperThreadingEnabled = false;    /* hyperthreading is disabled in vms and sandbox tests */
-static std::vector<unsigned> NeighborThreads; /* cpu -> neighbor hyperthread */
-
-static TBitMap NumaNodes;
-static std::vector<TBitMap> NodeThreads;  /* numa node -> list of cpus */
-static std::vector<unsigned> ThreadsNode; /* cpu -> numa node */
-
-// PORTO-914
-static std::vector<unsigned> JailCpuPermutation;        /* 0,8,16,24,1,9,17,25,2,10,18,26,... */
-static std::vector<unsigned> CpuToJailPermutationIndex; /* cpu -> index in JailCpuPermutation */
-static std::vector<unsigned>
-    JailCpuPermutationUsage; /* how many containers are jailed at JailCpuPermutation[cpu] core */
-
-static TError CommitSubtreeCpus(const TCgroup &root, std::list<std::shared_ptr<TContainer>> &subtree);
-
-#include <iostream>
 
 std::vector<TGauge> MakeStateMetrics() {
     std::vector<TGauge> metrics;
@@ -485,9 +468,8 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     ChooseSchedPolicy();
 
     CpuPeriod = Parent ? Parent->CpuPeriod : config().container().cpu_period();
-
-    if (Parent)
-        CpuAffinity = Parent->CpuAffinity;
+    CpuSetSpec = TCpuSetSpec::Empty();
+    TargetCpuSetSpec = TCpuSetSpec::Parse(*this, "inherit");
 
     if (CpuPeriod != 100000000) {
         /* Default cfs period is not configurable in kernel */
@@ -1297,6 +1279,15 @@ TError TContainer::GetVmStat(TVmStat &stat) const {
     return OK;
 }
 
+TError TContainer::GetCpuAffinity(TBitMap &affinity) const {
+    affinity.Clear();
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get());
+    if (!cg->Exists())
+        return OK;
+
+    return CgroupDriver.CpusetSubsystem->GetCpus(*cg, affinity);
+}
+
 TError TContainer::CheckMemGuarantee() const {
     uint64_t total = GetTotalMemory();
     uint64_t usage = RootContainer->GetTotalMemGuarantee();
@@ -1483,7 +1474,6 @@ TError TContainer::ApplySchedPolicy() {
     auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
     struct sched_param param;
     param.sched_priority = SchedPrio;
-    TError error;
 
     std::vector<pid_t> prev, pids;
     bool retry;
@@ -1504,17 +1494,19 @@ TError TContainer::ApplySchedPolicy() {
         }
     }
 
-    TBitMap taskAffinity;
+    TBitMap affinity;
+    auto error = GetCpuAffinity(affinity);
+    if (error)
+        return error;
+
     if (SchedNoSmt) {
-        taskAffinity = GetNoSmtCpus();
-        L("Task affinity set: {}", taskAffinity.Format());
-    } else {
-        taskAffinity.Set(CpuAffinity);
+        affinity = GetNoSmtCpus(affinity);
+        L("Task affinity set: {}", affinity.Format());
     }
 
     cpu_set_t taskMask;
     int schedPolicy = ExtSchedIdle ? SCHED_OTHER : SchedPolicy;
-    taskAffinity.FillCpuSet(&taskMask);
+    affinity.FillCpuSet(&taskMask);
 
     do {
         error = cg->GetTasks(pids);
@@ -1539,7 +1531,7 @@ TError TContainer::ApplySchedPolicy() {
             if (sched_setscheduler(pid, schedPolicy, &param) && errno != ESRCH)
                 return TError::System("sched_setscheduler");
             if (sched_setaffinity(pid, sizeof(taskMask), &taskMask) && errno != ESRCH && !SkipIoUringThread(pid))
-                return TError::System("sched_setaffinity({}, {})", pid, taskAffinity.Format());
+                return TError::System("sched_setaffinity({}, {})", pid, affinity.Format());
             retry = true;
         }
         prev = pids;
@@ -1595,472 +1587,6 @@ TError TContainer::ApplyResolvConf() const {
     if (!error)
         error = file.WriteAll(ResolvConf.size() ? ResolvConf : RootContainer->ResolvConf);
     return error;
-}
-
-TContainer::TJailCpuState TContainer::GetJailCpuState() {
-    auto lock = LockCpuAffinity();
-    return {JailCpuPermutation, JailCpuPermutationUsage};
-}
-
-void TContainer::UpdateJailCpuStateLocked(const TBitMap &affinity, bool release) {
-    PORTO_LOCKED(CpuAffinityMutex);
-
-    for (unsigned cpu = 0; cpu < affinity.Size(); cpu++) {
-        if (!affinity.Get(cpu))
-            continue;
-
-        unsigned index = CpuToJailPermutationIndex[cpu];
-        if (release) {
-            if (JailCpuPermutationUsage[index])
-                JailCpuPermutationUsage[index]--;
-        } else
-            JailCpuPermutationUsage[index]++;
-    }
-}
-
-TError TContainer::NextJailCpu(TBitMap &affinity, int node) {
-    unsigned minUsage = UINT_MAX, minIndex;
-    for (unsigned i = 0; i < JailCpuPermutationUsage.size(); ++i) {
-        int cpu = JailCpuPermutation[i];
-
-        if (affinity.Get(cpu))
-            continue;
-
-        if (node >= 0 && ThreadsNode[cpu] != (unsigned)node)
-            continue;
-
-        if (JailCpuPermutationUsage[i] < minUsage) {
-            minIndex = i;
-            minUsage = JailCpuPermutationUsage[i];
-        }
-    }
-
-    if (minUsage == UINT_MAX)
-        return TError("Failed allocate cpu to jail");
-
-    JailCpuPermutationUsage[minIndex]++;
-    affinity.Set(JailCpuPermutation[minIndex]);
-    return OK;
-}
-
-void TContainer::UnjailCpus(const TBitMap &affinity) {
-    auto lock = LockCpuAffinity();
-    UnjailCpusLocked(affinity);
-}
-
-void TContainer::UnjailCpusLocked(const TBitMap &affinity) {
-    UpdateJailCpuStateLocked(affinity, true);
-
-    CpuJail = 0;
-}
-
-// TODO(ovov): kill this
-TError TContainer::JailCpus() {
-    TBitMap affinity;
-    TError error;
-    auto lock = LockCpuAffinity();
-
-    if (NewCpuJail) {
-        for (auto ct = Parent.get(); ct; ct = ct->Parent.get()) {
-            if (ct->CpuJail)
-                return TError(EError::ResourceNotAvailable, "Nested cpu jails are not supported for {}", Slug);
-        }
-
-        for (auto &ct: Subtree()) {
-            if (ct.get() != this) {
-                if (ct->CpuJail)
-                    return TError(EError::ResourceNotAvailable, "Nested cpu jails are not supported for {}", Slug);
-            }
-        }
-    }
-
-    /* check desired jail value */
-    if (CpuSetType == ECpuSetType::Node) {
-        if (!NumaNodes.Get(CpuSetArg))
-            return TError(EError::ResourceNotAvailable, "Numa node not found for {}", Slug);
-
-        if ((unsigned)NewCpuJail >= NodeThreads[0].Weight())
-            return TError(EError::ResourceNotAvailable, "Invalid jail with numa value {} (max {}) for {}", NewCpuJail,
-                          NodeThreads[0].Weight() - 1, Slug);
-    } else if ((unsigned)NewCpuJail >= JailCpuPermutation.size())
-        return TError(EError::ResourceNotAvailable, "Invalid jail value {} (max {}) for {}", NewCpuJail,
-                      JailCpuPermutation.size() - 1, Slug);
-
-    /* read current cpus from cgroup */
-    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get());
-    if (!cg->Exists())
-        return OK;
-
-    error = CgroupDriver.CpusetSubsystem->GetCpus(*cg, affinity);
-    if (error) {
-        L_ERR("Cannot get cpuset.cpus: {}", error);
-        return error;
-    }
-
-    if (!NewCpuJail) {
-        /* disable previously enabled jail */
-        if (CpuJail)
-            UnjailCpusLocked(affinity);
-
-        return OK;
-    }
-
-    unsigned affinityWeight = affinity.Weight();
-
-    /* try to detect previous jail affinity */
-
-    int node = -1;
-    bool nodeChanged = false;
-    if (CpuSetType == ECpuSetType::Node) {
-        /* check if node changed */
-        node = CpuSetArg;
-        for (unsigned cpu = 0; cpu < affinity.Size(); cpu++) {
-            if (!affinity.Get(cpu))
-                continue;
-
-            if (ThreadsNode[cpu] != (unsigned)node) {
-                nodeChanged = true;
-                break;
-            }
-        }
-    } else if (NumaNodes.Weight() > 1 && affinityWeight > 1 && affinityWeight < JailCpuPermutation.size()) {
-        /* check previous pin to node, assume we was pinned */
-        nodeChanged = true;
-        for (unsigned cpu = 0; cpu < affinity.Size(); cpu++) {
-            if (!affinity.Get(cpu))
-                continue;
-
-            if (node < 0)
-                node = (int)ThreadsNode[cpu];
-            else if (ThreadsNode[cpu] != (unsigned)node) {
-                nodeChanged = false;
-                break;
-            }
-        }
-        /* we reuse node variable, so reset previous value */
-        node = -1;
-    }
-
-    if ((unsigned)NewCpuJail != affinityWeight || nodeChanged) {
-        if (node >= 0) {
-            if (affinityWeight < NodeThreads[node].Weight())
-                UpdateJailCpuStateLocked(affinity, true);
-        } else if (affinityWeight < JailCpuPermutation.size())
-            UpdateJailCpuStateLocked(affinity, true);
-
-        affinity.Clear();
-
-        /* main loop */
-        for (int i = 0; i < NewCpuJail; i++) {
-            error = NextJailCpu(affinity, node);
-            if (error)
-                return error;
-        }
-
-        auto subtree = Subtree();
-        subtree.reverse();
-        for (auto &ct: subtree)
-            ct->CpuAffinity = affinity;
-
-        error = CommitSubtreeCpus(*cg, subtree);
-        if (error)
-            return error;
-    } else if (!CpuJail)
-        /* case of portod reload, fill current usage */
-        UpdateJailCpuStateLocked(affinity);
-
-    CpuAffinity = affinity;
-    CpuJail = NewCpuJail;
-
-    return OK;
-}
-
-TBitMap TContainer::GetNoSmtCpus() {
-    TBitMap taskAffinity;
-
-    taskAffinity.Set(CpuAffinity);
-    for (unsigned cpu = 0; cpu < taskAffinity.Size(); cpu++) {
-        if (taskAffinity.Get(cpu)) {
-            taskAffinity.Set(NeighborThreads[cpu], false);
-        }
-    }
-
-    return taskAffinity;
-}
-
-class TCgroupAffinityIndex {
-    /*
-      qux/
-      foo/bar/
-      foo/
-      foo-/
-      baz/
-
-      Trailing slash is mandatory for correct work of index!
-      Without it index would look like this:
-
-      qux
-      foo/bar
-      foo-
-      foo
-      baz
-
-      In this index foo/bar is not followed by its parent foo
-     */
-    std::map<std::string, TBitMap, std::greater<std::string>> Index;
-
-public:
-    TCgroupAffinityIndex(const std::list<std::shared_ptr<TContainer>> &subtree) {
-        for (auto &ct: subtree) {
-            if (!ct->HasResources() || !(ct->Controllers & CGROUP_CPUSET))
-                continue;
-
-            auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpusetSubsystem.get());
-            if (!cg->Exists()) {
-                L_WRN("{} with cpuset controller does not have cpuset cgroup", ct->Slug);
-                continue;
-            }
-
-            Index.emplace(cg->GetName() + "/", ct->CpuAffinity);
-        }
-    }
-
-    // Find target affinity for cgroup or its closest ancestor
-    bool GetAffinity(const TCgroup &cg, TBitMap &affinity) const {
-        auto name = cg.GetName() + "/";
-        auto it = Index.lower_bound(name);
-        if (it == Index.end())
-            return false;
-        // exact match or some other ancestor
-        for (auto it = Index.lower_bound(name); it != Index.end(); ++it) {
-            if (!StringStartsWith(name, it->first))
-                continue;
-
-            affinity = it->second;
-            return true;
-        }
-        return false;
-    }
-};
-
-static TError WidenSubtreeCpus(const std::list<std::unique_ptr<const TCgroup>> &cgroups,
-                               const TCgroupAffinityIndex &index, std::map<std::string, TBitMap> &cpusets) {
-    for (auto &cg: cgroups) {
-        TBitMap affinity;
-        if (!index.GetAffinity(*cg, affinity))
-            return TError("Cannot find target affinity for cgroup {}", *cg);
-
-        TBitMap cur;
-        auto error = CgroupDriver.CpusetSubsystem->GetCpus(*cg, cur);
-        if (error)
-            return error;
-
-        if (!affinity.IsSubsetOf(cur)) {
-            cur.Set(affinity);  // union
-
-            error = CgroupDriver.CpusetSubsystem->SetCpus(*cg, cur);
-            if (error)
-                return error;
-        }
-        cpusets.emplace(cg->GetName(), std::move(cur));
-    }
-    return OK;
-}
-
-static TError NarrowSubtreeCpus(const std::list<std::unique_ptr<const TCgroup>> &cgroups,
-                                const TCgroupAffinityIndex &index, std::map<std::string, TBitMap> &cpusets) {
-    for (auto it = cgroups.rbegin(); it != cgroups.rend(); ++it) {
-        auto &cg = *it;
-
-        TBitMap affinity;
-        if (!index.GetAffinity(*cg, affinity))
-            return TError("Cannot find target affinity for cgroup {}", *cg);
-
-        auto kt = cpusets.find(cg->GetName());  // use find just in case
-        if (kt != cpusets.end() && kt->second.IsEqual(affinity))
-            continue;
-
-        auto error = CgroupDriver.CpusetSubsystem->SetCpus(*cg, affinity);
-        if (error)
-            return error;
-    }
-    return OK;
-}
-
-static TError ApplySubtreeCpus(const TCgroup &root, const std::list<std::shared_ptr<TContainer>> &subtree) {
-    TCgroupAffinityIndex index(subtree);
-    std::list<std::unique_ptr<const TCgroup>> cgroups;
-    std::map<std::string, TBitMap> cpusets;
-
-    auto error = CgroupDriver.CgroupSubtree(root, cgroups, true);
-    if (error)
-        return error;
-
-    cgroups.push_front(root.GetUniquePtr());
-
-    // Step 1: widen to union of current and target affinity
-    error = WidenSubtreeCpus(cgroups, index, cpusets);
-    if (error)
-        return error;
-
-    // Step 2: narrow to target affinity
-    error = NarrowSubtreeCpus(cgroups, index, cpusets);
-    if (error)
-        return error;
-    return OK;
-}
-
-static TError RevertSubtreeCpus(std::list<std::shared_ptr<TContainer>> &subtree) {
-    for (auto &ct: subtree) {
-        if (ct->State == EContainerState::Stopped || ct->State == EContainerState::Dead ||
-            !(ct->Controllers & CGROUP_CPUSET))
-            continue;
-
-        auto cg = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpusetSubsystem.get());
-        if (!cg->Exists())
-            continue;
-
-        auto error = CgroupDriver.CpusetSubsystem->GetCpus(*cg, ct->CpuAffinity);
-        if (error)
-            return error;
-    }
-    return OK;
-}
-
-static TError CommitSubtreeCpus(const TCgroup &root, std::list<std::shared_ptr<TContainer>> &subtree) {
-    auto error = ApplySubtreeCpus(root, subtree);
-
-    if (error) {
-        L_ERR("Failed to apply cpuset: {}", error);
-        auto error2 = RevertSubtreeCpus(subtree);
-        if (error2)
-            L_ERR("Failed to revert cpuset: {}", error2);
-        return error;
-    }
-
-    return OK;
-}
-
-TError TContainer::BuildCpuTopology() {
-    PORTO_ASSERT(IsRoot());
-
-    auto error = CpuAffinity.Read("/sys/devices/system/cpu/online");
-    if (error)
-        return error;
-
-    NeighborThreads.clear();
-    NeighborThreads.resize(CpuAffinity.Size());
-
-    for (unsigned cpu = 0; cpu < CpuAffinity.Size(); cpu++) {
-        if (!CpuAffinity.Get(cpu))
-            continue;
-
-        TBitMap neighbors;
-        error = neighbors.Read(StringFormat("/sys/devices/system/cpu/cpu%u/topology/thread_siblings_list", cpu));
-        if (error)
-            return error;
-
-        if (neighbors.Weight() > 1) {
-            HyperThreadingEnabled = true;
-            NeighborThreads[cpu] = neighbors.FirstBitIndex(cpu + 1);
-        }
-    }
-
-    error = NumaNodes.Read("/sys/devices/system/node/online");
-    if (error)
-        return error;
-
-    NodeThreads.clear();
-    NodeThreads.resize(NumaNodes.Size());
-
-    ThreadsNode.clear();
-    ThreadsNode.resize(CpuAffinity.Size());
-
-    for (unsigned node = 0; node < NumaNodes.Size(); node++) {
-        if (!NumaNodes.Get(node))
-            continue;
-
-        auto &nodeThreads = NodeThreads[node];
-
-        error = nodeThreads.Read(StringFormat("/sys/devices/system/node/node%u/cpulist", node));
-        if (error)
-            return error;
-        for (unsigned cpu = 0; cpu < nodeThreads.Size(); cpu++) {
-            if (!nodeThreads.Get(cpu))
-                continue;
-
-            ThreadsNode[cpu] = node;
-        }
-    }
-
-    JailCpuPermutation.clear();
-    JailCpuPermutation.resize(CpuAffinity.Size());
-    CpuToJailPermutationIndex.clear();
-    CpuToJailPermutationIndex.resize(CpuAffinity.Size());
-
-    std::vector<unsigned> nodeThreadsIter(NumaNodes.Size());
-    for (unsigned i = 0; i != CpuAffinity.Size() / NumaNodes.Size(); i += HyperThreadingEnabled ? 2 : 1) {
-        unsigned j = 0;
-        for (unsigned node = 0; node < NumaNodes.Size(); node++) {
-            if (!NumaNodes.Get(node))
-                continue;
-
-            int cpu = NodeThreads[node].FirstBitIndex(nodeThreadsIter[node]);
-            unsigned index = i * NumaNodes.Size() + j;
-            JailCpuPermutation[index] = cpu;
-            CpuToJailPermutationIndex[cpu] = index;
-            if (HyperThreadingEnabled) {
-                index = (i + 1) * NumaNodes.Size() + j;
-                JailCpuPermutation[index] = NeighborThreads[cpu];
-                CpuToJailPermutationIndex[NeighborThreads[cpu]] = index;
-            }
-
-            nodeThreadsIter[node] = cpu + 1;
-            ++j;
-        }
-    }
-
-    /* don't clear JailCpuPermutationUsage */
-    JailCpuPermutationUsage.resize(JailCpuPermutation.size());
-    return OK;
-}
-
-TError TContainer::ApplyCpuSet() {
-    auto lock = LockCpuAffinity();
-
-    auto subtree = Subtree();
-    subtree.reverse();
-
-    for (auto &ct: subtree) {
-        if (ct->CpuJail)
-            continue;
-
-        TBitMap affinity;
-
-        switch (ct->CpuSetType) {
-        case ECpuSetType::Inherit:
-            affinity = ct->Parent->CpuAffinity;
-            break;
-        case ECpuSetType::Absolute:
-            affinity = ct->CpuAffinity;
-            break;
-        case ECpuSetType::Node:
-            if (!NumaNodes.Get(ct->CpuSetArg))
-                return TError(EError::ResourceNotAvailable, "Numa node {} not found for {}", ct->CpuSetArg, ct->Slug);
-            affinity = NodeThreads[ct->CpuSetArg];
-            break;
-        }
-
-        L_VERBOSE("Assign CPUs {} for {}", affinity.Format(), ct->Slug);
-        ct->CpuAffinity = affinity;
-    }
-
-    auto error =
-        CommitSubtreeCpus(*(CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get())), subtree);
-    if (error)
-        return error;
-
-    return OK;
 }
 
 void TContainer::PropogateCpuGuarantee() {
@@ -2316,22 +1842,15 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
     auto blkcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.BlkioSubsystem.get());
     TError error;
 
-    if (TestClearPropDirty(EProperty::CPU_SET) && Parent) {
-        if (NewCpuJail != CpuJail || CpuSetType == ECpuSetType::Node) {
-            error = JailCpus();
-            if (error)
-                return error;
-        }
+    if (TestPropDirty(EProperty::CPU_SET)) {
+        error = ApplyCpuSet(*this);
+        if (error)
+            return error;
 
-        if (!CpuJail) {
-            error = ApplyCpuSet();
-            if (error)
-                return error;
-        }
-
-        if ((Controllers & CGROUP_MEMORY) && CgroupDriver.MemorySubsystem->SupportNumaBalance()) {
+        if ((Controllers & CGROUP_MEMORY) && CgroupDriver.MemorySubsystem->SupportNumaBalance() &&
+            CpuSetSpec->HasNode()) {
             auto memcg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.MemorySubsystem.get());
-            if (config().container().enable_numa_migration() && !RootPath.IsRoot() && CpuSetType == ECpuSetType::Node)
+            if (config().container().enable_numa_migration() && !RootPath.IsRoot())
                 error = CgroupDriver.MemorySubsystem->SetNumaBalance(*memcg, 0, 0);
             else
                 error = CgroupDriver.MemorySubsystem->SetNumaBalance(*memcg, 0, 4);
@@ -2339,6 +1858,8 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
             if (error)
                 return error;
         }
+
+        TestClearPropDirty(EProperty::CPU_SET);
     }
 
     if (TestPropDirty(EProperty::CPU_GUARANTEE)) {
@@ -3558,9 +3079,6 @@ void TContainer::FreeRuntimeResources() {
     error = UpdateSoftLimit();
     if (error)
         L_ERR("Cannot update memory soft limit: {}", error);
-
-    if (CpuJail)
-        UnjailCpus(CpuAffinity);
 }
 
 TError TContainer::FreeResources(bool ignore) {
@@ -3582,6 +3100,8 @@ TError TContainer::FreeResources(bool ignore) {
         if (error)
             return error;
     }
+
+    CpuSetSpec->Release();
 
     RemoveWorkDir();
 

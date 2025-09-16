@@ -9,6 +9,7 @@
 #include "client.hpp"
 #include "config.hpp"
 #include "container.hpp"
+#include "cpuset.hpp"
 #include "network.hpp"
 #include "rpc.hpp"
 #include "task.hpp"
@@ -4139,170 +4140,37 @@ public:
         RequireControllers = CGROUP_CPUSET;
     }
     TError Get(std::string &value) const override {
-        auto lock = LockCpuAffinity();
-
-        if (CT->NewCpuJail)
-            value = fmt::format("jail {}", CT->NewCpuJail);
-
-        switch (CT->CpuSetType) {
-        case ECpuSetType::Inherit:
-            break;
-        case ECpuSetType::Absolute:
-            value = CT->CpuAffinity.Format();
-            break;
-        case ECpuSetType::Node:
-            value += (value.empty() ? "" : "; ") + StringFormat("node %u", CT->CpuSetArg);
-            break;
-        }
-
+        value = CT->TargetCpuSetSpec->ToString();
         return OK;
     }
 
     TError Set(const std::string &value) override {
-        auto cfgs = SplitEscapedString(value, ' ', ';');
-        std::string mems;
-        TTuple cfg;
-        TError error;
-        int jail = 0;
+        auto spec = TCpuSetSpec::Parse(*CT, value);
+        if (spec == nullptr)
+            return TError(EError::InvalidValue, "invalid cpu_set: {}", value);
 
-        for (const auto &v: cfgs) {
-            if (v.size() != 0 && v[0] != "jail")
-                cfg = v;
-            else if (v.size() == 2) {
-                if (v[0] == "jail") {
-                    error = StringToInt(v[1], jail);
-                    if (error)
-                        return error;
-
-                    if (jail <= 0)
-                        return TError(EError::InvalidValue, "jail must be positive");
-                } else
-                    mems = v[1];
-            } else
-                return TError(EError::InvalidValue, "wrong format");
-        }
-
-        auto lock = LockCpuAffinity();
-
-        ECpuSetType type;
-        int arg = CT->CpuSetArg;
-
-        if (cfg.size() == 0 || cfg[0] == "all" || cfg[0] == "inherit") {
-            type = ECpuSetType::Inherit;
-        } else if (cfg.size() == 1) {
-            TBitMap map;
-            error = map.Parse(cfg[0]);
-            if (error)
-                return error;
-            type = ECpuSetType::Absolute;
-            if (!CT->CpuAffinity.IsEqual(map)) {
-                CT->CpuAffinity = map;
-                CT->SetProp(EProperty::CPU_SET);
-            }
-        } else if (cfg.size() == 2) {
-            error = StringToInt(cfg[1], arg);
-            if (error)
-                return error;
-
-            if (cfg[0] == "node")
-                type = ECpuSetType::Node;
-            else
-                return TError(EError::InvalidValue, "wrong format");
-
-            if (arg < 0 || (!arg && type != ECpuSetType::Node))
-                return TError(EError::InvalidValue, "wrong format");
-
-        } else
-            return TError(EError::InvalidValue, "wrong format");
-
-        if (jail && (type != ECpuSetType::Node && type != ECpuSetType::Inherit))
-            return TError(EError::InvalidValue, "wrong format");
-
-        if (CT->CpuSetType != type || CT->CpuSetArg != arg || CT->NewCpuJail != jail) {
-            CT->CpuSetType = type;
-            CT->CpuSetArg = arg;
-            CT->NewCpuJail = jail;
-            CT->SetProp(EProperty::CPU_SET);
-        }
-
+        CT->TargetCpuSetSpec = spec;
+        CT->SetProp(EProperty::CPU_SET);
         return OK;
-    }
-
-    void Dump(rpc::TContainerSpec &spec) const override {
-        auto cfg = spec.mutable_cpu_set();
-        switch (CT->CpuSetType) {
-        case ECpuSetType::Inherit:
-            cfg->set_policy("inherit");
-            break;
-        case ECpuSetType::Absolute:
-            cfg->set_policy("set");
-            for (auto cpu = 0u; cpu < CT->CpuAffinity.Size(); cpu++)
-                if (CT->CpuAffinity.Get(cpu))
-                    cfg->add_cpu(cpu);
-            cfg->set_list(CT->CpuAffinity.Format());
-            cfg->set_count(CT->CpuAffinity.Weight());
-            break;
-        case ECpuSetType::Node:
-            cfg->set_policy("node");
-            cfg->set_arg(CT->CpuSetArg);
-            break;
-        }
-
-        if (CT->CpuJail)
-            cfg->set_jail(CT->CpuJail);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
         return spec.has_cpu_set();
     }
 
+    void Dump(rpc::TContainerSpec &spec) const override {
+        auto cfg = spec.mutable_cpu_set();
+        CT->TargetCpuSetSpec->Dump(*cfg);
+    }
+
     TError Load(const rpc::TContainerSpec &spec) override {
         auto cfg = spec.cpu_set();
-        int arg = cfg.arg();
-        int jail = 0;
-        ECpuSetType type;
-        TError error;
+        auto cpuSetSpec = TCpuSetSpec::Load(*CT, cfg);
+        if (cpuSetSpec == nullptr)
+            return TError(EError::InvalidValue, "invalid cpu_set");
 
-        if (cfg.policy() == "inherit" || cfg.policy() == "") {
-            type = ECpuSetType::Inherit;
-        } else if (cfg.policy() == "set") {
-            TBitMap map;
-
-            if (cfg.has_list()) {
-                error = map.Parse(cfg.list());
-                if (error)
-                    return error;
-            } else {
-                for (auto cpu: cfg.cpu())
-                    map.Set(cpu);
-            }
-
-            type = ECpuSetType::Absolute;
-            if (!CT->CpuAffinity.IsEqual(map)) {
-                CT->CpuAffinity = map;
-                CT->SetProp(EProperty::CPU_SET);
-            }
-        } else if (cfg.policy() == "node") {
-            type = ECpuSetType::Node;
-        } else
-            return TError(EError::InvalidValue, "unknown cpu_set policy: {}", cfg.policy());
-
-        if (cfg.has_jail()) {
-            jail = cfg.jail();
-            if (jail <= 0)
-                return TError(EError::InvalidValue, "jail must be positive");
-        }
-
-        if (jail && (type != ECpuSetType::Node && type != ECpuSetType::Inherit))
-            return TError(EError::InvalidValue, "wrong format");
-
-        if (CT->CpuSetType != type || CT->CpuSetArg != arg || CT->CpuJail != jail) {
-            CT->CpuSetType = type;
-            CT->CpuSetArg = arg;
-            CT->NewCpuJail = jail;
-            CT->SetProp(EProperty::CPU_SET);
-        }
-
+        CT->TargetCpuSetSpec = cpuSetSpec;
+        CT->SetProp(EProperty::CPU_SET);
         return OK;
     }
 } static CpuSet;
@@ -4315,19 +4183,26 @@ public:
         IsReadOnly = true;
     }
     TError Get(std::string &value) const override {
-        auto lock = LockCpuAffinity();
-        value = CT->CpuAffinity.Format();
+        TBitMap affinity;
+        auto error = CT->GetCpuAffinity(affinity);
+        if (error)
+            return error;
+        value = affinity.Format();
         return OK;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-        auto lock = LockCpuAffinity();
+        TBitMap affinity;
+        auto error = CT->GetCpuAffinity(affinity);
+        if (error)
+            return;
+
         auto cfg = spec.mutable_cpu_set_affinity();
-        for (auto cpu = 0u; cpu < CT->CpuAffinity.Size(); cpu++)
-            if (CT->CpuAffinity.Get(cpu))
+        for (auto cpu = 0u; cpu < affinity.Size(); cpu++)
+            if (affinity.Get(cpu))
                 cfg->add_cpu(cpu);
-        cfg->set_list(CT->CpuAffinity.Format());
-        cfg->set_count(CT->CpuAffinity.Weight());
+        cfg->set_list(affinity.Format());
+        cfg->set_count(affinity.Weight());
     }
 } static CpuSetAffinity;
 
@@ -7180,7 +7055,7 @@ TError TPortoStat::GetIndexed(const std::string &index, std::string &value) {
 class TPortoCpuJailState: public TProperty {
 public:
     TError Get(std::string &value) const override {
-        auto state = TContainer::GetJailCpuState();
+        auto state = GetJailCpuState();
         value += "core jails\n";
         for (unsigned i = 0; i < state.Permutation.size(); i++)
             value += fmt::format("{:<4d} {:02d}\n", state.Permutation[i], state.Usage[i]);

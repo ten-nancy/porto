@@ -2928,6 +2928,21 @@ TError TCgroupDriver::CgroupSubtree(const TCgroup &cg, std::list<std::unique_ptr
     return OK;
 }
 
+TError TCgroup::Children(std::vector<std::unique_ptr<const TCgroup>> &cgroups) const {
+    std::vector<std::string> children;
+
+    auto error = Path().ListSubdirs(children);
+    if (error)
+        return error;
+
+    for (auto &name: children) {
+        // TODO(ovov): check for leaf
+        cgroups.push_back(Subsystem->Cgroup(fmt::format("{}/{}", Name, name), false));
+    }
+
+    return OK;
+}
+
 TError TCgroupDriver::GetCgroupCount(const TCgroup &cgroup, uint64_t &count, bool thread) const {
     TError error;
     std::list<std::unique_ptr<const TCgroup>> cgroups;

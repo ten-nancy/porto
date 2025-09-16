@@ -103,6 +103,8 @@
   "src/container.hpp":"infra/porto/porto/src/container.hpp",
   "src/core.cpp":"infra/porto/porto/src/core.cpp",
   "src/core.hpp":"infra/porto/porto/src/core.hpp",
+  "src/cpuset.cpp":"infra/porto/porto/src/cpuset.cpp",
+  "src/cpuset.hpp":"infra/porto/porto/src/cpuset.hpp",
   "src/device.cpp":"infra/porto/porto/src/device.cpp",
   "src/device.hpp":"infra/porto/porto/src/device.hpp",
   "src/docker.cpp":"infra/porto/porto/src/docker.cpp",

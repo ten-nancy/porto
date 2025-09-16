@@ -37,14 +37,14 @@ def Expect(a, message="condition does not hold"):
     assert a, message
 
 def ExpectEq(a, b):
-    assert a == b, "{} should be equal {}".format(a, b)
+    assert a == b, "{!r} should be equal {!r}".format(a, b)
 
 def ExpectIn(x, xs):
-    assert x in xs, "{} should be in {}".format(x, xs)
+    assert x in xs, "{!r} should be in {!r}".format(x, xs)
 
 
 def ExpectNe(a, b):
-    assert a != b, "{} should not be equal {}".format(a, b)
+    assert a != b, "{!r} should not be equal {!r}".format(a, b)
 
 def ExpectLe(a, b, descr=""):
     assert a <= b, "{}{} should be less or equal {}".format(descr, a, b)

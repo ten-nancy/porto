@@ -4,6 +4,7 @@
 
 #include "config.hpp"
 #include "container.hpp"
+#include "cpuset.hpp"
 #include "device.hpp"
 #include "network.hpp"
 #include "util/cred.hpp"
@@ -589,8 +590,13 @@ TError TTaskEnv::DoFork1() {
         return TError::System("sched_setscheduler");
 
     if (CT->SchedNoSmt) {
+        TBitMap affinity;
+        auto error = CT->GetCpuAffinity(affinity);
+        if (error)
+            return error;
+
         cpu_set_t taskMask;
-        CT->GetNoSmtCpus().FillCpuSet(&taskMask);
+        affinity.FillCpuSet(&taskMask);
 
         if (sched_setaffinity(0, sizeof(taskMask), &taskMask))
             return TError::System("sched_setaffinity");

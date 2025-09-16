@@ -66,6 +66,10 @@ TError StringToBaseUint(const std::string &str, unsigned &value, int base) {
     return OK;
 }
 
+TError StringToUint(const std::string &str, unsigned &value) {
+    return StringToBaseUint(str, value, 10);
+}
+
 TError StringToOct(const std::string &str, unsigned &value) {
     return StringToBaseUint(str, value, 8);
 }

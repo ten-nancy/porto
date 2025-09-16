@@ -107,6 +107,8 @@ public:
 
     TError GetUintMap(const std::string &knob, TUintMap &value) const;
     static TError GetUintMap(const TFile &file, TUintMap &value);
+
+    TError Children(std::vector<std::unique_ptr<const TCgroup>> &cgroups) const;
 };
 
 class TSubsystem {

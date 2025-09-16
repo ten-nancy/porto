@@ -398,37 +398,35 @@ try:
 
     ExpectEq(float(a.GetProperty('cpu_guarantee_total')[:-1]), dump.status.cpu_guarantee_total)
 
-
     a.SetProperty('cpu_period', '1054000')
     a.SetProperty('cpu_weight', '41.5')
     dump = a.Dump()
     CopyProps(a, b)
 
-    assert a.GetProperty('cpu_period') == b.GetProperty('cpu_period')
-    assert a.GetProperty('cpu_weight') == b.GetProperty('cpu_weight')
+    ExpectEq(a.GetProperty('cpu_period'), b.GetProperty('cpu_period'))
+    ExpectEq(a.GetProperty('cpu_weight'), b.GetProperty('cpu_weight'))
 
-    assert dump.spec.cpu_period == int(a.GetProperty('cpu_period'))
+    ExpectEq(dump.spec.cpu_period, int(a.GetProperty('cpu_period')))
 
-    assert dump.spec.cpu_weight == float(a.GetProperty('cpu_weight'))
+    ExpectEq(dump.spec.cpu_weight, float(a.GetProperty('cpu_weight')))
 
-    a.SetProperty('cpu_set', '0-2,4')
+    a.SetProperty('cpu_set', '0-1,3')
     dump = a.Dump()
     CopyProps(a, b)
 
-    assert a.GetProperty('cpu_set') == b.GetProperty('cpu_set')
+    ExpectEq(a.GetProperty('cpu_set'), b.GetProperty('cpu_set'))
 
-    assert dump.spec.cpu_set.count == 4
-    assert 0 in dump.spec.cpu_set.cpu
-    assert 1 in dump.spec.cpu_set.cpu
-    assert 2 in dump.spec.cpu_set.cpu
-    assert 4 in dump.spec.cpu_set.cpu
+    ExpectEq(dump.spec.cpu_set.count, 3)
+    ExpectEq(set(dump.spec.cpu_set.cpu), {0, 1, 3})
 
-    assert a.GetProperty('cpu_set') == a.GetProperty('cpu_set_affinity')
-    assert dump.status.cpu_set_affinity.count == 4
-    assert 0 in dump.status.cpu_set_affinity.cpu
-    assert 1 in dump.status.cpu_set_affinity.cpu
-    assert 2 in dump.status.cpu_set_affinity.cpu
-    assert 4 in dump.status.cpu_set_affinity.cpu
+    ExpectEq(a.GetProperty('cpu_set_affinity'), '')
+    a['root'] = '/'
+    a.Start()
+    ExpectEq(a.GetProperty('cpu_set'), a.GetProperty('cpu_set_affinity'))
+    ExpectEq(dump.spec.cpu_set.count, 3)
+    ExpectEq(set(dump.spec.cpu_set.cpu), {0, 1, 3})
+    a.Stop()
+    a['root'] = '/place'
 
     a.SetProperty("io_limit", "/ssd: 1000; /place: 500")
     a.SetProperty("io_guarantee", "/ssd: 1001; /place: 501")

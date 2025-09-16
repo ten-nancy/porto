@@ -23,6 +23,7 @@ TError StringToUint64(const std::string &string, uint64_t &value);
 TError StringToInt64(const std::string &str, int64_t &value);
 TError StringToInt(const std::string &string, int &value);
 TError StringToBaseUint(const std::string &str, unsigned &value, int base);
+TError StringToUint(const std::string &string, unsigned &value);
 TError StringToOct(const std::string &str, unsigned &value);
 TError StringToHex(const std::string &str, unsigned &value);
 
@@ -89,6 +90,18 @@ public:
     TBitMap &operator=(const TBitMap &other) {
         bits = other.bits;
         return *this;
+    }
+
+    bool operator==(const TBitMap &other) const {
+        for (unsigned i = 0; i < std::max(Size(), other.Size()); ++i) {
+            if (Get(i) != other.Get(i))
+                return false;
+        }
+        return true;
+    }
+
+    bool operator!=(const TBitMap &other) const {
+        return !(*this == other);
     }
 
     TError Parse(const std::string &text);
