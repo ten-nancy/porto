@@ -8,7 +8,7 @@ Build-Depends:
  libnl-route-3-dev (>=3.2.27),
  libnl-idiag-3-dev (>=3.2.27),
  libelf-dev, zlib1g-dev,
- g++ (>= 4:4.7) | g++-4.7,
+ g++ (>= 4:5),
  libc6-dev, linux-libc-dev (>= 5.4),
  dh-python, python-all, python-setuptools, python3-setuptools,
  bash-completion, pandoc,

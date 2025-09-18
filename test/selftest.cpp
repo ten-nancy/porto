@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <climits>
 #include <algorithm>
+#include <random>
 
 #include "version.hpp"
 #include "libporto.hpp"
@@ -2483,6 +2484,87 @@ static void TestFormat(Porto::Connection &) {
     Expect(!!StringToSize("", v));
     Expect(!!StringToSize("z", v));
     Expect(!!StringToSize("1z", v));
+
+    uint64_t power;
+    // Invalid values
+    Expect(StringToCpuPower("123a", power));
+    Expect(StringToCpuPower("12a3c", power));
+    Expect(StringToCpuPower("12.3.3c", power));
+    Expect(StringToCpuPower(".3c", power));
+    Expect(StringToCpuPower("19.1ns", power));
+    Expect(StringToCpuPower("0.0000000001c", power));
+    Expect(StringToCpuPower("1.111", power));
+    Expect(StringToCpuPower("-1", power));
+    Expect(StringToCpuPower("-1c", power));
+    Expect(StringToCpuPower("-1ns", power));
+    Expect(StringToCpuPower("1.-1c", power));
+    Expect(StringToCpuPower("1-1c", power));
+    Expect(StringToCpuPower("1-.1c", power));
+    Expect(StringToCpuPower("1.1-c", power));
+    Expect(StringToCpuPower("1-c", power));
+
+    // Valid values
+    ExpectOk(StringToCpuPower("1c", power));
+    ExpectEq(power, CPU_POWER_PER_SEC);
+    ExpectEq(CpuPowerToString(power), "1c");
+
+    ExpectOk(StringToCpuPower("1.1c", power));
+    ExpectEq(power, CPU_POWER_PER_SEC + CPU_POWER_PER_SEC / 10);
+    ExpectEq(CpuPowerToString(power), "1.1c");
+
+    ExpectOk(StringToCpuPower("1.10c", power));
+    ExpectEq(power, CPU_POWER_PER_SEC + CPU_POWER_PER_SEC / 10);
+    ExpectEq(CpuPowerToString(power), "1.1c");
+
+    ExpectOk(StringToCpuPower("1.01c", power));
+    ExpectEq(power, CPU_POWER_PER_SEC + CPU_POWER_PER_SEC / 100);
+    ExpectEq(CpuPowerToString(power), "1.01c");
+
+    ExpectOk(StringToCpuPower("1.010c", power));
+    ExpectEq(power, CPU_POWER_PER_SEC + CPU_POWER_PER_SEC / 100);
+    ExpectEq(CpuPowerToString(power), "1.01c");
+
+    ExpectOk(StringToCpuPower("19.0947103c", power));
+    ExpectEq(power, 19094710300);
+    ExpectEq(CpuPowerToString(power), "19.0947103c");
+
+    // Fuzzy
+    {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> distrib(1, CPU_POWER_PER_SEC * 2);
+
+        for (size_t i = 0; i < 10000; ++i) {
+            uint64_t power, power1;
+            power = distrib(gen);
+            auto str = CpuPowerToString(power);
+            ExpectOk(StringToCpuPower(str, power1));
+            ExpectEq(power, power1);
+        }
+    }
+    ExpectOk(StringToCpuPower("19ns", power));
+    ExpectEq(power, 19);
+
+    auto nproc = GetNumCores();
+    if (nproc >= 4 && nproc % 4 == 0) {
+        ExpectOk(StringToCpuPower("25", power));
+        ExpectEq(power, nproc/4 * CPU_POWER_PER_SEC);
+
+        ExpectOk(StringToCpuPower("50", power));
+        ExpectEq(power, nproc/2 * CPU_POWER_PER_SEC);
+
+        ExpectOk(StringToCpuPower("75", power));
+        ExpectEq(power, 3 * nproc/4 * CPU_POWER_PER_SEC);
+
+        ExpectOk(StringToCpuPower("100", power));
+        ExpectEq(power, nproc * CPU_POWER_PER_SEC);
+
+        ExpectOk(StringToCpuPower("1.1", power));
+        ExpectOk(StringToCpuPower("1.11", power));
+
+        ExpectOk(StringToCpuPower("6.25", power));
+        ExpectEq(power, nproc * CPU_POWER_PER_SEC / 16);
+    }
 }
 
 static void TestMd5(Porto::Connection &) {

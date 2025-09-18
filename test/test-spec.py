@@ -3,6 +3,7 @@ from test_common import *
 import sys
 import os
 import porto
+import random
 import time
 import hashlib
 from traceback import print_exc
@@ -377,24 +378,56 @@ try:
     CopyProps(a, b)
     dump = a.Dump()
 
-    assert a.GetProperty('recharge_on_pgfault') == b.GetProperty('recharge_on_pgfault')
-    assert a.GetProperty('pressurize_on_death') == b.GetProperty('pressurize_on_death')
+    ExpectEq(a.GetProperty('recharge_on_pgfault'), b.GetProperty('recharge_on_pgfault'))
+    ExpectEq(a.GetProperty('pressurize_on_death'), b.GetProperty('pressurize_on_death'))
 
-    assert dump.spec.recharge_on_pgfault == int(a.GetProperty('recharge_on_pgfault'))
+    ExpectEq(dump.spec.recharge_on_pgfault, int(a.GetProperty('recharge_on_pgfault')))
 
-    assert dump.spec.pressurize_on_death == bool(a.GetProperty('pressurize_on_death'))
+    ExpectEq(dump.spec.pressurize_on_death, bool(a.GetProperty('pressurize_on_death')))
+
+    def gen_cpu_limit(order):
+        sec = random.randint(0, 1)
+        nsec = random.randint(0, 10**order - 1)
+        if nsec == 0:
+            return '{}c'.format(sec)
+        nsec = '{:09}'.format(nsec)
+        while nsec[-1] == '0':
+            nsec = nsec[:-1]
+        return '{}.{}c'.format(sec, nsec)
+
+    for order in range(1, 10):
+        for _ in range(100):
+            cpu_limit = gen_cpu_limit(order)
+
+            a.SetProperty("cpu_limit", cpu_limit)
+            ExpectEq(a.GetProperty("cpu_limit"), cpu_limit)
+
+    a.SetProperty("cpu_limit", "0.1c")
+    ExpectEq(a.GetProperty("cpu_limit"), "0.1c")
+
+    a.SetProperty("cpu_limit", "0.01c")
+    ExpectEq(a.GetProperty("cpu_limit"), "0.01c")
+
+    a.SetProperty("cpu_limit", "0.10c")
+    ExpectEq(a.GetProperty("cpu_limit"), "0.1c")
+
+    a.SetProperty("cpu_limit", "0.010c")
+    ExpectEq(a.GetProperty("cpu_limit"), "0.01c")
+
+    a.SetProperty("cpu_limit", "19.0947103c")
+    ExpectEq(a.GetProperty("cpu_limit"), "19.0947103c")
 
     a.SetProperty("cpu_limit", "1.5c")
     a.SetProperty("cpu_guarantee", "0.5c")
     dump = a.Dump()
     CopyProps(a, b)
-    assert a.GetProperty('cpu_limit') == b.GetProperty('cpu_limit')
-    assert a.GetProperty('cpu_limit') == '{}c'.format(dump.spec.cpu_limit)
+    ExpectEq(a.GetProperty('cpu_limit'), b.GetProperty('cpu_limit'))
+    ExpectEq(a.GetProperty('cpu_limit'), '{}c'.format(dump.spec.cpu_limit))
 
 # assert a.GetProperty('cpu_limit_total') == '{}c'.format(dump.spec.cpu_limit_total)
 
-    assert a.GetProperty('cpu_guarantee') == '{}c'.format(dump.spec.cpu_guarantee)
-    assert a.GetProperty('cpu_guarantee') == b.GetProperty('cpu_guarantee')
+    ExpectEq(a.GetProperty('cpu_guarantee'), '{}c'.format(dump.spec.cpu_guarantee))
+    ExpectEq(a.GetProperty('cpu_guarantee'), b.GetProperty('cpu_guarantee'))
 
     ExpectEq(float(a.GetProperty('cpu_guarantee_total')[:-1]), dump.status.cpu_guarantee_total)
 

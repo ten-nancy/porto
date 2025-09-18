@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <sstream>
 
+#include "util/log.hpp"
 #include "util/unix.hpp"
 
 extern "C" {
@@ -13,6 +14,9 @@ extern "C" {
 }
 
 TError StringToUint64(const std::string &str, uint64_t &value) {
+    if (!str.empty() && str.front() == '-')
+        return TError(EError::InvalidValue, errno, "Bad uint64 value: " + str);
+
     const char *ptr = str.c_str();
     char *end;
 
@@ -535,25 +539,85 @@ std::string StringFormat(const char *format, ...) {
     return result;
 }
 
-TError StringToCpuPower(const std::string &str, uint64_t &power) {
-    double val;
-    std::string unit;
+static constexpr std::pair<unsigned, bool> getOrder10(std::uint64_t val) {
+    unsigned ret = 0;
+    uint64_t v = 1;
+    while (val > v) {
+        v *= 10;
+        ret += 1;
+    }
 
-    TError error = StringToValue(str, val, unit);
-    if (error || val < 0)
-        return TError(EError::InvalidValue, "Invalid cpu power value " + str);
+    return {ret, v == val};
+}
 
-    if (unit == "")
-        power = val * CPU_POWER_PER_SEC / 100 * GetNumCores();
-    else if (unit == "c")
-        power = val * CPU_POWER_PER_SEC;
-    else if (unit == "ns")
-        power = val;
-    else
-        return TError(EError::InvalidValue, "Invalid cpu power unit " + str);
+template <uint64_t n>
+static constexpr unsigned GetOrder10() {
+    constexpr auto p = getOrder10(n);
+    static_assert(p.second, "n must be power of 10");
+    return p.first;
+}
 
+static constexpr uint64_t Pow10(unsigned n) {
+    uint64_t m = 1;
+    for (unsigned i = 0; i < n; ++i)
+        m *= 10;
+    return m;
+}
+
+static TError ParseFixedPoint(const std::string &str, unsigned order, uint64_t &value) {
+    const auto error = TError(EError::InvalidValue, "Bad value: {}", str);
+
+    auto parts = SplitString(str, '.');
+    if (parts.size() > 2)
+        return error;
+
+    value = 0;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i == 1) {
+            if (parts[i].size() > order)
+                return error;
+
+            parts[i] += std::string(order - parts[i].size(), '0');
+        }
+        uint64_t n;
+        auto error2 = StringToUint64(parts[i], n);
+        if (error2)
+            return error;
+        value += n;
+        if (i == 0)
+            value *= Pow10(order);
+    }
     return OK;
 }
+
+static std::string CpuPowerUnit(const std::string &str) {
+    auto it = std::find_if(str.rbegin(), str.rend(), [](auto c) { return std::isdigit(c); });
+    if (it == str.rend())
+        return str;
+
+    return std::string(it.base(), str.end());
+}
+
+TError StringToCpuPower(const std::string &str, uint64_t &power) {
+    auto unit = CpuPowerUnit(str);
+
+    if (unit.empty()) {
+        auto error = ParseFixedPoint(str, GetOrder10<100>(), power);
+        if (error)
+            return error;
+        power *= CPU_POWER_PER_SEC / (100 * 100) * GetNumCores();
+        return OK;
+    }
+
+    auto value = std::string(str.begin(), str.end() - unit.size());
+    if (unit == "c")
+        return ParseFixedPoint(value, GetOrder10<CPU_POWER_PER_SEC>(), power);
+    else if (unit == "ns")
+        return StringToUint64(value, power);
+    return TError(EError::InvalidValue, "Invalid cpu power unit in '{}'", str);
+}
+
+static const std::string CPU_POWER_FRAC_FMT = "{" + fmt::format(":0{}", GetOrder10<CPU_POWER_PER_SEC>()) + "}";
 
 std::string CpuPowerToString(uint64_t nsec) {
     auto sec = nsec / CPU_POWER_PER_SEC;
@@ -561,10 +625,12 @@ std::string CpuPowerToString(uint64_t nsec) {
     if (rem == 0)
         return fmt::format("{}c", sec);
 
-    while (rem % 10 == 0)
-        rem /= 10;
+    auto frac = fmt::format(CPU_POWER_FRAC_FMT, rem);
+    while (frac.back() == '0')
+        frac.pop_back();
 
-    return fmt::format("{}.{}c", sec, rem);
+    auto ret = fmt::format("{}.{}c", sec, frac);
+    return ret;
 }
 
 TError UintMapToString(const TUintMap &map, std::string &value) {

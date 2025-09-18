@@ -3,11 +3,6 @@
 
 using json = nlohmann::json;
 
-template <typename T, typename... Args>
-std::unique_ptr<T> make_unique(Args&&... args) {
-    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-}
-
 namespace detail {
     struct TJsonImpl {
         TJsonImpl() = default;
@@ -17,7 +12,7 @@ namespace detail {
     };
 }
 
-TJson::TJson(): impl(make_unique<detail::TJsonImpl>()) {}
+TJson::TJson(): impl(std::make_unique<detail::TJsonImpl>()) {}
 TJson::TJson(TJson&& other): impl(std::move(other.impl)) {}
 TJson::~TJson() {}
 
@@ -74,7 +69,7 @@ TError TJson::Get(std::vector<TJson>& res) const {
         res.clear();
         for (const auto& e: impl->Json) {
             res.emplace_back();
-            res.back().impl = make_unique<detail::TJsonImpl>(e);
+            res.back().impl = std::make_unique<detail::TJsonImpl>(e);
         }
         return OK;
     } catch (const std::exception& e) {
@@ -103,7 +98,7 @@ TError TJson::Dump(std::ostream& os) {
 template <typename T>
 TError TJson::FromImpl(const T& obj) {
     try {
-        impl = make_unique<detail::TJsonImpl>(obj);
+        impl = std::make_unique<detail::TJsonImpl>(obj);
         return OK;
     } catch (std::exception& e) {
         return TError("Failed to construct from object: {}", e.what());
@@ -128,6 +123,6 @@ bool TJson::IsNull() const {
 
 TJson TJson::operator[](const char* key) const {
     TJson res;
-    res.impl = make_unique<detail::TJsonImpl>(impl->Json[key]);
+    res.impl = std::make_unique<detail::TJsonImpl>(impl->Json[key]);
     return res;
 }

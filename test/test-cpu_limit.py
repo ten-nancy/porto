@@ -185,9 +185,10 @@ if HAS_RT_LIMIT:
         ct.RunOne()
 
 if CPUNR > 1:
-    print("\nSet {}c guarantee for 1 of 2 containers:".format(CPUNR * 2 / 3))
+    cpu_val = round(CPUNR * 2 / 3, 9)
+    print("\nSet {}c guarantee for 1 of 2 containers:".format(cpu_val))
     ct1 = conn.AllocContainer("normal_half_0").Prepare(0.0, 0.0)
-    ct2 = conn.AllocContainer("normal_half_guaranteed").Prepare(CPUNR * 2 / 3, 0.0)
+    ct2 = conn.AllocContainer("normal_half_guaranteed").Prepare(cpu_val, 0.0)
 
     ct1.Kick(); ct2.Kick()
     ct1.Check(); ct2.Check()
