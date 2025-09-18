@@ -417,6 +417,10 @@ try:
     a.SetProperty("cpu_limit", "19.0947103c")
     ExpectEq(a.GetProperty("cpu_limit"), "19.0947103c")
 
+    # TODO(ovov): 0.08255387071c is bad, remove this after enabling validation in porto
+    a.SetProperty("cpu_limit", "0.08255387071c")
+    ExpectEq(a.GetProperty("cpu_limit"), "0.08255387c")
+
     a.SetProperty("cpu_limit", "1.5c")
     a.SetProperty("cpu_guarantee", "0.5c")
     dump = a.Dump()

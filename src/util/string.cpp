@@ -574,9 +574,10 @@ static TError ParseFixedPoint(const std::string &str, unsigned order, uint64_t &
     value = 0;
     for (size_t i = 0; i < parts.size(); ++i) {
         if (i == 1) {
-            if (parts[i].size() > order)
-                return error;
-
+            if (parts[i].size() > order) {
+                // TODO(ovov): return error. For now drop extra digits for compatability
+                parts[i] = parts[i].substr(0, order);
+            }
             parts[i] += std::string(order - parts[i].size(), '0');
         }
         uint64_t n;

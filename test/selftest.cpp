@@ -2492,8 +2492,13 @@ static void TestFormat(Porto::Connection &) {
     Expect(StringToCpuPower("12.3.3c", power));
     Expect(StringToCpuPower(".3c", power));
     Expect(StringToCpuPower("19.1ns", power));
+
+    /*
+      TODO(ovov): restore this
     Expect(StringToCpuPower("0.0000000001c", power));
     Expect(StringToCpuPower("1.111", power));
+    */
+
     Expect(StringToCpuPower("-1", power));
     Expect(StringToCpuPower("-1c", power));
     Expect(StringToCpuPower("-1ns", power));
@@ -2527,6 +2532,11 @@ static void TestFormat(Porto::Connection &) {
     ExpectOk(StringToCpuPower("19.0947103c", power));
     ExpectEq(power, 19094710300);
     ExpectEq(CpuPowerToString(power), "19.0947103c");
+
+    // TODO(ovov): 0.08255387071c is bad, remove this after enabling validation in porto
+    ExpectOk(StringToCpuPower("0.08255387071c", power));
+    ExpectEq(power, 82553870);
+    ExpectEq(CpuPowerToString(power), "0.08255387c");
 
     // Fuzzy
     {
