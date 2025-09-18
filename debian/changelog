@@ -1,3 +1,10 @@
+porto (5.3.53) unstable; urgency=low
+  [ ovov ]
+      util/string: fix cpu power parsing/dumping
+  last commit: a87fb23b08a226b743528e05730e6999782a649d
+
+ -- Porto Team <porto@yandex-team.ru>  Thu, 18 Sep 2025 02:09:23 -0000
+
 porto (5.3.52) unstable; urgency=low
   [ ovov ]
       metrics: do not log
