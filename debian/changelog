@@ -1,3 +1,10 @@
+porto (5.3.54) unstable; urgency=low
+  [ ovov ]
+      util/string: remove restriction on cpu power precision
+  last commit: 030d2e5973bed5122e90ace336754633fc82e5ae
+
+ -- Porto Team <porto@yandex-team.ru>  Thu, 18 Sep 2025 16:58:40 -0000
+
 porto (5.3.53) unstable; urgency=low
   [ ovov ]
       util/string: fix cpu power parsing/dumping
