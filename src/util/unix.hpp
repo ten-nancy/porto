@@ -147,16 +147,14 @@ class TSessionInfo {
         __u64 id;
         char *user;  // null-terminated
     } sessionInfo;
+    char User[USER_MAX_LEN];
 
 public:
     TSessionInfo() {
+        memset(User, 0, sizeof(User));
         sessionInfo.kind = 0;
         sessionInfo.id = 0;
-        sessionInfo.user = new char[USER_MAX_LEN];
-        sessionInfo.user = strcpy(sessionInfo.user, "");
-    }
-    ~TSessionInfo() {
-        delete sessionInfo.user;
+        sessionInfo.user = User;
     }
 
     bool IsEmpty() const {
@@ -166,8 +164,8 @@ public:
     void Set(uint32_t kind, uint64_t id, const std::string &user) {
         sessionInfo.kind = kind;
         sessionInfo.id = id;
-        // substr to restrict out of memory range, USER_MAX_LEN - 1 because of '\0'
-        sessionInfo.user = strcpy(sessionInfo.user, user.substr(0, USER_MAX_LEN - 1).c_str());
+        // USER_MAX_LEN - 1 because of trailing '\0'
+        strncpy(sessionInfo.user, user.c_str(), USER_MAX_LEN - 1);
     }
 
     TError Parse(const std::string &str) {
