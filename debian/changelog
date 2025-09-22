@@ -1,3 +1,11 @@
+porto (5.3.55) unstable; urgency=low
+  [ ovov ]
+      util/unix: dont use dynamic allocation in TSessionInfo
+      release: 5.3.54
+  last commit: 1929d710523f6ee7813d08897ee1df4aa5b48f44
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 22 Sep 2025 03:33:12 -0000
+
 porto (5.3.54) unstable; urgency=low
   [ ovov ]
       util/string: remove restriction on cpu power precision
