@@ -36,7 +36,7 @@ if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE MATCHES None)
 	set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -rdynamic -Wall -Wextra -Werror -Wno-deprecated-declarations -std=c++14 -fno-exceptions -g -D_XOPEN_SOURCE=500 -DJSON_THROW_USER='static_assert(false, \"nlohman/json is not allowed\");'")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -rdynamic -Wall -Wextra -Werror -Wno-deprecated-declarations -std=c++11 -fno-exceptions -g -D_XOPEN_SOURCE=500 -DJSON_THROW_USER='static_assert(false, \"nlohman/json is not allowed\");'")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -Wno-deprecated-declarations -std=c99 -g")
 
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -fno-omit-frame-pointer -gdwarf-4")

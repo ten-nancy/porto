@@ -2453,13 +2453,19 @@ static std::unique_ptr<TRequestQueue> RoQueue;
 static std::unique_ptr<TRequestQueue> IoQueue;
 static std::unique_ptr<TRequestQueue> VlQueue;
 
+// TODO(ovov): remove this after c++14
+template <class T, class... Args>
+std::unique_ptr<T> make_unique(Args &&...args) {
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+
 void StartRpcQueue() {
     BuildClientPatterns();
 
-    RwQueue = std::make_unique<TRequestQueue>("portod-RW");
-    RoQueue = std::make_unique<TRequestQueue>("portod-RO");
-    IoQueue = std::make_unique<TRequestQueue>("portod-IO");
-    VlQueue = std::make_unique<TRequestQueue>("portod-Vl");
+    RwQueue = make_unique<TRequestQueue>("portod-RW");
+    RoQueue = make_unique<TRequestQueue>("portod-RO");
+    IoQueue = make_unique<TRequestQueue>("portod-IO");
+    VlQueue = make_unique<TRequestQueue>("portod-Vl");
     RwQueue->Start(config().daemon().rw_threads());
     RoQueue->Start(config().daemon().ro_threads());
     IoQueue->Start(config().daemon().io_threads());

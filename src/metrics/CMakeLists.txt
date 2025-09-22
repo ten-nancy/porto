@@ -1,6 +1,6 @@
 project(metrics)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -fexceptions")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fexceptions")
 
 add_library               (metrics STATIC metrics.cpp)
 target_link_libraries     (metrics PUBLIC prometheus-cpp-lite-core http-client-lite)

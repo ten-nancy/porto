@@ -539,25 +539,14 @@ std::string StringFormat(const char *format, ...) {
     return result;
 }
 
-static constexpr std::pair<unsigned, bool> getOrder10(std::uint64_t val) {
-    unsigned ret = 0;
-    uint64_t v = 1;
-    while (val > v) {
-        v *= 10;
-        ret += 1;
-    }
-
-    return {ret, v == val};
-}
-
+// TODO(ovov): rewrite this after c++14
 template <uint64_t n>
 static constexpr unsigned GetOrder10() {
-    constexpr auto p = getOrder10(n);
-    static_assert(p.second, "n must be power of 10");
-    return p.first;
+    return n == 1 ? 0 : 1 + GetOrder10<n / 10>();
 }
 
-static constexpr uint64_t Pow10(unsigned n) {
+// TODO(ovov): rewrite this after c++14
+static uint64_t Pow10(unsigned n) {
     uint64_t m = 1;
     for (unsigned i = 0; i < n; ++i)
         m *= 10;
@@ -592,7 +581,7 @@ static TError ParseFixedPoint(const std::string &str, unsigned order, uint64_t &
 }
 
 static std::string CpuPowerUnit(const std::string &str) {
-    auto it = std::find_if(str.rbegin(), str.rend(), [](auto c) { return std::isdigit(c); });
+    auto it = std::find_if(str.rbegin(), str.rend(), [](char c) { return std::isdigit(c); });
     if (it == str.rend())
         return str;
 
