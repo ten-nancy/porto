@@ -3292,18 +3292,21 @@ public:
     TError Get(std::string &value) const override {
         TTuple paths;
 
+        auto lock = LockVolumes();
         for (auto &vol: CT->OwnedVolumes) {
             TPath path = CL->ComposePath(vol->Path);
             if (!path)
                 path = "@" + vol->Path.ToString();
             paths.push_back(path.ToString());
         }
+        lock.unlock();
 
         value = MergeEscapeStrings(paths, ';');
         return OK;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
+        auto lock = LockVolumes();
         auto out = spec.mutable_volumes_owned();
         for (auto &vol: CT->OwnedVolumes) {
             TPath path = CL->ComposePath(vol->Path);
@@ -3324,7 +3327,7 @@ public:
     TError Get(std::string &value) const override {
         TMultiTuple links;
 
-        auto volumes_lock = LockVolumes();
+        auto lock = LockVolumes();
         links.reserve(CT->VolumeLinks.size());
 
         for (auto &link: CT->VolumeLinks) {
@@ -3339,7 +3342,7 @@ public:
             if (link->Required)
                 links.back().push_back("!");
         }
-        volumes_lock.unlock();
+        lock.unlock();
 
         value = MergeEscapeStrings(links, ' ', ';');
         return OK;
@@ -3348,7 +3351,7 @@ public:
     void Dump(rpc::TContainerStatus &spec) const override {
         auto out = spec.mutable_volumes_linked();
 
-        auto volumes_lock = LockVolumes();
+        auto lock = LockVolumes();
         for (auto &link: CT->VolumeLinks) {
             auto l = out->add_link();
 
@@ -3363,7 +3366,6 @@ public:
             if (link->Required)
                 l->set_required(true);
         }
-        volumes_lock.unlock();
     }
 } LinkedVolumes;
 
