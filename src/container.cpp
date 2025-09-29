@@ -1071,7 +1071,7 @@ TError TContainer::UpdateSoftLimit() {
 }
 
 void TContainer::LogStateChange(EContainerState next) const {
-    L_ACT("Change CT{} state {} -> {}", Slug, StateName(State), StateName(next));
+    L_ACT("Change {} state {} -> {}", Slug, StateName(State), StateName(next));
 
     GetStateMetric(State)--;
     GetStateMetric(next)++;
