@@ -3,6 +3,7 @@
 #include <fcntl.h>
 
 #include <fstream>
+#include <future>
 #include <thread>
 #include <unordered_set>
 
@@ -530,8 +531,8 @@ TError TDockerImage::ParseConfig() {
     return OK;
 }
 
-void TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url,
-                                 const std::string &token) {
+TError TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url,
+                                   const std::string &token) {
     TError error;
     TPath archivePath = layer.ArchivePath(place);
 
@@ -539,66 +540,76 @@ void TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TClien
 
     error = archivePath.DirName().MkdirAll(0755, true);
     if (error)
-        L_ERR("Cannot create directory {}: {}", archivePath.DirName(), error);
+        return TError(error, "Cannot create directory {}", archivePath.DirName());
 
     auto layerLock = TFileMutex::MakeDirLock(archivePath.DirName());
 
     if (archivePath.Exists()) {
         struct stat st;
         error = archivePath.StatStrict(st);
-        if (error) {
-            L_ERR("Cannot stat archive path: {}", error);
-            return;
-        }
+        if (error)
+            return TError(error, "Cannot stat archive path: {}", archivePath);
 
         if ((size_t)st.st_size == layer.Size)
-            return;
+            return OK;
 
-        (void)layer.Remove(place);
+        error = layer.Remove(place);
+        if (error)
+            return TError(error, "Cannot remove layer {} and place {}", layer.Digest, place);
     }
 
     error = DownloadFile(url, archivePath);
     if (error && !token.empty()) {
         // retry if registry api expects to receive token and we received code 401
         error = DownloadFile(url, archivePath, {"Authorization: " + token});
-        if (error) {
-            L_ERR("Cannot download layer: {}", error);
-            return;
-        }
+        if (error)
+            return TError(error, "Cannot download layer: {}", layer.Digest);
     }
 
     TStorage portoLayer;
 
     error = portoLayer.Resolve(EStorageType::DockerLayer, place, layer.Digest);
-    if (error) {
-        L_ERR("Cannot resolve layer storage: {}", error);
-        return;
-    }
+    if (error)
+        return TError(error, "Cannot resolve layer storage for place: {} {}", place, layer.Digest);
 
     error = portoLayer.ImportArchive(archivePath, PORTO_HELPERS_CGROUP);
-    if (error) {
-        L_ERR("Cannot import archive: {}", error);
-        return;
-    }
+    if (error)
+        return TError(error, "Cannot import archive: {}", archivePath);
 
     error = TStorage::SanitizeLayer(portoLayer.Path);
-    if (error) {
-        L_ERR("Cannot sanitize layer: {}", error);
-        return;
-    }
+    if (error)
+        return TError(error, "Cannot sanitize layer: {}", portoLayer.Path);
+
+    return OK;
 }
 
 TError TDockerImage::DownloadLayers(const TPath &place) const {
-    std::vector<std::thread> threads;
+    std::vector<std::future<TError>> tasks;
 
     // download layers using threads
-    for (const auto &layer: Layers)
-        threads.emplace_back(TDockerImage::DownloadLayer, place, layer, std::ref(CL),
-                             fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest)), AuthToken);
+    for (const auto &layer: Layers) {
+        auto url = fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest));
+        tasks.emplace_back(std::async(std::launch::async, &TDockerImage::DownloadLayer, place, layer, std::ref(CL),
+                                      fmt::format("https://{}{}", Registry, BlobsUrl(layer.Digest)), AuthToken));
+    }
 
     // waiting all downloads
-    for (auto &t: threads)
-        t.join();
+    std::vector<TError> downloadErrors;
+    for (auto &t: tasks) {
+        TError error = t.get();
+        if (error) {
+            if (error.Error == EError::Unknown)
+                L_ERR("{}", error);
+            downloadErrors.push_back(error);
+        }
+    }
+
+    if (downloadErrors.size()) {
+        std::string errorMessage("Errors occurs while downloading layers");
+        for (auto &e: downloadErrors)
+            errorMessage += e.ToString();
+        return TError("Failed to download layers " + errorMessage);
+    }
 
     return OK;
 }

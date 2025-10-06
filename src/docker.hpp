@@ -174,8 +174,8 @@ private:
     TError ParseConfig();
 
     // thread function
-    static void DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url,
-                              const std::string &token);
+    static TError DownloadLayer(const TPath &place, const TLayer &layer, TClient *client, const std::string &url,
+                                const std::string &token);
     TError DownloadLayers(const TPath &place) const;
     void RemoveLayers(const TPath &place) const;
 
