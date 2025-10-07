@@ -1,285 +1,283 @@
+import contextlib
 import multiprocessing
+import os
 import porto
+import random
 import sys
+import time
 
 from test_common import *
 
 CPUNR = multiprocessing.cpu_count()
-if CPUNR < 3:
-    sys.exit(0)
 
-conn = porto.Connection(timeout=30)
-a = None
-b = None
-c = None
 
-USE_CGROUP2 = GetUseCgroup2()
-print("use {} hierarchy".format("cgroup2" if USE_CGROUP2 else "cgroup1"))
+def parse_cpuset(s):
+    xs = s.split(',')
+    for x in xs:
+        ys = x.split('-')
+        if (len(ys) == 1):
+            yield int(ys[0])
+        else:
+            a, b = ys
+            for z in range(int(a), int(b) + 1):
+                yield z
 
-knob_pattern = '/sys/fs/cgroup/porto/{}/cpuset.cpus' if USE_CGROUP2 else '/sys/fs/cgroup/cpuset/porto%{}/cpuset.cpus'
 
-def check_affinity(ct, affinity, cgroup = None):
-    if not cgroup:
-        cgroup = ct
+def get_intersection(a, b):
+    a_set = set(parse_cpuset(a['cpu_set_affinity']))
+    b_set = set(parse_cpuset(b['cpu_set_affinity']))
+    return a_set & b_set
+
+
+def check_intersection(a, b):
+    inter = get_intersection(a, b)
+    ExpectEq(inter, set())
+
+
+def check_affinity(ct, affinity):
+    cgroup = ct.GetProperty('cgroups[cpuset]')
     ct_affinity = ct['cpu_set_affinity']
-    with open(knob_pattern.format(cgroup)) as f:
+    with open(os.path.join(cgroup, 'cpuset.cpus')) as f:
         cg_affinity = str(f.read()).strip()
-    if affinity.startswith('!'):
-        assert ct_affinity != affinity, '{} != {}'.format(ct_affinity, affinity)
-        assert cg_affinity != affinity, '{} != {}'.format(cg_affinity, affinity)
+
+    ExpectEq(ct_affinity, cg_affinity)
+
+    if isinstance(affinity, int):
+        ExpectEq(len(set(parse_cpuset(ct_affinity))), affinity)
+    elif isinstance(affinity, set):
+        ExpectEq(set(parse_cpuset(ct_affinity)), affinity)
     else:
-        assert ct_affinity == affinity, '{} == {}'.format(ct_affinity, affinity)
-        assert cg_affinity == affinity, '{} == {}'.format(cg_affinity, affinity)
+        assert False, "invalid affinity: {}".format(repr(affinity))
 
-try:
-    # incorrect values
-
-    a = conn.Create('a')
+def test_validation(conn, cleanup):
+    a = cleanup.enter_context(CreateContainer(conn, 'a'))
     ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail')
     ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail 0')
     ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail {}'.format(CPUNR))
-    a.SetProperty('cpu_set', '')
-    a.Start()
+    ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail {}'.format(CPUNR + 1))
 
-    b = conn.Create('a/b')
-    b.SetProperty('cpu_set', 'jail 2')
-    b.Start()
 
-    check_affinity(a, '!0')
-    check_affinity(b, '0-1')
+def test_basic(conn, cleanup):
+    a = cleanup.enter_context(CreateContainer(conn, 'a'))
+    ExpectEq(a['cpu_set'], '')
+    ExpectEq(a['cpu_set_affinity'], '')
 
-    ExpectException(a.SetProperty, porto.exceptions.ResourceNotAvailable, 'cpu_set', 'jail 1')
-    ExpectException(a.SetProperty, porto.exceptions.ResourceNotAvailable, 'cpu_set', 'jail 2')
-    ExpectException(a.SetProperty, porto.exceptions.ResourceNotAvailable, 'cpu_set', 'jail 3')
-
-    b.Destroy()
-    a.Destroy()
-
-    # reset jail on stopped container
-
-    a = conn.Create('a')
-    a.SetProperty('cpu_set', 'jail 2')
-    assert a['cpu_set'] == 'jail 2'
-    a.SetProperty('cpu_set', '')
-    assert a['cpu_set'] == ''
-    a.SetProperty('cpu_set', 'jail 2')
-
-    b = conn.Create('b')
-    b.SetProperty('cpu_set', 'jail 2')
-
-    # simple
-
-    a.Start()
-    assert a['cpu_set'] == 'jail 2'
-    check_affinity(a, '0-1')
-
-    b.Start()
-    assert b['cpu_set'] == 'jail 2'
-    if CPUNR >= 4:
-        check_affinity(b, '2-3')
-
-    # destroy first jailed container
-
-    a.Destroy()
-
-    # other containers stay untouched
-
-    assert b['cpu_set'] == 'jail 2'
-    if CPUNR >= 4:
-        check_affinity(b, '2-3')
-
-    # free cores are reused
-
-    a = conn.Create('a')
     a.SetProperty('cpu_set', 'jail 1')
+    ExpectEq(a['cpu_set'], 'jail 1')
+    ExpectEq(a['cpu_set_affinity'], '')
+
     a.Start()
-    assert a['cpu_set'] == 'jail 1'
-    check_affinity(a, '0')
+    check_affinity(a, 1)
 
-    # increase jail value, cores still reused
+    a.SetProperty('cpu_set', '')
+    check_affinity(a, CPUNR)
 
-    a.SetProperty('cpu_set', 'jail 2')
-    check_affinity(a, '0-1')
+    b = cleanup.enter_context(RunContainer(conn, 'b'))
+    for i in range(1, CPUNR):
+        j = CPUNR - i
 
-    # skip already used cores
+        a.SetProperty('cpu_set', 'jail {}'.format(i))
+        ExpectEq(a['cpu_set'], 'jail {}'.format(i))
+        check_affinity(a, i)
 
-    a.SetProperty('cpu_set', 'jail 3')
-    if CPUNR >= 5:
-        check_affinity(a, '0-1,4')
-
-    # reload
+        b.SetProperty('cpu_set', 'jail {}'.format(j))
+        ExpectEq(b['cpu_set'], 'jail {}'.format(j))
+        check_affinity(b, j)
+        check_intersection(a, b)
 
     ReloadPortod()
+    ExpectEq(a['cpu_set'], 'jail {}'.format(CPUNR - 1))
+    check_affinity(a, CPUNR - 1)
 
-    assert a['cpu_set'] == 'jail 3'
-    if CPUNR >= 5:
-        check_affinity(a, '0-1,4')
 
-    assert b['cpu_set'] == 'jail 2'
-    if CPUNR >= 4:
-        check_affinity(b, '2-3')
+def find_exclusive(containers):
+    for a in containers:
+        if all(not get_intersection(a, b) for b in containers if b != a):
+            return a
+    return None
 
-    b.Destroy()
-    a.Destroy()
 
-    # jail + numa -> numa -> jail -> jail + numa
+def test_balance(conn, cleanup):
+    nr = CPUNR//2
+    a = cleanup.enter_context(RunContainer(conn, 'a', cpu_set='jail {}'.format(nr)))
+    check_affinity(a, nr)
 
-    a = conn.Create('a')
-    a.SetProperty('cpu_set', 'jail 2; node 0')
-    a.Start()
-    assert a['cpu_set'] == 'jail 2; node 0'
-    check_affinity(a, '0-1')
+    b = cleanup.enter_context(RunContainer(conn, 'b', cpu_set='jail {}'.format(nr)))
+    check_affinity(b, nr)
+    check_intersection(a, b)
+
+    c = cleanup.enter_context(RunContainer(conn, 'c', cpu_set='jail {}'.format(nr)))
+    check_affinity(c, nr)
+
+    containers = [a, b, c]
+    victim = find_exclusive(containers)
+    victim.Destroy()
+
+    containers = [ct for ct in containers if ct != victim]
+
+    for ct in containers:
+        check_affinity(ct, nr)
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        try:
+            check_intersection(*containers)
+            break
+        except AssertionError:
+            time.sleep(0.1)
+    else:
+        check_intersection(*containers)
+
+
+def test_conflicts(conn, cleanup):
+    a = cleanup.enter_context(RunContainer(conn, 'a', cpu_set='jail 2'))
+
+    cpu_set = set(parse_cpuset(a['cpu_set_affinity']))
+    cpu_set1 = random.sample(list(set(range(CPUNR)) - cpu_set), k=2)
+
+    b = cleanup.enter_context(CreateContainer(conn, 'a/b'))
+    b.SetProperty('controllers[cpuset]', 'true')
+    b.Start()
+    ExpectEq(b['cpu_set'], '')
+    check_affinity(b, 2)
+
+    # TODO(ovov): replace Unknown with something more appropriate
+    ExpectException(b.SetProperty, porto.exceptions.Unknown, 'cpu_set', ','.join(map(str, cpu_set1)))
+    ExpectEq(a['cpu_set'], 'jail 2')
+    check_affinity(a, 2)
+    ExpectEq(b['cpu_set'], '')
+    check_affinity(b, 2)
+
+    b.SetProperty('cpu_set', ','.join(map(str, cpu_set)))
+    ExpectEq(a['cpu_set'], 'jail 2')
+    check_affinity(a, 2)
+    check_affinity(b, 2)
+
+    ExpectException(a.SetProperty, porto.exceptions.Unknown, 'cpu_set', 'jail 1')
+    ExpectEq(a['cpu_set'], 'jail 2')
+    check_affinity(a, 2)
+    check_affinity(b, 2)
+
+
+def test_nested(conn, cleanup):
+    a = cleanup.enter_context(RunContainer(conn, 'a', weak=False))
+    b = cleanup.enter_context(RunContainer(conn, 'a/b', **{'controllers[cpuset]': True}, weak=False))
+
+    b.SetProperty('cpu_set', 'jail 1')
+    ExpectException(a.SetProperty, porto.exceptions.ResourceNotAvailable, 'cpu_set', 'jail 1')
+    check_affinity(a, CPUNR)
+    check_affinity(b, 1)
+
+    b.SetProperty('cpu_set', '')
+    a.SetProperty('cpu_set', 'jail 1')
+    check_affinity(a, 1)
+    check_affinity(b, 1)
+
+    c = cleanup.enter_context(RunContainer(conn, 'a/b/c', **{'controllers[cpuset]': True}, weak=False))
+
+    for i in range(2, 4):
+        a.SetProperty('cpu_set', 'jail {}'.format(i))
+        check_affinity(a, i)
+        check_affinity(b, i)
+        check_affinity(c, i)
+
+    ReloadPortod()
+    check_affinity(a, 3)
+    check_affinity(b, 3)
+    check_affinity(c, 3)
+
+
+def test_modes(conn, cleanup):
+    a = cleanup.enter_context(RunContainer(conn, 'a', cpu_set='jail 2; node 0', weak=False))
+    ExpectEq(a['cpu_set'], 'jail 2; node 0')
+    check_affinity(a, 2)
+
     a.SetProperty('cpu_set', 'node 0')
-    check_affinity(a, '!0-1')
+    ExpectEq(a['cpu_set'], 'node 0')
+    check_affinity(a, CPUNR)
+
     a.SetProperty('cpu_set', 'jail 2')
-    check_affinity(a, '0-1')
+    ExpectEq(a['cpu_set'], 'jail 2')
+    check_affinity(a, 2)
+
     a.SetProperty('cpu_set', 'jail 2; node 0')
-    assert a['cpu_set'] == 'jail 2; node 0'
-    check_affinity(a, '0-1')
+    ExpectEq(a['cpu_set'], 'jail 2; node 0')
+    check_affinity(a, 2)
 
     ReloadPortod()
 
-    assert a['cpu_set'] == 'jail 2; node 0'
-    check_affinity(a, '0-1')
+    ExpectEq(a['cpu_set'], 'jail 2; node 0')
+    check_affinity(a, 2)
 
     # jail -> raw cores -> jail -> none
 
-    a.SetProperty('cpu_set', 'jail 1')
-    assert a['cpu_set'] == 'jail 1'
-    check_affinity(a, '0')
+    a.SetProperty('cpu_set', 'jail 2')
+    ExpectEq(a['cpu_set'], 'jail 2')
+    check_affinity(a, 2)
 
-    a.SetProperty('cpu_set', '1')
-    assert a['cpu_set'] == '1'
-    check_affinity(a, '1')
+    a.SetProperty('cpu_set', '1-2')
+    ExpectEq(a['cpu_set'], '1-2')
+    check_affinity(a, {1, 2})
 
-    a.SetProperty('cpu_set', 'jail 1')
-    assert a['cpu_set'] == 'jail 1'
-    check_affinity(a, '1')
+    a.SetProperty('cpu_set', 'jail 2')
+    ExpectEq(a['cpu_set'], 'jail 2')
+    check_affinity(a, 2)
 
     a.SetProperty('cpu_set', '')
-    assert a['cpu_set'] == ''
-    check_affinity(a, '0-{}'.format(CPUNR - 1))
+    ExpectEq(a['cpu_set'], '')
+    check_affinity(a, CPUNR)
 
-    a.Destroy()
 
-    # PORTO-952
+def test_dead(conn, cleanup):
+    a = cleanup.enter_context(RunContainer(conn, 'a'))
+    b = cleanup.enter_context(RunContainer(conn, 'a/b'))
+    ExpectEq(a['cpu_set'], '')
+    check_affinity(a, CPUNR)
+    ExpectEq(b['cpu_set'], '')
+    check_affinity(b, CPUNR)
 
-    a = conn.Create('a')
-    a.SetProperty('cpu_set', 'jail 1')
-    a.Start()
-
-    b = conn.Create('a/b')
-    b.SetProperty('cpu_set', 'jail 1')
-    ExpectException(b.Start, porto.exceptions.ResourceNotAvailable)
-    b.SetProperty('cpu_set', '')
-    assert b['cpu_set'] == ''
-    b.Start()
-
-    c = conn.Create('c')
-    c.Start()
-
-    assert a['cpu_set'] == 'jail 1'
-    check_affinity(a, '0')
-
-    c.Destroy()
-    b.Destroy()
-    a.Destroy()
-
-    # PORTO-992
-
-    a = conn.Create('a')
-    a.SetProperty('cpu_set', 'jail 2')
-    a.Start()
-
-    b = conn.Create('a/b')
-    b.SetProperty('controllers', 'cpuset')
-    b.Start()
-
-    c = conn.Create('a/b/c')
-    c.SetProperty('controllers', 'cpuset')
-    c.Start()
-
-    check_affinity(a, '0-1')
-    check_affinity(b, '0-1')
-    check_affinity(c, '0-1')
-
-    a.SetProperty('cpu_set', 'jail 1')
-
-    check_affinity(a, '0')
-    check_affinity(b, '0')
-    check_affinity(c, '0')
-
-    a.SetProperty('cpu_set', 'jail 3')
-
-    check_affinity(a, '0-2')
-    check_affinity(b, '0-2')
-    check_affinity(c, '0-2')
-
-    c.Destroy()
-    b.Destroy()
-    a.Destroy()
-
-    # PORTO-1074
-
-    a = conn.Create('a')
-    a.SetProperty('cpu_set', 'node 0; jail 2')
-    a.Start()
-
-    b = conn.Create('b')
-    b.SetProperty('cpu_set', 'node 0; jail 2')
-    b.Start()
-
-    check_affinity(a, '0-1')
-    check_affinity(b, '2-3')
-
-    b.SetProperty('cpu_set', 'node 0')
-    check_affinity(a, '0-1')
-    check_affinity(b, '0-{}'.format(CPUNR - 1))
-
-    b.SetProperty('cpu_set', 'node 0; jail 2')
-    check_affinity(a, '0-1')
-    check_affinity(b, '2-3')
-
-    b.Destroy()
-    a.Destroy()
-
-    # PORTO-1105
-
-    a = conn.Run('a', cpu_set='jail 2')
-    b = conn.Run('a/b')
-    a.SetProperty('cpu_set', 'jail 1')
-    c = conn.Run('a/b/c', controllers='cpuset')
-
-    check_affinity(a, '0')
-    check_affinity(b, '0', 'a')
-    if USE_CGROUP2:
-        check_affinity(c, '0', 'a/b/c')
-    else:
-        check_affinity(c, '0', 'a/b%c')
-
-    c.Destroy()
-    b.Destroy()
-    a.Destroy()
-
-    a = conn.Run('a', cpu_set='jail 2')
-    b = conn.Run('a/b', controllers='cpuset')
-
-    a.SetProperty('cpu_set', 'jail 1')
-    a.Destroy()
-
-    a = conn.Run('foo')
-    b = conn.Run('foo/bar')
-    c = conn.Run('foo/baz', command='true')
+    c = cleanup.enter_context(RunContainer(conn, 'a/b/c', command='true'))
     c.Wait()
 
     ExpectEq(c['state'], 'dead')
 
-    a['cpu_set'] = 'jail 1'
-    a.Destroy()
+    a.SetProperty('cpu_set', 'jail 1')
+    ExpectEq(a['cpu_set'], 'jail 1')
+    check_affinity(a, 1)
+    ExpectEq(b['cpu_set'], '')
+    check_affinity(b, 1)
+    ExpectEq(b['cpu_set'], '')
+    check_affinity(c, 1)
 
-finally:
-    for ct in [c, b, a]:
-        try:
-            ct.Destroy()
-        except Exception:
-            pass
+
+def main():
+    if CPUNR < 4:
+        print("Insufficient number of cpus for this test. Exiting...")
+        return
+
+    conn = porto.Connection(timeout=30)
+
+    with contextlib.ExitStack() as cleanup:
+        test_validation(conn, cleanup)
+
+    with contextlib.ExitStack() as cleanup:
+        test_basic(conn, cleanup)
+
+    with contextlib.ExitStack() as cleanup:
+        test_conflicts(conn, cleanup)
+
+    with contextlib.ExitStack() as cleanup:
+        test_balance(conn, cleanup)
+
+    with contextlib.ExitStack() as cleanup:
+        test_nested(conn, cleanup)
+
+    with contextlib.ExitStack() as cleanup:
+        test_modes(conn, cleanup)
+
+    with contextlib.ExitStack() as cleanup:
+        test_dead(conn, cleanup)
+
+
+if __name__ == '__main__':
+    main()
