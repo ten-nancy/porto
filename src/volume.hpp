@@ -84,8 +84,8 @@ public:
 
 class TVolumeLink {
 public:
-    std::shared_ptr<TVolume> Volume;
-    std::shared_ptr<TContainer> Container;
+    const std::shared_ptr<TVolume> Volume;
+    const std::shared_ptr<TContainer> Container;
     TPath Target;     /* path in container namespace */
     TPath HostTarget; /* mounted path in host namespace */
     bool ReadOnly = false;
@@ -302,8 +302,8 @@ extern std::vector<std::string> AuxPlacesPaths;
 extern std::vector<std::string> InsecureUserPaths;
 
 extern MeasuredMutex VolumesMutex;
-extern std::map<TPath, std::shared_ptr<TVolume>> Volumes;
-extern std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
+extern std::map<TPath, const std::shared_ptr<TVolume>> Volumes;
+extern std::map<TPath, const std::shared_ptr<TVolumeLink>> VolumeLinks;
 extern TPath VolumesKV;
 extern TPath NbdKV;
 

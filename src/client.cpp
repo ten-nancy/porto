@@ -300,7 +300,7 @@ TError TClient::WriteContainer(const std::string &relative_name, std::shared_ptr
     return OK;
 }
 
-TError TClient::LockContainer(std::shared_ptr<TContainer> &ct) {
+TError TClient::LockContainer(const std::shared_ptr<TContainer> &ct) {
     auto lock = LockContainers();
     if (LockedContainer) {
         L_WRN("Stale locked container {}", LockedContainer->Slug);

@@ -289,7 +289,7 @@ public:
                 auto lock = LockJailState();
                 UpdateJailCpuState(Allocated ? *Allocated : TBitMap(), current);
             }
-            Allocated = std::make_shared<const TBitMap>(current);
+            atomic_store(&Allocated, std::make_shared<const TBitMap>(current));
         }
 
         if (Allocated) {
@@ -311,7 +311,7 @@ public:
 
         lock.unlock();
 
-        Allocated = std::make_shared<const TBitMap>(target);
+        atomic_store(&Allocated, std::make_shared<const TBitMap>(target));
         L("Jail new allocation: {}", Allocated->Format());
 
         return OK;
@@ -326,7 +326,7 @@ public:
             auto lock = LockJailState();
             UpdateJailCpuState(*Allocated, {});
         }
-        Allocated.reset();
+        atomic_store(&Allocated, {});
     }
 
     TError Validate(TContainer &container) override {
@@ -351,7 +351,7 @@ public:
     }
 
     std::shared_ptr<const TBitMap> GetAllocation() const override {
-        return Allocated;
+        return std::atomic_load(&Allocated);
     }
 
     std::string ToString() const override {
@@ -569,7 +569,7 @@ TError ApplySubtreeCpus(TContainer &container, bool restore) {
         error = container.TargetCpuSetSpec->Allocate(restore ? current : TBitMap(), target);
         if (error)
             return error;
-        container.CpuSetSpec = container.TargetCpuSetSpec;
+        atomic_store(&container.CpuSetSpec, container.TargetCpuSetSpec);
         L("{} current={} target={}", container.Slug, current.Format(), target.Format());
 
         if (current == target)
@@ -606,7 +606,9 @@ TError ApplyCpuSet(TContainer &container, bool restore) {
     auto cpuSetSpec = container.CpuSetSpec;
     auto error = ApplySubtreeCpus(container, restore);
     if (error) {
-        L_ERR("Failed apply cpu_set: {}", error);
+        if (error.Error == EError::Unknown)
+            L_ERR("Failed apply cpu_set: {}", error);
+
         container.TargetCpuSetSpec = cpuSetSpec;
         auto error2 = ApplySubtreeCpus(container, restore);
         if (error2)
@@ -743,7 +745,7 @@ std::shared_ptr<TContainer> FindUnbalancedJailContainer(
 
     for (auto &it: containers) {
         auto &ct = it.second;
-        auto spec = ct->CpuSetSpec;
+        auto spec = std::atomic_load(&ct->CpuSetSpec);
 
         auto allocation = spec->GetAllocation();
         if (!allocation)

@@ -54,7 +54,7 @@ static const std::string LOCK_STATE_WRITE("LockStateWrite");
 MeasuredMutex ContainersMutex("containers");
 static std::condition_variable ContainersCV;
 std::shared_ptr<TContainer> RootContainer;
-std::map<std::string, std::shared_ptr<TContainer>> Containers;
+std::map<std::string, const std::shared_ptr<TContainer>> Containers;
 TPath ContainersKV;
 TIdMap ContainerIdMap(1, CONTAINER_ID_MAX);
 std::vector<ExtraProperty> ExtraProperties;
@@ -368,7 +368,7 @@ void TContainer::DumpLocks() {
 
 void TContainer::Register() {
     PORTO_LOCKED(ContainersMutex);
-    Containers[Name] = shared_from_this();
+    Containers.emplace(Name, shared_from_this());
     if (Parent)
         Parent->Children.emplace_back(shared_from_this());
     Statistics->ContainersCreated++;

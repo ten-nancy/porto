@@ -3306,8 +3306,8 @@ public:
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-        auto lock = LockVolumes();
         auto out = spec.mutable_volumes_owned();
+        auto lock = LockVolumes();
         for (auto &vol: CT->OwnedVolumes) {
             TPath path = CL->ComposePath(vol->Path);
             if (!path)

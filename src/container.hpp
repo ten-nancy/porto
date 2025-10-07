@@ -272,8 +272,8 @@ public:
     uint64_t CpuWeight = 100;
 
     std::shared_ptr<TCpuSetSpec> CpuSetSpec;
+    // Protected by both ActionLock and StateLock
     std::shared_ptr<TCpuSetSpec> TargetCpuSetSpec;
-    TBitMap TargetCpuAffinity;
 
     bool AutoRespawn = false;
     int64_t RespawnLimit = -1;
@@ -545,7 +545,7 @@ private:
 
 extern MeasuredMutex ContainersMutex;
 extern std::shared_ptr<TContainer> RootContainer;
-extern std::map<std::string, std::shared_ptr<TContainer>> Containers;
+extern std::map<std::string, const std::shared_ptr<TContainer>> Containers;
 extern TPath ContainersKV;
 extern TIdMap ContainerIdMap;
 extern std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;

@@ -38,14 +38,14 @@ extern "C" {
 #include <unistd.h>
 }
 
-TNbdConn NbdConn;
+static TNbdConn NbdConn;
 
 TPath VolumesKV;
 TPath NbdKV;
 MeasuredMutex VolumesMutex("volumes");
-std::map<TPath, std::shared_ptr<TVolume>> Volumes;
-std::map<TPath, std::shared_ptr<TVolumeLink>> VolumeLinks;
-std::map<std::string, std::shared_ptr<TVolume>> VolumeById;
+std::map<TPath, const std::shared_ptr<TVolume>> Volumes;
+std::map<TPath, const std::shared_ptr<TVolumeLink>> VolumeLinks;
+std::map<std::string, const std::shared_ptr<TVolume>> VolumeById;
 
 static std::atomic<uint64_t> NextId(1);
 
@@ -1460,7 +1460,7 @@ public:
 };
 
 /* TVolumeNbdBackend - fs on NBD */
-static std::unordered_map<int, std::shared_ptr<TVolume>> NbdVolumes;
+static std::unordered_map<int, const std::shared_ptr<TVolume>> NbdVolumes;
 
 class TVolumeNbdBackend: public TVolumeBackend {
     TPath Root;
@@ -1598,7 +1598,7 @@ public:
 
         if (Volume->DeviceIndex >= 0) {
             VolumesMutex.lock();
-            NbdVolumes[Volume->DeviceIndex] = Volume->shared_from_this();
+            NbdVolumes.emplace(Volume->DeviceIndex, Volume->shared_from_this());
             VolumesMutex.unlock();
 
             if (Volume->DeviceName.empty())
@@ -1633,7 +1633,7 @@ public:
         Volume->DeviceName = fmt::format("nbd{}", index);
 
         VolumesMutex.lock();
-        NbdVolumes[index] = Volume->shared_from_this();
+        NbdVolumes.emplace(index, Volume->shared_from_this());
         VolumesMutex.unlock();
 
         error = Volume->InternalPath.Mount(GetDevice(), FilesystemType, Volume->GetMountFlags(), {});
@@ -2935,7 +2935,7 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
             ct->VolumeMounts--;
     }
 
-    VolumeLinks[link->HostTarget] = link;
+    VolumeLinks.emplace(link->HostTarget, link);
 
     /* Block changes root path */
     for (auto ct = link->Container; ct; ct = ct->Parent)
@@ -3956,8 +3956,8 @@ TError TVolume::Restore(const TKeyValue &node) {
         L_WRN("Duplicate volume link: {}", Path);
 
     MetricsRegistry->Volumes.WithLabels({{"backend", BackendType}})++;
-    Volumes[Path] = shared_from_this();
-    VolumeById[Id] = shared_from_this();
+    Volumes.emplace(Path, shared_from_this());
+    VolumeById.emplace(Id, shared_from_this());
     if (Volumes.size() != VolumeById.size())
         L_WRN("VolumeById size mismatch: {} != {}", Volumes.size(), VolumeById.size());
 
@@ -3966,7 +3966,7 @@ TError TVolume::Restore(const TKeyValue &node) {
     common_link->Target = Path;
     common_link->HostTarget = Path;
     common_link->ReadOnly = IsReadOnly;
-    VolumeLinks[Path] = common_link;
+    VolumeLinks.emplace(Path, common_link);
     RootContainer->VolumeMounts++;
 
     /* Restore other links */
@@ -4019,7 +4019,7 @@ TError TVolume::Restore(const TKeyValue &node) {
                 continue;
             }
 
-            VolumeLinks[link->HostTarget] = link;
+            VolumeLinks.emplace(link->HostTarget, link);
             for (auto c = ct; c; c = c->Parent)
                 c->VolumeMounts++;
         }
@@ -4176,7 +4176,7 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec, std::shared_ptr<TVolume> &v
     common_link->Busy = true;
 
     if (volume->Path == volume->InternalPath) {
-        VolumeLinks[volume->Path] = common_link;
+        VolumeLinks.emplace(volume->Path, common_link);
         RootContainer->VolumeMounts++;
     }
 
@@ -4190,8 +4190,8 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec, std::shared_ptr<TVolume> &v
         return error;
     }
 
-    Volumes[volume->Path] = volume;
-    VolumeById[volume->Id] = volume;
+    Volumes.emplace(volume->Path, volume);
+    VolumeById.emplace(volume->Id, volume);
     if (Volumes.size() != VolumeById.size())
         L_WRN("VolumeById size mismatch: {} != {}", Volumes.size(), VolumeById.size());
 

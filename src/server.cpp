@@ -648,7 +648,7 @@ void PrepareServer() {
 
     error = TuneLimits();
     if (error)
-        FatalError("Cannot set correct limits", error);
+        FatalError("Cannot set correct limits: {}", error);
 
     if (fcntl(PORTO_SK_FD, F_SETFD, FD_CLOEXEC) < 0)
         FatalError("Can't set close-on-exec flag on PORTO_SK_FD: {}", TError::System("fcntl"));

@@ -92,7 +92,7 @@ public:
     TError ReadContainer(const std::string &relative_name, std::shared_ptr<TContainer> &ct);
     TError WriteContainer(const std::string &relative_name, std::shared_ptr<TContainer> &ct, bool child = false);
 
-    TError LockContainer(std::shared_ptr<TContainer> &ct);
+    TError LockContainer(const std::shared_ptr<TContainer> &ct);
     void ReleaseContainer(bool locked = false);
 
     TPath ComposePath(const TPath &path);

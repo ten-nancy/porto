@@ -758,9 +758,11 @@ TError TNetwork::New(TNamespaceFd &netns, std::shared_ptr<TNetwork> &net, pid_t 
     TError error2 = curNs.SetNs(CLONE_NEWNET);
     PORTO_ASSERT(!error2);
 
-    auto networks_lock = LockNetworks();
-    Statistics->NetworksCreated++;
-    Register(net, netns.Inode());
+    if (!error) {
+        auto networks_lock = LockNetworks();
+        Statistics->NetworksCreated++;
+        Register(net, netns.Inode());
+    }
 
     return error;
 }

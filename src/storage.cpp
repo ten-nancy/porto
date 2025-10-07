@@ -31,7 +31,7 @@ static const char META_LAYER[] = "_layer_";
 
 static uint64_t AsyncRemoveWatchDogPeriod;
 
-extern std::map<std::string, std::shared_ptr<TVolume>> VolumeById;
+extern std::map<std::string, const std::shared_ptr<TVolume>> VolumeById;
 
 /* Protected with VolumesMutex */
 
