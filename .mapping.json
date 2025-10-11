@@ -326,6 +326,7 @@
   "test/test-unpriv-cred.py":"infra/porto/porto/test/test-unpriv-cred.py",
   "test/test-userns.py":"infra/porto/porto/test/test-userns.py",
   "test/test-vcheck.py":"infra/porto/porto/test/test-vcheck.py",
+  "test/test-volume-create-race.py":"infra/porto/porto/test/test-volume-create-race.py",
   "test/test-volume-nbd.py":"infra/porto/porto/test/test-volume-nbd.py",
   "test/test-volume-remove-race.py":"infra/porto/porto/test/test-volume-remove-race.py",
   "test/test-volume-restore.py":"infra/porto/porto/test/test-volume-restore.py",

@@ -273,7 +273,7 @@ TError TStorage::CheckBaseDirectory(const TPath &place, EStorageType type, unsig
     error = base.StatStrict(st);
     if (error && error.Errno == ENOENT) {
         /* If base does not exist, we attempt to create base directory */
-        error = base.MkdirAll(perms);
+        error = base.MkdirAll(perms, true);
         if (!error)
             error = base.StatStrict(st);
     }

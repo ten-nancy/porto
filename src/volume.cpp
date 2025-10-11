@@ -2903,9 +2903,62 @@ TError TVolume::Build() {
     return OK;
 }
 
-TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
-    TError error, error2;
+// TODO: try replace it with TFile::CreateDirAllAt
+static TError CreateLinkTarget(TFile &pin, const TPath &target, bool dir) {
+    auto components = target.Components();
 
+    // skip leading "/"
+    for (size_t i = 1; i < components.size(); ++i) {
+        auto &name = components[i];
+
+        if (name == "..")
+            return TError(EError::InvalidPath, "Non-normal path {}", target);
+
+        int flags = O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NOCTTY;
+        if (i + 1 < components.size() || dir)
+            flags |= O_DIRECTORY;
+
+        auto error = pin.OpenAt(pin, name, flags);
+        if (!error)
+            continue;
+
+        if (error.Errno != ENOENT && error.Errno != ELOOP && error.Errno != ENOTDIR)
+            return error;
+
+        /* Check permissions for change */
+        auto error2 = CL->WriteAccess(pin);
+        if (error2)
+            return error2;
+
+        if ((flags & O_DIRECTORY) && (error.Errno == ELOOP || error.Errno == ENOTDIR)) {
+            /* Remove symlink */
+            TPath symlink_target;
+            if (pin.ReadlinkAt(name, symlink_target))
+                return error;
+            L_ACT("Remove symlink {} to ", pin.RealPath() / name, symlink_target);
+            auto error = pin.UnlinkAt(name);
+            if (error && error.Error != ENOENT)
+                return error;
+        }
+        error = (flags & O_DIRECTORY) ? pin.MkdirAt(name, 0755) : pin.MkfileAt(name, 0644);
+        if (!error) {
+            auto error = pin.ChownAt(name, CL->Cred);
+            if (error)
+                return error;
+        } else if (error && error.Errno != EEXIST)
+            return error;
+
+        error = pin.OpenAt(pin, name, flags);
+        if (error)
+            return error;
+    }
+    if (!dir && pin.IsDirectory())
+        return TError(EError::InvalidValue, "{} must not be directory", target);
+
+    return OK;
+}
+
+TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
     if (!link->Target)
         return OK;
 
@@ -2920,7 +2973,7 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
     link->HostTarget = "";
 
     if (host_target != link->Volume->Path) {
-        error = TVolume::CheckConflicts(host_target);
+        auto error = TVolume::CheckConflicts(host_target);
         if (error)
             return error;
     }
@@ -2952,73 +3005,21 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
     L_ACT("Mount volume {} link {} for {} target {}", Path, host_target, link->Container->Slug, link->Target);
     Statistics->VolumeLinksMounted++;
 
-    TFile target_dir;
+    TFile targetPin;
     TPath link_mount, real_target;
     std::unique_lock<std::mutex> internal_lock;
     unsigned long flags = 0;
 
-    auto target_components = link->Target.Components();
-
-    /* Prepare mountpoint */
-    error = target_dir.OpenDirStrict(link->Container->RootPath);
+    auto error = targetPin.OpenDirStrict(link->Container->RootPath);
     if (error)
         goto undo;
 
-    for (auto it = target_components.begin(); it != target_components.end(); ++it) {
-        auto &name = *it;
-
-        if (name == "/")
-            continue;
-
-        error = target_dir.OpenDirStrictAt(target_dir, name);
-        if (!error)
-            continue;
-
-        if (error.Errno != ENOENT && error.Errno != ELOOP && error.Errno != ENOTDIR)
-            break;
-
-        /* Check permissions for change */
-        if (CL->WriteAccess(target_dir))
-            break;
-
-        if (!BindFileStorage() || (it != target_components.end() - 1)) {
-            /* Remove symlink */
-            if (error.Errno == ELOOP || error.Errno == ENOTDIR) {
-                TPath symlink_target;
-                if (target_dir.ReadlinkAt(name, symlink_target))
-                    break; /* Not at symlink */
-                L_ACT("Remove symlink {} to {}", target_dir.RealPath() / name, symlink_target);
-                error = target_dir.UnlinkAt(name);
-                if (error)
-                    break;
-            }
-
-            L_ACT("Create directory {}", target_dir.RealPath() / name);
-            error = target_dir.MkdirAt(name, 0775);
-            if (error)
-                break;
-            error = target_dir.OpenDirStrictAt(target_dir, name);
-            if (error)
-                break;
-        } else {
-            L_ACT("Create file {}", target_dir.RealPath() / name);
-            error = target_dir.MkfileAt(name, 0644);
-            if (error && error.Errno != EEXIST)
-                break;
-            error = target_dir.OpenAt(target_dir, name, O_RDONLY | O_CLOEXEC | O_NOCTTY);
-            if (error)
-                break;
-        }
-
-        error = target_dir.Chown(CL->Cred);
-        if (error)
-            break;
-    }
+    error = CreateLinkTarget(targetPin, link->Target, !BindFileStorage());
     if (error)
         goto undo;
 
     /* Sanity check */
-    real_target = target_dir.RealPath();
+    real_target = targetPin.RealPath();
     if (real_target != host_target) {
         error = TError(EError::InvalidPath, "Volume {} link {} real path is {}", Path, host_target, real_target);
         goto undo;
@@ -3057,7 +3058,7 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
 
     /* Move to target path and propagate into namespaces */
     if (!error)
-        error = link_mount.MoveMount(target_dir.ProcPath());
+        error = link_mount.MoveMount(targetPin.ProcPath());
 
     (void)link_mount.UmountAll();
     (void)link_mount.Rmdir();

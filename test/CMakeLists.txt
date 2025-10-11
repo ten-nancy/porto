@@ -132,6 +132,7 @@ ADD_PYTHON_TEST(volume_queue)
 # ADD_PYTHON_TEST(volume_sync)
 ADD_PYTHON_TEST(portod_cli)
 ADD_PYTHON_TEST(recovery)
+ADD_PYTHON_TEST(volume-create-race)
 ADD_PYTHON_TEST(volume-remove-race)
 ADD_PYTHON_TEST(volume-spec)
 
