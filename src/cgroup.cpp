@@ -343,8 +343,12 @@ TError TCgroup1::Create() const {
 
     L_CG("Create cgroup-v1 {}", *this);
     error = Path().Mkdir(0755);
-    if (error)
+    if (error) {
+        if (error.Errno == ENOMEM)
+            return TError(EError::ResourceNotAvailable, "Cannot create cgroup: {}", error);
         L_ERR("Cannot create cgroup-v1 {} : {}", *this, error);
+        return error;
+    }
 
     for (auto subsys: CgroupDriver.Subsystems) {
         if (subsys->IsBound(*this)) {
@@ -642,8 +646,12 @@ TError TCgroup2::Create() const {
 
     L_CG("Create cgroup-v2 {} NeedLeaf={}", *this, NeedLeaf);
     error = Path().Mkdir(0755);
-    if (error)
-        return TError(error, "Cannot create cgroup-v2 {}", *this);
+    if (error) {
+        if (error.Errno == ENOMEM)
+            return TError(EError::ResourceNotAvailable, "Cannot create cgroup: {}", error);
+        L_ERR("Cannot create cgroup-v2 {} : {}", *this, error);
+        return error;
+    }
 
     if (NeedLeaf) {
         L_CG("Create leaf cgroup {}", LeafPath());
