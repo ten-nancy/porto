@@ -934,29 +934,34 @@ public:
         return OK;
     }
 
-    TError OpenLayers(std::vector<TFile> &pins) {
-        EStorageType layerType = Volume->GetLayerType();
+    static TError OpenLayers(const TVolume &volume, const std::vector<std::string> &layers, std::deque<TFile> &pins) {
+        EStorageType layerType = volume.GetLayerType();
         std::set<std::pair<dev_t, ino_t>> seen;
 
-        for (auto &name: Volume->Layers) {
+        for (auto &name: layers) {
             TFile pin;
 
             if (name[0] == '/') {
                 auto error = pin.OpenDir(name);
-                if (error)
+                if (error) {
+                    if (error.Errno == ENOENT)
+                        return TError(EError::LayerNotFound);
+                    if (error.Errno == ENOTDIR)
+                        return TError(EError::InvalidPath, "Layer must be a directory");
                     return error;
+                }
                 error = CL->ReadAccess(pin);
                 if (error)
                     return error;
             } else {
                 TStorage layer;
-                layer.Open(layerType, Volume->Place, name);
+                layer.Open(layerType, volume.Place, name);
                 /* Imported layers are available for everybody */
                 (void)layer.Touch();
 
                 auto error = pin.OpenDir(layer.Path);
                 if (error)
-                    return TError(error, "Cannot open layer {} in place {}", name, Volume->Place);
+                    return TError(error, "Cannot open layer {} in place {}", name, volume.Place);
             }
 
             struct stat st;
@@ -977,7 +982,7 @@ public:
         return OK;
     }
 
-    std::string BuildLowerStr(const std::vector<TFile> &pins) {
+    static std::string FormatLayers(const std::deque<TFile> &pins) {
         std::ostringstream ss;
 
         for (size_t i = 0; i < pins.size(); ++i) {
@@ -988,27 +993,24 @@ public:
         return ss.str();
     }
 
-    TError Build() override {
+    static TError BuildOverlay(TVolume &volume, std::string lower) {
         TFile upperFd, workFd, cowFd;
+        auto error = volume.StorageFd.MkdirAt("upper", 0755);
+        if (error) {
+            if (error.Errno != EEXIST)
+                return error;
+        } else
+            volume.KeepStorage = false; /* New storage */
 
-        std::vector<TFile> pins;
-        auto error = OpenLayers(pins);
+        error = upperFd.OpenDirStrictAt(volume.StorageFd, "upper");
         if (error)
             return error;
 
-        auto lower = BuildLowerStr(pins);
-
-        error = Volume->StorageFd.MkdirAt("upper", 0755);
-        if (!error)
-            Volume->KeepStorage = false; /* New storage */
-
-        error = upperFd.OpenDirStrictAt(Volume->StorageFd, "upper");
-        if (error)
+        error = volume.StorageFd.MkdirAt("work", 0755);
+        if (error && error.Errno != EEXIST)
             return error;
 
-        (void)Volume->StorageFd.MkdirAt("work", 0755);
-
-        error = workFd.OpenDirStrictAt(Volume->StorageFd, "work");
+        error = workFd.OpenDirStrictAt(volume.StorageFd, "work");
         if (error)
             return error;
 
@@ -1016,28 +1018,28 @@ public:
         if (error)
             return error;
 
-        error = Volume->MakeDirectories(upperFd);
+        error = volume.MakeDirectories(upperFd);
         if (error)
             return error;
 
-        error = Volume->MakeSymlinks(upperFd);
+        error = volume.MakeSymlinks(upperFd);
         if (error)
             return error;
 
-        error = Volume->MakeShares(upperFd, false);
+        error = volume.MakeShares(upperFd, false);
         if (error)
             return error;
 
-        if (Volume->NeedCow) {
-            error = cowFd.CreateDirAllAt(Volume->StorageFd, "cow", 0755, Volume->VolumeCred);
+        if (volume.NeedCow) {
+            error = cowFd.CreateDirAllAt(volume.StorageFd, "cow", 0755, volume.VolumeCred);
             if (error)
                 return error;
 
-            error = Volume->MakeShares(cowFd, true);
+            error = volume.MakeShares(cowFd, true);
             if (error)
                 return error;
         } else
-            (void)cowFd.OpenDirAt(Volume->StorageFd, "cow");
+            (void)cowFd.OpenDirAt(volume.StorageFd, "cow");
 
         if (cowFd)
             lower = cowFd.ProcPath().ToString() + ":" + lower;
@@ -1045,45 +1047,52 @@ public:
         std::vector<std::string> options = {fmt::format("lowerdir={}", lower), fmt::format("upperdir={}", upperFd.Fd),
                                             fmt::format("workdir={}", workFd.Fd)};
 
-        if (Volume->Ephemeral() && CompareVersions(config().linux_version(), "5.15") >= 0)
+        if (volume.Ephemeral() && CompareVersions(config().linux_version(), "5.15") >= 0)
             options.push_back("volatile");
 
         error = TPath("/proc/thread-self/fd").Chdir();
         if (error)
             return error;
 
-        error = Volume->InternalPath.Mount("overlay", "overlay", Volume->GetMountFlags(), options);
+        error = volume.InternalPath.Mount("overlay", "overlay", volume.GetMountFlags(), options);
         (void)TPath("/").Chdir();
 
         if (error) {
-            if (error.Errno == EINVAL && Volume->Layers.size() >= 500)
+            if (error.Errno == EINVAL && volume.Layers.size() >= 500)
                 return TError(EError::InvalidValue, "Too many layers, kernel limits is 499 plus 1 for upper");
             return error;
         }
 
-        if (Volume->HaveQuota()) {
-            TProjectQuota quota(Volume->StoragePath);
-            quota.SpaceLimit = Volume->SpaceLimit;
-            quota.InodeLimit = Volume->InodeLimit;
+        if (volume.HaveQuota()) {
+            TProjectQuota quota(volume.StoragePath);
+            quota.SpaceLimit = volume.SpaceLimit;
+            quota.InodeLimit = volume.InodeLimit;
             L_ACT("Creating project quota: {} bytes: {} inodes: {}", quota.Path, quota.SpaceLimit, quota.InodeLimit);
             error = quota.Create();
             if (error)
                 return error;
         }
-
         return OK;
     }
 
-    TError Destroy() override {
-        TProjectQuota quota(Volume->StoragePath);
+    TError Build() override {
+        std::deque<TFile> pins;
+        auto error = OpenLayers(*Volume, Volume->Layers, pins);
+        if (error)
+            return error;
+
+        return BuildOverlay(*Volume, FormatLayers(pins));
+    }
+
+    static TError DoDestroy(TVolume &volume) {
         TError error;
-
-        if (Volume->Ephemeral())
-            error = AsyncUmount(Volume->InternalPath);
+        if (volume.Ephemeral())
+            error = AsyncUmount(volume.InternalPath);
         else
-            error = Volume->InternalPath.UmountAll();
+            error = volume.InternalPath.UmountAll();
 
-        if (Volume->HaveQuota() && quota.Exists()) {
+        TProjectQuota quota(volume.StoragePath);
+        if (volume.HaveQuota() && quota.Exists()) {
             L_ACT("Destroying project quota: {}", quota.Path);
             TError error2 = quota.Destroy();
             if (!error)
@@ -1091,6 +1100,10 @@ public:
         }
 
         return error;
+    }
+
+    TError Destroy() override {
+        return DoDestroy(*Volume);
     }
 
     TError Resize(uint64_t space_limit, uint64_t inode_limit) override {
@@ -1139,205 +1152,75 @@ public:
         return OK;
     }
 
-    TError Build() override {
-        TProjectQuota quota(Volume->StoragePath);
-        TFile lowerFd, upperFd, workFd, cowFd;
-        std::string lowerdir;
-        int layer_idx = 0;
-        TError error;
-        TPath lower;
-        struct stat st;
-        std::unordered_map<dev_t, std::unordered_set<ino_t>> ovlInodes;
-        EStorageType layerType = Volume->GetLayerType();
+    static TError MountSquash(const TFile &pin, const TPath &mountpoint, int &index) {
+        auto error = SetupLoopDev(pin, pin.RealPath(), index);
+        if (error)
+            return error;
 
+        error = mountpoint.Mount(fmt::format("/dev/loop{}", index), "squashfs", MS_RDONLY | MS_NODEV | MS_NOSUID, {});
+        if (error) {
+            if (error.Errno == EINVAL || error.Errno == EIO)
+                error = TError(EError::InvalidFilesystem, "Cannot mount loop device: {}", error);
+
+            auto error2 = PutLoopDev(index);
+            if (error2)
+                L_ERR("Failed put loop dev: {}", error2);
+            index = -1;
+        }
+        return error;
+    }
+
+    TError Build() override {
+        TFile squashFd;
+        auto error = squashFd.OpenRead(Volume->Layers[0]);
+        if (error) {
+            if (error.Errno == ENOENT)
+                return TError(EError::LayerNotFound);
+            return error;
+        }
+        error = CL->ReadAccess(squashFd);
+        if (error)
+            return error;
+        /* shortcut for read-only volumes without extra layers */
+        if (Volume->IsReadOnly && Volume->Layers.size() == 1)
+            return MountSquash(squashFd, Volume->InternalPath, Volume->DeviceIndex);
+
+        std::deque<TFile> pins;
+        std::vector<std::string> layers(Volume->Layers.begin() + 1, Volume->Layers.end());
+        error = TVolumeOverlayBackend::OpenLayers(*Volume, layers, pins);
+        if (error)
+            return error;
+
+        TPath lower;
         lower = Volume->GetInternal("lower");
         error = lower.Mkdir(0755);
         if (error)
             return error;
 
-        error = lowerFd.OpenRead(Volume->Layers[0]);
+        error = MountSquash(squashFd, lower, Volume->DeviceIndex);
         if (error)
             return error;
 
-        error = Volume->StorageFd.MkdirAt("upper", 0755);
-        if (!error)
-            Volume->KeepStorage = false; /* New storage */
-
-        error = upperFd.OpenDirStrictAt(Volume->StorageFd, "upper");
+        TFile lowerFd;
+        error = lowerFd.OpenDir(lower);
         if (error)
             return error;
+        pins.push_front(std::move(lowerFd));
 
-        (void)Volume->StorageFd.MkdirAt("work", 0755);
-
-        error = workFd.OpenDirStrictAt(Volume->StorageFd, "work");
-        if (error)
-            return error;
-
-        error = workFd.ClearDirectory();
-        if (error)
-            return error;
-
-        error = SetupLoopDev(lowerFd, Volume->Layers[0], Volume->DeviceIndex);
-        if (error)
-            return error;
-
-        error = lower.Mount("/dev/loop" + std::to_string(Volume->DeviceIndex), "squashfs",
-                            MS_RDONLY | MS_NODEV | MS_NOSUID, {});
-        if (error) {
-            if (error.Errno == EINVAL || error.Errno == EIO)
-                error = TError(EError::InvalidFilesystem, "Cannot mount loop device: {}", error);
-            goto err;
-        }
-
-        /* shortcut for read-only volumes without extra layers */
-        if (Volume->IsReadOnly && Volume->Layers.size() == 1) {
-            error = Volume->InternalPath.BindRemount(lower, Volume->GetMountFlags());
-            if (error)
-                goto err;
-            return OK;
-        }
-
-        if (Volume->HaveQuota()) {
-            quota.SpaceLimit = Volume->SpaceLimit;
-            quota.InodeLimit = Volume->InodeLimit;
-            L_ACT("Creating project quota: {} bytes: {} inodes: {}", quota.Path, quota.SpaceLimit, quota.InodeLimit);
-            error = quota.Create();
-            if (error)
-                goto err;
-        }
-
-        error = Volume->GetInternal("").Chdir();
-        if (error)
-            goto err;
-
-        lowerdir = lower.ToString();
-
-        for (auto &name: Volume->Layers) {
-            TPath path, temp;
-            TFile pin;
-
-            if (name == Volume->Layers[0])
-                continue;
-
-            if (name[0] == '/') {
-                error = pin.OpenDir(name);
-                if (error)
-                    goto err;
-                error = CL->ReadAccess(pin);
-                if (error)
-                    goto err;
-                path = pin.ProcPath();
-            } else {
-                TStorage layer;
-                layer.Open(layerType, Volume->Place, name);
-                /* Imported layers are available for everybody */
-                (void)layer.Touch();
-                path = layer.Path;
-
-                error = pin.OpenDir(path);
-                if (error) {
-                    error = TError(error, "Cannot open layer {} in place {}", name, Volume->Place);
-                    goto err;
-                }
-            }
-
-            error = pin.Stat(st);
-            if (error)
-                goto err;
-
-            auto dev_inode = ovlInodes.find(st.st_dev);
-            if (dev_inode != ovlInodes.end()) {
-                if (!dev_inode->second.emplace(st.st_ino).second) {
-                    pin.Close();
-                    L("Skipping duplicate lower layer {}", name);
-                    continue;
-                }
-            } else {
-                ovlInodes.emplace(st.st_dev, std::unordered_set<ino_t>()).first->second.emplace(st.st_ino);
-            }
-
-            std::string layer_id = "L" + std::to_string(Volume->Layers.size() - ++layer_idx - 1);
-            temp = Volume->GetInternal(layer_id);
-            error = temp.Mkdir(700);
-            if (!error)
-                error = temp.BindRemount(path, MS_RDONLY | MS_NODEV | MS_PRIVATE);
-            if (error)
-                goto err;
-
-            pin.Close();
-            lowerdir += ":" + layer_id;
-        }
-
-        error = Volume->MakeDirectories(upperFd);
-        if (error)
-            goto err;
-
-        error = Volume->MakeSymlinks(upperFd);
-        if (error)
-            goto err;
-
-        error = Volume->MakeShares(upperFd, false);
-        if (error)
-            goto err;
-
-        if (Volume->NeedCow) {
-            error = cowFd.CreateDirAllAt(Volume->StorageFd, "cow", 0755, Volume->VolumeCred);
-            if (error)
-                goto err;
-
-            error = Volume->MakeShares(cowFd, true);
-            if (error)
-                goto err;
-        } else
-            (void)cowFd.OpenDirAt(Volume->StorageFd, "cow");
-
-        if (cowFd)
-            lowerdir = cowFd.ProcPath().ToString() + ":" + lowerdir;
-
-        error = Volume->InternalPath.Mount("overlay", "overlay", Volume->GetMountFlags(),
-                                           {"lowerdir=" + lowerdir, "upperdir=" + upperFd.ProcPath().ToString(),
-                                            "workdir=" + workFd.ProcPath().ToString()});
-
-        if (error && error.Errno == EINVAL && Volume->Layers.size() >= 500)
-            error = TError(EError::InvalidValue, "Too many layers, kernel limits is 499 plus 1 for upper");
-
-        while (layer_idx--) {
-            TPath temp = Volume->GetInternal("L" + std::to_string(Volume->Layers.size() - layer_idx - 2));
-            (void)temp.UmountAll();
-            (void)temp.Rmdir();
-        }
-
-    err:
-        (void)TPath("/").Chdir();
-
-        if (error) {
-            if (Volume->HaveQuota())
-                (void)quota.Destroy();
-            if (Volume->DeviceIndex >= 0) {
-                lower.UmountAll();
-                PutLoopDev(Volume->DeviceIndex);
-                Volume->DeviceIndex = -1;
-            }
-        }
-
-        return error;
+        return TVolumeOverlayBackend::BuildOverlay(*Volume, TVolumeOverlayBackend::FormatLayers(pins));
     }
 
     TError Destroy() override {
+        auto error = TVolumeOverlayBackend::DoDestroy(*Volume);
+        auto lower = Volume->GetInternal("lower");
+        if (lower.Exists())
+            lower.UmountAll();
+
         if (Volume->DeviceIndex >= 0) {
-            Volume->InternalPath.UmountAll();
-            Volume->GetInternal("lower").UmountAll();
             PutLoopDev(Volume->DeviceIndex);
             Volume->DeviceIndex = -1;
         }
-
-        TProjectQuota quota(Volume->StoragePath);
-        if (Volume->HaveQuota() && quota.Exists()) {
-            L_ACT("Destroying project quota: {}", quota.Path);
-            (void)quota.Destroy();
-        }
-
-        return OK;
+        return error;
     }
 
     TError Resize(uint64_t space_limit, uint64_t inode_limit) override {

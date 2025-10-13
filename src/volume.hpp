@@ -260,7 +260,7 @@ public:
     }
 
     bool Ephemeral(void) const {
-        return !KeepStorage && BackendType == "overlay";
+        return !KeepStorage && (BackendType == "overlay" || BackendType == "squash");
     }
 
     /* Backend storage could be a regular file */
