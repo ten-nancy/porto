@@ -1,3 +1,18 @@
+porto (5.3.56) unstable; urgency=low
+  [ ovov ]
+      volume: forbid shadowing of bind source
+      volume, squash, overlay: move common logic to overlay backend
+      cgroup: handle ENOMEM during cgroup creation
+      volume: fix race in MountLink directory creation
+      porto: mitigate data races
+      container: fix typo in TContainer::LogStateChange
+      property: protect owned volumes with lock
+  [ alexperevalov ]
+      docker: return error on DownloadLayer failure
+  last commit: 07d8c3b6e9ee4c687d403175f788011bed19921f
+
+ -- Porto Team <porto@yandex-team.ru>  Tue, 14 Oct 2025 01:31:56 -0000
+
 porto (5.3.55) unstable; urgency=low
   [ ovov ]
       util/unix: dont use dynamic allocation in TSessionInfo
