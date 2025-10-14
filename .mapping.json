@@ -334,6 +334,7 @@
   "test/test-volume_backends.py":"infra/porto/porto/test/test-volume_backends.py",
   "test/test-volume_links.py":"infra/porto/porto/test/test-volume_links.py",
   "test/test-volume_list.py":"infra/porto/porto/test/test-volume_list.py",
+  "test/test-volume_overlap.py":"infra/porto/porto/test/test-volume_overlap.py",
   "test/test-volume_places.py":"infra/porto/porto/test/test-volume_places.py",
   "test/test-volume_queue.py":"infra/porto/porto/test/test-volume_queue.py",
   "test/test-volume_sync.py":"infra/porto/porto/test/test-volume_sync.py",

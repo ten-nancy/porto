@@ -2174,14 +2174,22 @@ TError TVolume::CheckConflicts(const TPath &path) {
             return TError(EError::InvalidPath, "Volume path {} overlaps with place {}", path, vol->Place);
 
         if (vol->RemoteStorage()) {
+            // pass
         } else if (vol->BackendType == "rbind") {
             if (vol->StoragePath.IsInside(path))
                 return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} storage {}", path, vol->Path,
                               vol->StoragePath);
-        } else if (vol->BackendType != "bind") {
-            if (vol->StoragePath.IsInside(path) || path.IsInside(vol->StoragePath))
-                return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} storage {}", path, vol->Path,
-                              vol->StoragePath);
+        } else {
+            // TODO(ovov): consider reduce to single (most strict) case
+            if (vol->BackendType == "bind") {
+                if (vol->StoragePath == path)
+                    return TError(EError::InvalidPath, "Volume path {} cannot shadow {} storage {}", path, vol->Path,
+                                  vol->StoragePath);
+            } else {
+                if (vol->StoragePath.IsInside(path) || path.IsInside(vol->StoragePath))
+                    return TError(EError::InvalidPath, "Volume path {} overlaps with volume {} storage {}", path,
+                                  vol->Path, vol->StoragePath);
+            }
         }
 
         for (auto &l: vol->Layers) {

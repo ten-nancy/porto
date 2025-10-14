@@ -126,6 +126,7 @@ ADD_PYTHON_TEST(legacy-root-loop)
 
 ADD_PYTHON_TEST(mem_limit)
 ADD_PYTHON_TEST(volume_backends)
+ADD_PYTHON_TEST(volume_overlap)
 ADD_PYTHON_TEST(volume_places)
 ADD_PYTHON_TEST(volume_links)
 ADD_PYTHON_TEST(volume_queue)
