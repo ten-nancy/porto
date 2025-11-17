@@ -2686,6 +2686,7 @@ static void TestRoot(Porto::Connection &api) {
         "default_gw",
         "net_guarantee",
         "net_limit",
+        "net_limit_soft",
         "net_rx_limit",
         "net_bytes",
         "net_packets",

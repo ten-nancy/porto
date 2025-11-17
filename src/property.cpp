@@ -6116,6 +6116,18 @@ public:
 
         return Set(val);
     }
+
+    void Dump(rpc::TContainerSpec &spec) const override {
+        spec.set_net_limit_soft(CT->NetLimitSoftValue);
+    }
+
+    bool Has(const rpc::TContainerSpec &spec) const override {
+        return spec.has_net_limit_soft();
+    }
+
+    TError Load(const rpc::TContainerSpec &spec) override {
+        return Set(spec.net_limit_soft());
+    }
 } static NetLimitSoftProp;
 
 class TNetTos: public TProperty {
