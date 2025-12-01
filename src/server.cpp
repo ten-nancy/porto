@@ -251,6 +251,19 @@ static void ServerLoop() {
         return;
     }
 
+    int evFd = EventFd();
+    if (evFd == -1) {
+        L_ERR("Can`t create eventFd");
+        return;
+    }
+
+    auto evSource = std::make_shared<TEpollSource>(evFd);
+    error = EpollLoop->AddSource(evSource);
+    if (error) {
+        L_ERR("Can't add evSource to epoll: {}", error);
+        return;
+    }
+
     if (config().daemon().enable_nbd()) {
         error = StartNbd();
         if (error) {
@@ -311,7 +324,8 @@ static void ServerLoop() {
                     break;
                 case SIGHUP:
                     L_SYS("Updating...");
-                    StartShutdown();
+                    if (StartGracefulShutdown())
+                        StartShutdown();
                     break;
                 case SIGUSR1:
                     OpenLog(PORTO_LOG);
@@ -341,6 +355,9 @@ static void ServerLoop() {
                 // from the clients (so clients see updated view of the
                 // world as soon as possible)
                 continue;
+            } else if (source->Fd == evFd) {
+                L_SYS("Shutdown...");
+                StartShutdown();
             } else if (source->Flags & EPOLL_EVENT_MEM) {
                 auto container = source->Container.lock();
 

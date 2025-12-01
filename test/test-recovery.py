@@ -136,7 +136,84 @@ def RespawnTicks(r, timeout, min_ticks):
     ExpectLe(min_ticks, tick)
 
 
+def TestApiAvailability():
+    # Constants
+    test_cgroup_path = "/sys/fs/cgroup/freezer/porto-freeze-test"
+    call_count = 30
+
+    # Connect to portoctl
+    connection = porto.Connection(timeout=3)
+
+    # Run the container with dummy command
+    container = connection.Run("dummy", command="tail -f /dev/null", weak=False)
+
+    # Create request that will freeze
+    root_pid = connection.GetProperty("dummy", "root_pid")
+    #    Create freezer sub-cgroup
+    if not os.path.exists(test_cgroup_path):
+        os.mkdir(test_cgroup_path)
+    #    Write there pid of our container
+    with open(test_cgroup_path + "/" + "cgroup.procs", 'w') as fd:
+        fd.write(str(root_pid))
+    #    Freeze the container
+    with open(test_cgroup_path + "/" + "freezer.state", 'w') as fd:
+        fd.write("FROZEN")
+
+    # Remember the portod reload count
+    before_count = int(connection.GetProperty('/', 'porto_stat[spawned]'))
+
+    pid = os.fork()
+    if pid == 0:
+        # Wait for the freezed request
+        while True:
+            state = connection.GetProperty("dummy", "state")
+            if state == "stopping":
+                break
+            time.sleep(1)
+
+        # Reload portod
+        #    Get the server pid
+        with open("/run/portoloop.pid", 'r') as fd:
+            server_pid = fd.readline()
+        #    Send the signal
+        os.kill(int(server_pid), signal.SIGHUP)
+
+        # Verify that porto API is active
+        everything_is_broken = 0
+        for i in range(call_count):
+            try:
+                connection.GetProperty('/', 'porto_stat[spawned]')
+            except:
+                everything_is_broken = 1
+                break
+
+        # Thawed the request
+        with open(test_cgroup_path + "/" + "freezer.state", 'w') as fd:
+            fd.write("THAWED")
+
+        # Close helper process
+        os._exit(everything_is_broken)
+
+    # Created request that will be freezed
+    container.Stop()
+
+    # Tidy up the child processes
+    child_pid, status = os.wait()
+    #    Verify that the child is finished correctly
+    Expect(os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0)
+
+    # Destroy the container
+    container.Destroy()
+
+    # Check that the portod actually reload
+    after_count = int(connection.GetProperty('/', 'porto_stat[spawned]'))
+    ExpectEq(after_count, before_count + 1)
+
+
 def TestRecovery():
+    print("Make sure the API is available while portod graceful shutdown")
+    TestApiAvailability()
+
     #Former selftest.cpp TestRecovery()
     print("Make sure we can restore stopped child when parent is dead")
 

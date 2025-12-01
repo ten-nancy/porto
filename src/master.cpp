@@ -28,6 +28,8 @@ extern "C" {
 TPidFile MasterPidFile(PORTO_MASTER_PIDFILE, PORTOD_MASTER_NAME, "portod");
 pid_t MasterPid;
 bool RespawnPortod = true;
+static bool NeedServerUpgrade = false;
+static uint64_t StartServerShutdown = 0;
 
 static std::string PreviousVersion;
 static ino_t SocketIno = 0;
@@ -70,6 +72,56 @@ static void UpdateQueueSize() {
     Statistics->QueuedStatuses = Zombies.size();
 }
 
+static int UpgradeMaster() {
+    L_SYS("Updating master...");
+
+    std::vector<const char *> args = {PORTO_BINARY_PATH};
+    if (StdLog)
+        args.push_back("--stdlog");
+    if (Debug)
+        args.push_back("--debug");
+    else if (Verbose)
+        args.push_back("--verbose");
+    args.push_back(nullptr);
+
+    execvp(args[0], (char **)args.data());
+
+    args[0] = program_invocation_name;
+    execvp(args[0], (char **)args.data());
+
+    args[0] = "portod";
+    execvp(args[0], (char **)args.data());
+
+    args[0] = "/usr/sbin/portod";
+    execvp(args[0], (char **)args.data());
+
+    std::cerr << "Cannot exec " << args[0] << ": " << strerror(errno) << std::endl;
+    return EXIT_FAILURE;
+}
+
+static void WaitServer() {
+    (void)waitpid(ServerPid, &PortodStatus, 0);
+
+    if (NeedServerUpgrade) {
+        uint64_t finish = GetCurrentTimeMs() - StartServerShutdown;
+        Statistics->ShutdownTime += finish;
+        UpgradeMaster();
+    }
+
+    ServerPid = 0;
+    L_SYS("Portod {}", FormatExitStatus(PortodStatus));
+}
+
+static void DestroyServer() {
+    if (ServerPid == 0)
+        return;
+
+    L_SYS("Kill portod");
+    if (kill(ServerPid, SIGKILL) < 0)
+        L_ERR("Cannot kill portod: {}", TError::System("kill"));
+    WaitServer();
+}
+
 static void ReportZombies(int fd) {
     while (true) {
         siginfo_t info;
@@ -90,9 +142,7 @@ static void ReportZombies(int fd) {
         }
 
         if (pid == ServerPid) {
-            (void)waitpid(pid, NULL, 0);
-            ServerPid = 0;
-            PortodStatus = status;
+            WaitServer();
             break;
         }
 
@@ -134,40 +184,17 @@ static int ReapZombies(int fd) {
     return nr;
 }
 
-static int UpgradeMaster() {
-    L_SYS("Updating...");
+static int UpgradeServer() {
+    L_SYS("Updating server...");
 
     if (kill(ServerPid, SIGHUP) < 0) {
         L_ERR("Cannot send SIGHUP to porto: {}", strerror(errno));
+        return EXIT_FAILURE;
     } else {
-        uint64_t start = GetCurrentTimeMs();
-        if (waitpid(ServerPid, NULL, 0) != ServerPid)
-            L_ERR("Cannot wait for porto exit status: {}", strerror(errno));
-        Statistics->ShutdownTime += GetCurrentTimeMs() - start;
+        StartServerShutdown = GetCurrentTimeMs();
+        NeedServerUpgrade = true;
+        return EXIT_SUCCESS;
     }
-
-    std::vector<const char *> args = {PORTO_BINARY_PATH};
-    if (StdLog)
-        args.push_back("--stdlog");
-    if (Debug)
-        args.push_back("--debug");
-    else if (Verbose)
-        args.push_back("--verbose");
-    args.push_back(nullptr);
-
-    execvp(args[0], (char **)args.data());
-
-    args[0] = program_invocation_name;
-    execvp(args[0], (char **)args.data());
-
-    args[0] = "portod";
-    execvp(args[0], (char **)args.data());
-
-    args[0] = "/usr/sbin/portod";
-    execvp(args[0], (char **)args.data());
-
-    std::cerr << "Cannot exec " << args[0] << ": " << strerror(errno) << std::endl;
-    return EXIT_FAILURE;
 }
 
 static TError CreatePortoSocket() {
@@ -272,6 +299,7 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
     int evtfd[2];
     int ackfd[2];
     TError error;
+    bool serverPipeActive = false;
 
     error = CreatePortoSocket();
     if (error) {
@@ -325,12 +353,15 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
     error = loop->AddSource(AckSource);
     if (error) {
         L_ERR("Can't add ackfd[0] to epoll: {}", error);
+        DestroyServer();
         goto exit;
     }
+    serverPipeActive = true;
 
     error = loop->AddSource(sigSource);
     if (error) {
         L_ERR("Can't add sigSource to epoll: {}", error);
+        DestroyServer();
         goto exit;
     }
 
@@ -340,6 +371,7 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
         error = loop->GetEvents(events, -1);
         if (error) {
             L_ERR("master: epoll error {}", error);
+            DestroyServer();
             goto exit;
         }
 
@@ -368,6 +400,13 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
                 RespawnPortod = false;
                 goto exit;
             }
+            case SIGCHLD: {
+                if (pid_t(sigInfo.ssi_pid) == ServerPid) {
+                    WaitServer();
+                    goto exit;
+                }
+                break;
+            }
             case SIGUSR1: {
                 OpenLog(PORTO_LOG);
                 if (kill(ServerPid, signo) < 0)
@@ -378,7 +417,7 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
                 DumpMallocInfo();
                 break;
             case SIGHUP:
-                UpgradeMaster();
+                UpgradeServer();
                 break;
             default:
                 /* Ignore other signals */
@@ -394,7 +433,9 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
             if (source->Fd == sigFd) {
             } else if (source->Fd == ackfd[0]) {
                 if (!ReapZombies(ackfd[0])) {
-                    goto exit;
+                    L_SYS("Server pipe is inactive");
+                    loop->RemoveSource(AckSource->Fd);
+                    serverPipeActive = false;
                 }
             } else {
                 L_WRN("Unknown event {}", source->Fd);
@@ -402,24 +443,15 @@ static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
             }
         }
 
-        ReportZombies(evtfd[1]);
+        if (serverPipeActive)
+            ReportZombies(evtfd[1]);
     }
-
 exit:
-    if (ServerPid) {
-        L_SYS("Kill portod");
-        if (kill(ServerPid, SIGKILL) < 0)
-            L_ERR("Cannot kill portod: {}", TError::System("kill"));
-        (void)waitpid(ServerPid, &PortodStatus, 0);
-        ServerPid = 0;
-    }
-
-    L_SYS("Portod {}", FormatExitStatus(PortodStatus));
-
     loop->RemoveSource(sigFd);
     close(sigFd);
 
-    loop->RemoveSource(AckSource->Fd);
+    if (serverPipeActive)
+        loop->RemoveSource(AckSource->Fd);
 
     close(evtfd[1]);
     close(ackfd[0]);

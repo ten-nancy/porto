@@ -3,6 +3,7 @@
 #include <google/protobuf/descriptor.h>
 
 #include <algorithm>
+#include <mutex>
 #include <regex>
 
 #include "cgroup.hpp"
@@ -26,6 +27,7 @@
 #include "waiter.hpp"
 
 extern "C" {
+#include <sys/eventfd.h>
 #include <sys/stat.h>
 #include <unistd.h>
 }
@@ -2358,6 +2360,87 @@ void TRequest::ChangeId() {
     snprintf(ReqId, sizeof(ReqId), "%.8x", rand());
 }
 
+class TRequestMonitor {
+public:
+    TRequestMonitor() = default;
+    ~TRequestMonitor() = default;
+
+    int GetEventFd()
+    {
+        Event.SetFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+        return Event.Fd;
+    }
+
+    bool ActivateGracefulShutdown()
+    {
+        std::lock_guard<std::mutex> lock(Mutex);
+
+        GracefulShutdownPortod = true;
+
+        if (ActiveRequestCount == 0 && !ShutdownStarted)
+            ShutdownStarted = true;
+        return ShutdownStarted;
+    }
+
+    void StartRequestLifecycle(bool &timeToTerminateQueue)
+    {
+        std::lock_guard<std::mutex> lock(Mutex);
+
+        timeToTerminateQueue = GracefulShutdownPortod && ActiveRequestCount == 0;
+
+        if (!timeToTerminateQueue)
+            ActiveRequestCount++;
+    }
+
+    void FinishRequestLifecycle()
+    {
+        std::lock_guard<std::mutex> lock(Mutex);
+        ActiveRequestCount--;
+
+        if (!GracefulShutdownPortod || ActiveRequestCount != 0)
+            return;
+
+        if (!ShutdownStarted) {
+            ShutdownStarted = true;
+            SendShutdownMessage();
+        }
+    }
+
+private:
+    TFile Event;
+    bool GracefulShutdownPortod = false;
+    uint64_t ActiveRequestCount = 0;
+    bool ShutdownStarted = false;
+    std::mutex Mutex;
+
+    void SendShutdownMessage()
+    {
+        long long blank;
+        int ret;
+
+        blank = 1;
+        ret = write(Event.Fd, &blank, sizeof(blank));
+        // We ignore the return values because errors can happen if:
+        //     1. the blank value is 0xffffffffffffffff -> EINVAL
+        //     2. the EvFd have inside 0x0xfffffffffffffffe before
+        //          write -> EAGAIN (because EvFd created with EFD_NONBLOCK)
+        // Which both of there cannot happen.
+        if (ret <= 0)
+            L_ERR("Can't write to eventfd");
+    }
+
+} LifecycleManager;
+
+int EventFd()
+{
+    return LifecycleManager.GetEventFd();
+}
+
+bool StartGracefulShutdown()
+{
+    return LifecycleManager.ActivateGracefulShutdown();
+}
+
 class TRequestQueue {
     std::vector<std::thread> Threads;
     std::vector<uint64_t> StartTime;
@@ -2366,6 +2449,7 @@ class TRequestQueue {
     std::mutex Mutex;
     bool ShouldStop = false;
     const std::string Name;
+    const bool ShutdownGracefully;
     TGauge RequestQueued;
     TMetricFabric<TCounter> RequestCount;
     TCounter ExecTime;
@@ -2374,8 +2458,9 @@ class TRequestQueue {
     TGauge RequestTopRunning;
 
 public:
-    TRequestQueue(const std::string &name)
+    TRequestQueue(const std::string &name, bool shutdownGracefully)
         : Name(name),
+          ShutdownGracefully(shutdownGracefully),
           RequestQueued(MetricsRegistry->RequestQueued.WithLabels({{"queue", name}})),
           RequestCount(MetricsRegistry->Requests.Add({{"queue", name}})),
           ExecTime(MetricsRegistry->RequestExecTime.WithLabels({{"queue", name}})),
@@ -2410,6 +2495,7 @@ public:
     }
 
     void Run(int index) {
+        bool timeToTerminateQueue = false;
         SetProcessName(fmt::format("{}{}", Name, index));
         srand(GetCurrentTimeMs());
         auto lock = std::unique_lock<std::mutex>(Mutex);
@@ -2424,7 +2510,18 @@ public:
             lock.unlock();
             request->ChangeId();
             RequestQueued--;
+
+            if (ShutdownGracefully) {
+                LifecycleManager.StartRequestLifecycle(timeToTerminateQueue);
+                if (timeToTerminateQueue)
+                    return;
+            }
+
             request->Handle(RequestCount, ExecTime, WaitTime, LockTime);
+
+            if (ShutdownGracefully)
+                LifecycleManager.FinishRequestLifecycle();
+
             request = nullptr;
             lock.lock();
             StartTime[index] = 0;
@@ -2462,10 +2559,10 @@ std::unique_ptr<T> make_unique(Args &&...args) {
 void StartRpcQueue() {
     BuildClientPatterns();
 
-    RwQueue = make_unique<TRequestQueue>("portod-RW");
-    RoQueue = make_unique<TRequestQueue>("portod-RO");
-    IoQueue = make_unique<TRequestQueue>("portod-IO");
-    VlQueue = make_unique<TRequestQueue>("portod-Vl");
+    RwQueue = make_unique<TRequestQueue>("portod-RW", true);
+    RoQueue = make_unique<TRequestQueue>("portod-RO", false);
+    IoQueue = make_unique<TRequestQueue>("portod-IO", true);
+    VlQueue = make_unique<TRequestQueue>("portod-Vl", true);
     RwQueue->Start(config().daemon().rw_threads());
     RoQueue->Start(config().daemon().ro_threads());
     IoQueue->Start(config().daemon().io_threads());

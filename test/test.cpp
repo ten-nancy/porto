@@ -509,11 +509,12 @@ void TestDaemon(Porto::Connection &api) {
      * 4 (epoll)
      * 5 (host netlink)
      * 6 (signalfd)
+     * 7 (eventfd)
      * /run/portod.socket (FIXME: ???)
      * portod private socket (FIXME: ???)
      * /run/portod_metrics.socket
      */
-    int appFds = 15 + 3;
+    int appFds = 16 + 3;
 
     // ctest leaks log fd
     int ctestFd = 1;
