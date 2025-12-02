@@ -228,6 +228,7 @@ static void DefaultConfig() {
     network->set_l3stat_watchdog_lost_ms(50);
 
     network->set_network_inherit_xvlan(false);
+    network->set_network_inherit_properties(false);
     network->set_watchdog_run_network_ifup_script(false);
 
     auto *core = cfg.mutable_core();

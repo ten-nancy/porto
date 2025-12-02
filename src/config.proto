@@ -137,6 +137,8 @@ message TConfig {
 
         optional bool watchdog_run_network_ifup_script = 79;
 
+        optional bool network_inherit_properties = 80;
+
         /* Deprecated */
         optional bool enable_iproute = 41;
         optional bool enabled = 1 [deprecated=true];

@@ -377,7 +377,7 @@ struct TNetEnv {
     std::vector<TNetDeviceConfig> Devices;
 
     TError Parse(TContainer &ct);
-    TError ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanSettings);
+    TError ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanSettings, TMultiTuple &netPropertiesSettings);
     TError ParseIp(const TMultiTuple &ip_settings);
     void FormatIp(TMultiTuple &ip_settings);
     TError ParseGw(const TMultiTuple &gw_settings);
@@ -399,4 +399,13 @@ struct TNetEnv {
 
 private:
     TError InitNetwork();
+
+    TError InheritXVlan(const TMultiTuple &parentXVlan, TMultiTuple &childXVlan);
+    TError InheritProperties(const TMultiTuple &parentProperties, TMultiTuple &childProperties);
+
+    TError ParseMacvlan(const TTuple &settings, TNetDeviceConfig &dev);
+    TError ParseIpvlan(const TTuple &settings, TNetDeviceConfig &dev);
+    TError ParseMTU(const TTuple &settings);
+    TError ParseECN(const TTuple &settings);
+    TError ParseAutoconf(const TTuple &settings);
 };

@@ -3044,7 +3044,165 @@ std::string TNetEnv::GenerateHw(const std::string &name) {
                         (h & 0x00FF0000) >> 16, (h & 0x0000FF00) >> 8, (h & 0x000000FF) >> 0);
 }
 
-TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanSettings) {
+TError TNetEnv::ParseMacvlan(const TTuple &settings, TNetDeviceConfig &dev) {
+    dev.Type = "macvlan";
+    dev.Name = StringTrim(settings[2]);
+    dev.Master = StringTrim(settings[1]);
+    dev.Mode = "bridge";
+
+    if (settings.size() > 3) {
+        dev.Mode = StringTrim(settings[3]);
+        if (!TNlLink::ValidMacVlanType(dev.Mode))
+            return TError(EError::InvalidValue, "Invalid macvlan mode " + dev.Mode);
+    }
+
+    if (settings.size() > 4) {
+        TError error = StringToInt(settings[4], dev.Mtu);
+        if (error)
+            return error;
+    }
+
+    if (settings.size() > 5) {
+        dev.Mac = StringTrim(settings[5]);
+        if (!TNlLink::ValidMacAddr(dev.Mac))
+            return TError(EError::InvalidValue, "Invalid macvlan mac " + dev.Mac);
+    }
+
+    /* Legacy kludge */
+    if (dev.Mac.empty() && !Hostname.empty())
+        dev.Mac = GenerateHw(dev.Master + dev.Name);
+
+    return OK;
+}
+
+TError TNetEnv::ParseIpvlan(const TTuple &settings, TNetDeviceConfig &dev) {
+    dev.Type = "ipvlan";
+    dev.Name = StringTrim(settings[2]);
+    dev.Master = StringTrim(settings[1]);
+    dev.Mode = "l2";
+
+    if (settings.size() > 3) {
+        dev.Mode = StringTrim(settings[3]);
+        if (!TNlLink::ValidIpVlanMode(dev.Mode))
+            return TError(EError::InvalidValue, "Invalid ipvlan mode " + dev.Mode);
+    }
+
+    if (settings.size() > 4) {
+        TError error = StringToInt(settings[4], dev.Mtu);
+        if (error)
+            return error;
+    }
+
+    return OK;
+}
+
+TError TNetEnv::ParseMTU(const TTuple &settings) {
+    int mtu;
+    TError error = StringToInt(settings[2], mtu);
+    if (error)
+        return error;
+
+    bool found = false;
+    for (auto &dev: Devices) {
+        if (dev.Name == settings[1]) {
+            dev.Mtu = mtu;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return TError(EError::InvalidValue, "Link not found: " + settings[1]);
+
+    return OK;
+}
+
+TError TNetEnv::ParseECN(const TTuple &settings) {
+    if (settings.size() == 1) {
+        EnableECN = true;
+    } else if (settings.size() == 2) {
+        bool found = false;
+        for (auto &dev: Devices) {
+            if (dev.Name == settings[1]) {
+                dev.EnableECN = true;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            return TError(EError::InvalidValue, "Link not found: " + settings[1]);
+    }
+
+    return OK;
+}
+
+TError TNetEnv::ParseAutoconf(const TTuple &settings) {
+    bool found = false;
+    for (auto &dev: Devices) {
+        if (dev.Name == settings[1]) {
+            dev.Autoconf = true;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return TError(EError::InvalidValue, "Link not found: " + settings[1]);
+
+    return OK;
+}
+
+/* Dont verify parentXVlan, because we get it form ParseNet,
+ * where our inout parameter already passed all the checks. */
+TError TNetEnv::InheritXVlan(const TMultiTuple &parentXVlan, TMultiTuple &childXVlan) {
+    for (auto &xvlan: parentXVlan) {
+        TNetDeviceConfig dev;
+        TError error;
+
+        auto type = StringTrim(xvlan[0]);
+        if (type == "macvlan")
+            error = ParseMacvlan(xvlan, dev);
+        else if (type == "ipvlan")
+            error = ParseIpvlan(xvlan, dev);
+        else
+            error = TError(EError::InvalidValue, "Unknown XVlan inheritance: " + type);
+
+        if (error)
+            return error;
+        childXVlan.push_back(xvlan);
+        Devices.push_back(dev);
+
+        L3Only = false;
+        NetIsolate = true;
+    }
+
+    return OK;
+}
+
+/* Dont verify parentProperties, because we get it form ParseNet,
+ * where our inout parameter already passed all the checks. */
+TError TNetEnv::InheritProperties(const TMultiTuple &parentProperties, TMultiTuple &childProperties) {
+    for (auto &property: parentProperties) {
+        TError error;
+
+        auto type = StringTrim(property[0]);
+        if (type == "MTU")
+            error = ParseMTU(property);
+        else if (type == "ECN")
+            error = ParseECN(property);
+        else if (type == "autoconf")
+            error = ParseAutoconf(property);
+        else
+            error = TError(EError::InvalidValue, "Unknown Properties inheritance: " + type);
+
+        if (error)
+            return error;
+        childProperties.push_back(property);
+    }
+
+    return OK;
+}
+
+TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanSettings,
+                         TMultiTuple &netPropertiesSettings) {
     int vethIdx = 0;
     TError error;
 
@@ -3075,9 +3233,11 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
         if (type == "inherited" || (type == "host" && settings.size() == 1)) {
             NetInherit = true;
 
-            // Save ipvlan/macvlan settings to futher re-use in child containers
-            if (Parent)
+            // Save ipvlan/macvlan configuration and network properties to futher re-use in child containers
+            if (Parent) {
                 netXVlanSettings = Parent->NetXVlanSettings;
+                netPropertiesSettings = Parent->NetPropertiesSettings;
+            }
         } else if (type == "none") {
             NetIsolate = true;
             NetNone = true;
@@ -3109,54 +3269,18 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
             if (settings.size() < 3)
                 return TError(EError::InvalidValue, "Invalid " + line);
 
-            dev.Type = "macvlan";
-            dev.Name = StringTrim(settings[2]);
-            dev.Master = StringTrim(settings[1]);
-            dev.Mode = "bridge";
-
-            if (settings.size() > 3) {
-                dev.Mode = StringTrim(settings[3]);
-                if (!TNlLink::ValidMacVlanType(dev.Mode))
-                    return TError(EError::InvalidValue, "Invalid macvlan mode " + dev.Mode);
-            }
-
-            if (settings.size() > 4) {
-                error = StringToInt(settings[4], dev.Mtu);
-                if (error)
-                    return error;
-            }
-
-            if (settings.size() > 5) {
-                dev.Mac = StringTrim(settings[5]);
-                if (!TNlLink::ValidMacAddr(dev.Mac))
-                    return TError(EError::InvalidValue, "Invalid macvlan mac " + dev.Mac);
-            }
-
-            /* Legacy kludge */
-            if (dev.Mac.empty() && !Hostname.empty())
-                dev.Mac = GenerateHw(dev.Master + dev.Name);
+            error = ParseMacvlan(settings, dev);
+            if (error)
+                return error;
 
             netXVlanSettings.push_back(settings);
         } else if (type == "ipvlan") {
             if (settings.size() < 3)
                 return TError(EError::InvalidValue, "Invalid " + line);
 
-            dev.Type = "ipvlan";
-            dev.Name = StringTrim(settings[2]);
-            dev.Master = StringTrim(settings[1]);
-            dev.Mode = "l2";
-
-            if (settings.size() > 3) {
-                dev.Mode = StringTrim(settings[3]);
-                if (!TNlLink::ValidIpVlanMode(dev.Mode))
-                    return TError(EError::InvalidValue, "Invalid ipvlan mode " + dev.Mode);
-            }
-
-            if (settings.size() > 4) {
-                error = StringToInt(settings[4], dev.Mtu);
-                if (error)
-                    return error;
-            }
+            error = ParseIpvlan(settings, dev);
+            if (error)
+                return error;
 
             netXVlanSettings.push_back(settings);
         } else if (type == "veth") {
@@ -3243,37 +3367,21 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
         } else if (type == "MTU") {
             if (settings.size() != 3)
                 return TError(EError::InvalidValue, "Invalid " + line);
-            int mtu;
-            error = StringToInt(settings[2], mtu);
+
+            error = ParseMTU(settings);
             if (error)
                 return error;
-            bool found = false;
-            for (auto &dev: Devices) {
-                if (dev.Name == settings[1]) {
-                    dev.Mtu = mtu;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-                return TError(EError::InvalidValue, "Link not found: " + settings[1]);
+
+            netPropertiesSettings.push_back(settings);
         } else if (type == "ECN") {
-            if (settings.size() == 1) {
-                EnableECN = true;
-            } else if (settings.size() == 2) {
-                bool found = false;
-                for (auto &dev: Devices) {
-                    if (dev.Name == settings[1]) {
-                        dev.EnableECN = true;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    return TError(EError::InvalidValue, "Link not found: " + settings[1]);
-            } else {
+            if (settings.size() > 2)
                 return TError(EError::InvalidValue, "Invalid " + line);
-            }
+
+            error = ParseECN(settings);
+            if (error)
+                return error;
+
+            netPropertiesSettings.push_back(settings);
         } else if (type == "MAC") {
             if (settings.size() != 3 || !TNlLink::ValidMacAddr(settings[2]))
                 return TError(EError::InvalidValue, "Invalid " + line);
@@ -3290,16 +3398,12 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
         } else if (type == "autoconf") {
             if (settings.size() != 2)
                 return TError(EError::InvalidValue, "Invalid " + line);
-            bool found = false;
-            for (auto &dev: Devices) {
-                if (dev.Name == settings[1]) {
-                    dev.Autoconf = true;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-                return TError(EError::InvalidValue, "Link not found: " + settings[1]);
+
+            error = ParseAutoconf(settings);
+            if (error)
+                return error;
+
+            netPropertiesSettings.push_back(settings);
         } else if (type == "ip") {
             if (!config().network().enable_iproute())
                 return TError(EError::Permission, "iproute is disabled");
@@ -3320,15 +3424,24 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
         }
     }
 
+    /* manually include parent's ipvlan/macvlan configuration and/or network properties
+     * only if L3 (except "tap") or "none" network settings are specified */
+    if (((!NetInherit /* to exclude "tap" */ && L3Only) || NetNone) && Parent) {
+        if (config().network().network_inherit_xvlan()) {
+            error = InheritXVlan(Parent->NetXVlanSettings, netXVlanSettings);
+            if (error)
+                return error;
+        }
+
+        if (config().network().network_inherit_properties()) {
+            error = InheritProperties(Parent->NetPropertiesSettings, netPropertiesSettings);
+            if (error)
+                return error;
+        }
+    }
+
     if (!!NetInherit + !!NetIsolate + !NetNsName.empty() + !NetCtName.empty() != 1)
         return TError(EError::InvalidValue, "Uncertain network type");
-
-    /* manually include parent's ipvlan/macvlan configuration only if L3 (except "tap")
-     * or "none" network settings are specified */
-    if (config().network().network_inherit_xvlan() && ((!NetInherit /* to exclude "tap" */ && L3Only) || NetNone) &&
-        Parent && !Parent->NetXVlanSettings.empty()) {
-        return ParseNet(Parent->NetXVlanSettings, netXVlanSettings);
-    }
 
     return OK;
 }
@@ -3932,7 +4045,7 @@ TError TNetEnv::Parse(TContainer &ct) {
     NetUp = !ct.OsMode;
     TaskCred = ct.TaskCred;
 
-    error = ParseNet(ct.NetProp, ct.NetXVlanSettings);
+    error = ParseNet(ct.NetProp, ct.NetXVlanSettings, ct.NetPropertiesSettings);
     if (error)
         return error;
 

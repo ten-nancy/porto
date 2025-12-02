@@ -186,6 +186,7 @@ public:
     bool NetIsolate; /* Create new network namespace */
     bool NetInherit; /* Use parent network namespace */
     TMultiTuple NetXVlanSettings;
+    TMultiTuple NetPropertiesSettings;
 
     std::string Hostname;
     std::string EnvCfg;

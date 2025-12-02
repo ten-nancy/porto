@@ -2052,9 +2052,9 @@ public:
 
     TError Set(TMultiTuple &val) {
         TNetEnv NetEnv;
-        TMultiTuple netXVlanSettings;
         NetEnv.Parent = CT->Parent;
-        TError error = NetEnv.ParseNet(val, netXVlanSettings);
+        TMultiTuple dummyXVlan, dummyProperties;
+        TError error = NetEnv.ParseNet(val, dummyXVlan, dummyProperties);
         if (error)
             return error;
         if (!NetEnv.NetInherit && !NetEnv.NetNone) {
