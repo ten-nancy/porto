@@ -21,6 +21,7 @@ struct TJson {
     TError Get(std::string& res) const;
     TError Get(int& res) const;
     TError Get(uint64_t& res) const;
+    TError Get(bool& res) const;
     TError Get(std::vector<std::string>& res) const;
     TError Get(std::unordered_map<std::string, std::unordered_set<std::string>>& res) const;
     TError Get(std::vector<TJson>& res) const;

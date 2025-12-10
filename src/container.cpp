@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <memory>
 #include <mutex>
+#include <utility>
 
 #include "cgroup.hpp"
 #include "client.hpp"
@@ -2662,6 +2663,22 @@ TError TContainer::StartTask() {
     /* Meta container without namespaces don't need task */
     if (IsMeta() && !Isolate && NetInherit && !TaskEnv.NewMountNs)
         return OK;
+
+    if (config().daemon().enable_gideon_sessions()) {
+        TSessionInfo info;
+        error = CL->GetClientSession(info);
+        if (error) {
+            L_WRN("failed to get session info for client {}: {}", CL->Pid, error);
+        }
+        if (!info.IsEmpty()) {
+            L_DBG("setting implicit gideon session info for CT \"{}\": {}", this->Name, info.ToString());
+            if (!this->SessionInfo.IsEmpty()) {
+                L_WRN("overriding session info for {} \"{}\" -> \"{}\"", this->Name, this->SessionInfo.ToString(),
+                      info.ToString());
+            }
+            this->SessionInfo = info;
+        }
+    }
 
     error = TaskEnv.Start();
     DevicesPath = EffectiveDevices().AllowedPaths();

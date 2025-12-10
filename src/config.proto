@@ -215,6 +215,7 @@ message TConfig {
 
         repeated string docker_insecure_registry = 35;
         optional string cgroupfs_root_path = 36;
+        optional bool enable_gideon_sessions = 37;
     }
 
     message TContainerCfg {

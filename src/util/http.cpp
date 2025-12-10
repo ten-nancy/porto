@@ -1,5 +1,7 @@
 #include "http.hpp"
 
+#include <sys/socket.h>
+
 #include <regex>
 
 #include "cpp-httplib/httplib.h"
@@ -162,6 +164,20 @@ struct THttpClient::TImpl {
 THttpClient::THttpClient(const std::string &host)
     : Impl(new TImpl(host))
 {}
+
+THttpClient::THttpClient(const std::string &host, int sock_af)
+    : Impl(new TImpl(host))
+{
+    Impl->Client.set_address_family(sock_af);
+    Impl->Client.set_connection_timeout(0, 50000);
+    Impl->Client.set_write_timeout(0, 50000);
+    Impl->Client.set_read_timeout(0, 100000);
+    // avoid print \0 to log
+    if (!Impl->Host.empty() && Impl->Host[0] == '\0') {
+        Impl->Host[0] = '@';
+    }
+}
+
 THttpClient::~THttpClient() = default;
 
 TError THttpClient::MakeRequest(const std::string &path, std::string &response, const THeaders &headers,
@@ -194,6 +210,11 @@ TError THttpClient::SingleRequest(const TUri &uri, std::string &response, const 
         path += "?" + uri.FormatOptions();
 
     return THttpClient(host).MakeRequest(path, response, headers, request);
+}
+
+TError THttpClient::UnixSingleRequest(const std::string &unix_path, const std::string &request_path,
+                                      std::string &response, const THeaders &headers, const TRequest *request) {
+    return THttpClient(unix_path, AF_UNIX).MakeRequest(request_path, response, headers, request);
 }
 
 std::string THttpClient::EncodeBase64(const std::string &text) {

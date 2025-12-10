@@ -24,6 +24,7 @@ struct TUri {
 
 struct THttpClient {
     THttpClient(const std::string &host);
+    THttpClient(const std::string &host, int sock_af);
     ~THttpClient();
 
     using THeader = std::pair<std::string, std::string>;
@@ -40,6 +41,9 @@ struct THttpClient {
                                 const TRequest *request = nullptr);
     static TError SingleRequest(const TUri &uri, std::string &response, const THeaders &headers = {},
                                 const TRequest *request = nullptr);
+    static TError UnixSingleRequest(const std::string &unix_path, const std::string &request_path,
+                                    std::string &response, const THeaders &headers = {},
+                                    const TRequest *request = nullptr);
     static std::string EncodeBase64(const std::string &text);
 
 private:

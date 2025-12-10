@@ -157,6 +157,17 @@ public:
         sessionInfo.user = User;
     }
 
+    TSessionInfo &operator=(const TSessionInfo &other) {
+        if (this != &other) {
+            memset(User, 0, sizeof(User));
+            sessionInfo.kind = other.sessionInfo.kind;
+            sessionInfo.id = other.sessionInfo.id;
+            strncpy(User, other.sessionInfo.user, sizeof(User));
+            sessionInfo.user = User;
+        }
+        return *this;
+    }
+
     bool IsEmpty() const {
         return sessionInfo.kind == 0 && sessionInfo.id == 0;
     }

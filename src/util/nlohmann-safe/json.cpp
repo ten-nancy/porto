@@ -62,6 +62,10 @@ TError TJson::Get(uint64_t& res) const {
     return GetImpl(res);
 }
 
+TError TJson::Get(bool& res) const {
+    return GetImpl(res);
+}
+
 TError TJson::Get(std::vector<std::string>& res) const {
     return GetImpl(res);
 }

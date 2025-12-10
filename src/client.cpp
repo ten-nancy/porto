@@ -12,7 +12,9 @@
 #include "portod.hpp"
 #include "property.hpp"
 #include "rpc.hpp"
+#include "util/http.hpp"
 #include "util/log.hpp"
+#include "util/nlohmann-safe/json.hpp"
 #include "util/proc.hpp"
 #include "util/string.hpp"
 #include "volume.hpp"
@@ -179,6 +181,69 @@ TError TClient::IdentifyClient() {
           AccessLevel <= EAccessLevel::ReadOnly ? "ro" : "rw", PortoNamespace, WriteNamespace);
     }
 
+    return OK;
+}
+
+TError TClient::GetClientSession(TSessionInfo &session_info) const {
+    TError error;
+    std::string cct_sess_info;
+    if (this->ClientContainer) {
+        // Traverse client containers to find out nearest SessionInfo for client
+        auto cct = this->ClientContainer;
+        while (!cct->IsRoot()) {
+            if (cct->SessionInfo.IsEmpty()) {
+                cct = cct->Parent;
+            } else {
+                cct_sess_info = cct->SessionInfo.ToString();
+                break;
+            }
+        }
+    }
+    // No info? Lets ask gideon for it
+    if (cct_sess_info.empty()) {
+        THttpClient::THeaders headers;
+        headers.push_back(std::make_pair("Accept", "application/json"));
+        headers.push_back(std::make_pair("Host", "localhost"));
+        std::string response;
+        std::string gideon_path("\0gideon", 7);
+        THttpClient::TRequest req;
+        req.ContentType = "application/json";
+        req.Body = fmt::format("{{\"pid\": {:d}, \"start_time\": {:d}}}", CL->Pid, CL->StartTime);
+        error = THttpClient::UnixSingleRequest(gideon_path, "/session/info", response, headers, &req);
+        if (error) {
+            return TError(error, "failed to request gideon session info for query: \"{}\" : {}", req.Body, error);
+        }
+        L_DBG("gideon response: \"{}\"", response);
+
+        TJson json;
+        error = json.Parse(response);
+        if (error) {
+            return TError(error, "failed to parse gideon response: \"{}\": {}", response, error);
+        }
+        bool is_ok = false;
+        json["ok"].Get(is_ok);
+        if (!is_ok) {
+            return TError("gideon response failed: \"{}\"", response);
+        }
+
+        uint64_t kind;
+        uint64_t sid;
+        std::string user;
+        json["id"].Get(sid);
+        json["kind"].Get(kind);
+        json["user"].Get(user);
+        if (!user.empty()) {
+            cct_sess_info = fmt::format("{} {} {}", kind, sid, user);
+        } else {
+            L_DBG("gideon replied with empty session kind: {}, id: {}, user: \"{}\"", kind, sid, user);
+        }
+    }
+    if (!cct_sess_info.empty()) {
+        error = session_info.Parse(cct_sess_info);
+        if (error) {
+            return TError(error, "failed to parse client session info \"{}\"", cct_sess_info);
+        }
+    }
     return OK;
 }
 
