@@ -2053,6 +2053,8 @@ public:
     TError Set(TMultiTuple &val) {
         TNetEnv NetEnv;
         NetEnv.Parent = CT->Parent;
+        NetEnv.CallerPid = CL->Pid;
+        L_DBG("NetEnv.CallerPid {}", NetEnv.CallerPid);
         TMultiTuple dummyXVlan, dummyProperties;
         TError error = NetEnv.ParseNet(val, dummyXVlan, dummyProperties);
         if (error)

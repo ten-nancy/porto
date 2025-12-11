@@ -340,12 +340,12 @@ void InitNamespacedNetSysctls() {
     }
 }
 
-TError CheckPath(const std::string &name, std::shared_ptr<TContainer> parent) {
+TError CheckPath(const std::string &name, int callerPid) {
     TPath path("/var/run/netns/" + name);
     if (path.Exists())
         return OK;
 
-    if (!parent)
+    if (!callerPid)
         return TError(EError::InvalidValue, "net namespace not found: " + name);
 
     TNamespaceFd curNs;
@@ -356,14 +356,14 @@ TError CheckPath(const std::string &name, std::shared_ptr<TContainer> parent) {
         return TError(EError::InvalidValue, "net namespace not found for {} {} ", name, error);
     // fallback, goto parents mount namespace and find it there
     TNamespaceFd mntNs;
-    L_DBG("Open mnt namespace for {}", parent->Task.Pid);
-    error = mntNs.Open(parent->Task.Pid, "ns/mnt");
+    L_DBG("Open mnt namespace for {}", callerPid);
+    error = mntNs.Open(callerPid, "ns/mnt");
     if (error)
-        return TError(EError::InvalidValue, "Can't open mount namespace for {} {}", parent->Task.Pid, error);
+        return TError(EError::InvalidValue, "Can't open mount namespace for {} {}", callerPid, error);
 
     error = mntNs.SetNs(CLONE_NEWNS);
     if (error) {
-        error = TError(EError::InvalidValue, "Failed to SetNS(CLONE_NEWNS) for {} {}", parent->Task.Pid, error);
+        error = TError(EError::InvalidValue, "Failed to SetNS(CLONE_NEWNS) for {} {}", callerPid, error);
         goto back;
     }
 
@@ -2801,6 +2801,7 @@ bool TNetwork::CheckForBpfProgramsUpdate() {
 TError TNetwork::StartNetwork(TContainer &ct, TTaskEnv &task) {
     TNetEnv env;
 
+    env.CallerPid = CL->Pid;
     TError error = env.Parse(ct);
     if (error)
         return error;
@@ -3254,7 +3255,7 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
             std::string name = StringTrim(settings[1]);
             if (name.find("..") != std::string::npos)
                 return TError(EError::Permission, "'..' not allowed in net namespace path");
-            error = CheckPath(name, Parent);
+            error = CheckPath(name, CallerPid);
             if (error)
                 return error;
 
@@ -4211,13 +4212,8 @@ TError TNetEnv::InitNetwork() {
     }
     L_DBG("Failed to open network ns NetNsName:{} NetNs:{} Net:{} error: {}", NetNsName, NetNs.GetFd(), Net, error);
     // fallback to parent
-    auto p = Parent.get();
-    if (!p) {
-        L_ERR("No parent, unable to open netns in Parent");
-        return error;
-    }
-    if (!p->Task.Pid) {
-        L_ERR("No pid in Task, unable to open netns in Parent");
+    if (!CallerPid) {
+        L_ERR("No pid in Task, unable to open netns in caller");
         return error;
     }
     TNamespaceFd curNs;
@@ -4229,10 +4225,10 @@ TError TNetEnv::InitNetwork() {
     }
 
     TNamespaceFd mntNs;
-    L_DBG("Open pidfd for {}", Parent->Task.Pid);
-    error = mntNs.Open(Parent->Task.Pid);
+    L_DBG("Open pidfd for {}", CallerPid);
+    error = mntNs.Open(CallerPid);
     if (error) {
-        return TError(error, "Failed to open fd {}", Parent->Task.Pid);
+        return TError(error, "Failed to open fd {}", CallerPid);
     }
     error = mntNs.SetNs(CLONE_NEWNS | CLONE_NEWNET);
     if (error)

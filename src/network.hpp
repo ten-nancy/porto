@@ -352,6 +352,7 @@ struct TNetEnv {
     unsigned Id;
     std::string Name;
     TCred TaskCred;
+    int CallerPid;
 
     std::shared_ptr<TContainer> Parent;
     std::shared_ptr<TNetwork> ParentNet;
