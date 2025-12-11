@@ -162,7 +162,7 @@ public:
             memset(User, 0, sizeof(User));
             sessionInfo.kind = other.sessionInfo.kind;
             sessionInfo.id = other.sessionInfo.id;
-            strncpy(User, other.sessionInfo.user, sizeof(User));
+            strncpy(User, other.sessionInfo.user, sizeof(User) - 1);
             sessionInfo.user = User;
         }
         return *this;
