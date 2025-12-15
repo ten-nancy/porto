@@ -572,7 +572,7 @@ TError TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TCli
     if (error)
         return TError(error, "Cannot resolve layer storage for place: {} {}", place, layer.Digest);
 
-    error = portoLayer.ImportArchive(archivePath, PORTO_HELPERS_CGROUP);
+    error = portoLayer.ImportArchiveSave(archivePath, PORTO_HELPERS_CGROUP, "", false, false, false);
     if (error)
         return TError(error, "Cannot import archive: {}", archivePath);
 

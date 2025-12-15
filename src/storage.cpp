@@ -914,6 +914,11 @@ TError TStorage::SaveChecksums() {
 
 TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgroup, const std::string &compress,
                                bool merge, bool verboseError) {
+    return ImportArchiveSave(archive, memCgroup, compress, merge, verboseError);
+}
+
+TError TStorage::ImportArchiveSave(const TPath &archive, const std::string &memCgroup, const std::string &compress,
+                                   bool merge, bool verboseError, bool readAccess) {
     TPath temp = TempPath(IMPORT_PREFIX);
     TError error;
     TFile arc;
@@ -939,9 +944,11 @@ TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgrou
     if (error)
         return error;
 
-    error = CL->ReadAccess(arc);
-    if (error)
-        return TError(error, "Cannot import {} from {}", Name, archive);
+    if (readAccess) {
+        error = CL->ReadAccess(arc);
+        if (error)
+            return TError(error, "Cannot import {} from {}", Name, archive);
+    }
 
     std::string compress_format, compress_option;
     error = Compression(archive, arc, compress, compress_format, compress_option);
