@@ -2806,7 +2806,7 @@ TError TNetwork::StartNetwork(TContainer &ct, TTaskEnv &task) {
     if (error)
         return error;
 
-    error = env.CheckIpLimit();
+    error = env.CheckIpLimit(!env.NetNsName.empty());
     if (error)
         return error;
 
@@ -3447,10 +3447,16 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
     return OK;
 }
 
-TError TNetEnv::CheckIpLimit() {
+TError TNetEnv::CheckIpLimit(bool requestNetNs) {
+    L_DBG("TNetEnv::CheckIpLimit L3Only {}", L3Only);
     /* no changes -> no limits */
     if (NetInherit)
         return OK;
+
+    if (requestNetNs && Devices.size() == 0) {
+        L_DBG("No need to check ip_limit when only netns net was requested");
+        return OK;
+    }
 
     for (auto ct = Parent; ct; ct = ct->Parent) {
         /* empty means no limit */

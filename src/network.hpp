@@ -383,7 +383,7 @@ struct TNetEnv {
     void FormatIp(TMultiTuple &ip_settings);
     TError ParseGw(const TMultiTuple &gw_settings);
 
-    TError CheckIpLimit();
+    TError CheckIpLimit(bool requestNetNs);
 
     std::string GenerateHw(const std::string &name);
     TError ConfigureL3(TNetDeviceConfig &dev);
