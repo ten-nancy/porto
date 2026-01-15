@@ -29,7 +29,7 @@ def CheckCgroupHierarchy(ct, haveCgroups):
     r = conn.Run(ct.name + '/child', wait=10, command='ls /sys/fs/cgroup', private='portoctl shell', isolate=False)
     res_cgroups = r['stdout'].strip().split('\n')
     if haveCgroups:
-        assert len(res_cgroups) == 16
+        ExpectEq(len(res_cgroups), 16)
     else:
         res_cgroups == ['systemd']
     r.Destroy()
@@ -86,7 +86,7 @@ try:
         use_os_mode_cgroupns : true
     }""")
 
-    a = conn.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-jammy"]})
+    a = conn.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-noble"]})
     ExpectRunlevel(a, 'N 5')
     a.Stop()
     a.Start()
@@ -97,7 +97,7 @@ try:
     CheckCgroupHierarchy(a, True)
     a.Destroy()
 
-    m = conn.Run("m", root_volume={'layers': ["ubuntu-jammy"]})
+    m = conn.Run("m", root_volume={'layers': ["ubuntu-noble"]})
     a = conn.Create("m/a")
     a.SetProperty('virt_mode', 'os')
     a.SetProperty('capabilities[SYS_ADMIN]', 'false')
@@ -111,7 +111,7 @@ try:
         use_os_mode_cgroupns : false
     }""")
 
-    m = conn.Run("m", root_volume={'layers': ["ubuntu-jammy"]})
+    m = conn.Run("m", root_volume={'layers': ["ubuntu-noble"]})
     a = conn.Run("m/a", virt_mode='os')
     ExpectRunlevel(a, 'N 5')
     a.Stop()
@@ -121,7 +121,7 @@ try:
     ExpectRunlevel(a, 'N 5')
     m.Destroy()
 
-    m = conn.Run("m", root_volume={'layers': ["ubuntu-jammy"]})
+    m = conn.Run("m", root_volume={'layers': ["ubuntu-noble"]})
     a = conn.Create("m/a")
     a.SetProperty('virt_mode', 'os')
     a.SetProperty('capabilities[SYS_ADMIN]', 'false')

@@ -11,7 +11,7 @@ conn = porto.Connection(timeout=30)
 
 # TODO: this test cannot reproduce race properly
 for i in range(10):
-    t = threading.Thread(target=conn.CreateVolume, kwargs={'layers': ['ubuntu-jammy'], 'backend': 'plain'})
+    t = threading.Thread(target=conn.CreateVolume, kwargs={'layers': ['ubuntu-noble'], 'backend': 'plain'})
     t.start()
 
     time.sleep(0.5 + random.randint(-4, 4) * 0.05)

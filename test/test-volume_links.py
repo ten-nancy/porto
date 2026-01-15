@@ -10,10 +10,10 @@ ITER_COUNT = 50
 RUN_TIMEOUT = 180
 STORAGE_NAME = "test-volume_lists-storage"
 
-def init_instance(c, name, volume, target="/target", layers=["ubuntu-jammy"]):
+def init_instance(c, name, volume, target="/target", layers=["ubuntu-noble"]):
     r = c.CreateWeakContainer(name)
     #r = c.Create(name)
-    root = c.CreateVolume(layers=['ubuntu-jammy'])
+    root = c.CreateVolume(layers=['ubuntu-noble'])
     r.SetProperty("root", root)
 
     try:

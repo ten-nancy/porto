@@ -668,7 +668,7 @@ def TestPersistentStorage():
     c = porto.Connection(timeout=30)
 
     r = c.Create("test")
-    base = c.CreateVolume(None, layers=["ubuntu-jammy"], storage="test-persistent-base")
+    base = c.CreateVolume(None, layers=["ubuntu-noble"], storage="test-persistent-base")
     Expect('test-persistent-base' in {x.name for x in c.ListStorages()})
 
     r.SetProperty("root", base.path)
@@ -683,7 +683,7 @@ def TestPersistentStorage():
 
     Expect('test-persistent-base' in {x.name for x in c.ListStorages()})
     r = c.Create("test")
-    base = c.CreateVolume(None, layers=["ubuntu-jammy"], storage="test-persistent-base")
+    base = c.CreateVolume(None, layers=["ubuntu-noble"], storage="test-persistent-base")
 
     r.SetProperty("root", base.path)
     r.SetProperty("command", "cat 123.txt")
@@ -708,7 +708,7 @@ def TestPersistentStorage():
 
     ExpectEq(len({'test-persistent-base', 'test-persistent-loop'} & {x.name for x in c.ListStorages()}), 2)
     r = c.Create("test")
-    base = c.CreateVolume(None, layers=["ubuntu-jammy"], storage="test-persistent-base")
+    base = c.CreateVolume(None, layers=["ubuntu-noble"], storage="test-persistent-base")
     loop = c.CreateVolume(base.path + "/loop", backend="loop", storage="test-persistent-loop", space_limit="1G")
     r.SetProperty("root", base.path)
     r.SetProperty("command", "cat /loop/loop.txt")
@@ -738,7 +738,7 @@ def TestPersistentStorage():
     ExpectEq(len({'test-persistent-base', 'test-persistent-native'} & {x.name for x in c.ListStorages()}), 2)
 
     r = c.Create("test")
-    base = c.CreateVolume(None, layers=["ubuntu-jammy"], storage="test-persistent-base")
+    base = c.CreateVolume(None, layers=["ubuntu-noble"], storage="test-persistent-base")
     native = c.CreateVolume(base.path + "/native", backend="native", storage="test-persistent-native")
     ExpectEq(len({'test-persistent-base', 'test-persistent-native'} & {x.name for x in c.ListStorages()}), 2)
 

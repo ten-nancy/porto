@@ -49,21 +49,21 @@ a.Destroy()
 
 # in chroot
 
-a = c.Run("a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1", root_volume={"layers": ["ubuntu-jammy"]})
+a = c.Run("a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1", root_volume={"layers": ["ubuntu-noble"]})
 ExpectNe(a["exit_code"], "0")
 a.Destroy()
 
-a = c.Run("a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1", devices="/dev/ram0 m", root_volume={"layers": ["ubuntu-jammy"]})
+a = c.Run("a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1", devices="/dev/ram0 m", root_volume={"layers": ["ubuntu-noble"]})
 ExpectNe(a["exit_code"], "0")
 a.Destroy()
 
-a = c.Run("a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1", devices="/dev/ram0 rw", root_volume={"layers": ["ubuntu-jammy"]})
+a = c.Run("a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1", devices="/dev/ram0 rw", root_volume={"layers": ["ubuntu-noble"]})
 ExpectEq(a["exit_code"], "0")
 a.Destroy()
 
 s = c.Run("s")
 
-m = c.Run("s/m", root_volume={"layers": ["ubuntu-jammy"]})
+m = c.Run("s/m", root_volume={"layers": ["ubuntu-noble"]})
 
 a = c.Run("s/m/a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1")
 ExpectNe(a["exit_code"], "0")
@@ -71,7 +71,7 @@ a.Destroy()
 
 s["devices"] = "/dev/ram0 rw"
 
-a = c.Run("s/a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1", root_volume={"layers": ["ubuntu-jammy"]})
+a = c.Run("s/a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1", root_volume={"layers": ["ubuntu-noble"]})
 ExpectEq(a["exit_code"], "0")
 a.Destroy()
 
@@ -105,7 +105,7 @@ m.Destroy()
 s.Destroy()
 
 m = c.Run("m", devices="/dev/ram0 rw")
-b = c.Run("m/b", root_volume={"layers": ["ubuntu-jammy"]}, devices="/dev/ram0 -")
+b = c.Run("m/b", root_volume={"layers": ["ubuntu-noble"]}, devices="/dev/ram0 -")
 b["devices"] = "/dev/ram0 rw"
 a = c.Run("m/b/a", wait=60, command="dd if=/dev/ram0 of=/dev/null count=1")
 ExpectEq(a["exit_code"], "0")
@@ -141,7 +141,7 @@ assert b["state"] == "meta"
 b.Destroy()
 a.Destroy()
 
-a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-jammy"]}, devices="/dev/ram0 rw")
+a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-noble"]}, devices="/dev/ram0 rw")
 host_dev = os.stat("/dev/ram0")
 ct_dev = os.stat("/proc/{}/root/dev/ram0".format(a['root_pid']))
 ExpectEq(host_dev.st_mode, ct_dev.st_mode)
@@ -173,7 +173,7 @@ def GetCgroupDevices(ct):
     with open("/sys/fs/cgroup/devices/porto%{}/devices.list".format(ct.name), "r") as dev_list_file:
         return set(dev_list_file.read().splitlines())
 
-a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-jammy"]})
+a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-noble"]})
 default_devices = GetCgroupDevices(a)
 a.Destroy()
 
@@ -192,7 +192,7 @@ all_devices.add("b 1:1 rwm")
 
 # ----------------------------------------
 # set extra device on container start
-a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-jammy"]}, devices="/dev/ram0 rwm")
+a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-noble"]}, devices="/dev/ram0 rwm")
 ExpectEq(a.GetProperty("devices"), "/dev/ram0 rwm /dev/ram0 0666 root disk; "); # notice the trailing space
 devices = GetCgroupDevices(a)
 ExpectEq(devices, def_extra_devices)
@@ -206,7 +206,7 @@ a.Destroy()
 
 # ----------------------------------------
 # set extra device explicitly
-a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-jammy"]}, devices="/dev/ram1 rwm")
+a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-noble"]}, devices="/dev/ram1 rwm")
 ExpectEq(a.GetProperty("devices"), "/dev/ram1 rwm /dev/ram1 0660 root disk; "); # notice the trailing space
 devices = GetCgroupDevices(a)
 ExpectEq(devices, all_devices)
@@ -229,9 +229,9 @@ a.Destroy()
 # Check updating of devices (cgroups and nodes) in chroot after porto reload
 os.mkdir("/tmp/test-devices")
 os.mkdir("/tmp/test-devices/volume")
-vol = c.CreateVolume("/tmp/test-devices/volume", layers=["ubuntu-jammy"])
+vol = c.CreateVolume("/tmp/test-devices/volume", layers=["ubuntu-noble"])
 os.mkdir("/tmp/test-devices/volume/volume")
-vol_vol = c.CreateVolume("/tmp/test-devices/volume/volume", layers=["ubuntu-jammy"])
+vol_vol = c.CreateVolume("/tmp/test-devices/volume/volume", layers=["ubuntu-noble"])
 
 ConfigurePortod('test-devices', """
 container {
@@ -273,7 +273,7 @@ os.rmdir("/tmp/test-devices")
 # No access, but device node should persist in child
 a = None
 try:
-    a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-jammy"]}, devices="/dev/ram0 rwm")
+    a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-noble"]}, devices="/dev/ram0 rwm")
     ab = c.Run("a/b", wait=60, devices="/dev/ram0 -", command="dd if=/dev/ram0 of=/dev/null count=1")
     ExpectNe(ab["exit_code"], "0")
     ab.Destroy()
@@ -322,7 +322,7 @@ try:
     # With chroot in child the device node can be safely deleted
     child_root = "%s/child" % a["root"]
     os.mkdir(child_root)
-    v1 = c.CreateVolume(child_root, layers=["ubuntu-jammy"])
+    v1 = c.CreateVolume(child_root, layers=["ubuntu-noble"])
     ab = c.Run("a/b", command="sleep infinity", root="/child")
     v1.Link("a/b")
     v1.Unlink("/")
@@ -363,7 +363,7 @@ except:
 def run_test_restore_vanished_pids_devices(*args, **kwargs):
     a = None
     try:
-        a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-jammy"]}, command="sleep 5", **kwargs)
+        a = c.Run("a", weak=False, root_volume={"layers": ["ubuntu-noble"]}, command="sleep 5", **kwargs)
 
         app_pid, _, portoinit_pid = a["_root_pid"].split(';')
 
@@ -386,7 +386,7 @@ run_test_restore_vanished_pids_devices()
 run_test_restore_vanished_pids_devices(devices="/dev/ram0 rw")
 '''
 # check virt_mode = fuse
-a = c.Run("a", weak=True, root_volume={"layers": ["ubuntu-jammy"]}, virt_mode="fuse")
+a = c.Run("a", weak=True, root_volume={"layers": ["ubuntu-noble"]}, virt_mode="fuse")
 b = c.Run("a/b", weak=True, wait=3, command="ls /dev/fuse")
 ExpectEq(b['exit_code'], '0')
 b.Destroy()
@@ -397,7 +397,7 @@ ExpectEq(b['exit_code'], '0')
 
 a.Destroy()
 
-a = c.Run("a", weak=True, root_volume={"layers": ["ubuntu-jammy"]})
+a = c.Run("a", weak=True, root_volume={"layers": ["ubuntu-noble"]})
 b = c.Run("a/b", weak=True, wait=3, command="ls /dev/fuse")
 ExpectNe(b['exit_code'], '0')
 a.Destroy()

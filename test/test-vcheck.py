@@ -54,7 +54,7 @@ def test_broken_quota(backend, limit, type):
     if limit:
         parameters['space_limit'] = limit
     if backend == 'overlay':
-        parameters['layers'] = ["ubuntu-jammy"]
+        parameters['layers'] = ["ubuntu-noble"]
     else:
         parameters['path'] = test_path
 

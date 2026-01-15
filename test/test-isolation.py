@@ -70,7 +70,7 @@ ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()
 
-a = c.Run("a", isolate='false', root_volume={"layers": ["ubuntu-jammy"]}, weak=True)
+a = c.Run("a", isolate='false', root_volume={"layers": ["ubuntu-noble"]}, weak=True)
 pid = a['root_pid']
 
 ExpectEq(ProcStatus(pid, "NSpid"), pid)
@@ -82,7 +82,7 @@ ExpectEq(ProcStatus(pid, "CapAmb"), EmptyCapSet)
 
 a.Destroy()
 
-a = c.Run("a", net='none', memory_limit='1G', root_volume={"layers": ["ubuntu-jammy"]}, weak=True)
+a = c.Run("a", net='none', memory_limit='1G', root_volume={"layers": ["ubuntu-noble"]}, weak=True)
 pid = a['root_pid']
 
 ExpectNe(ProcStatus(pid, "NSpid"), pid)

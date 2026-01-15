@@ -25,14 +25,14 @@ def Test(tmpdir, placedir):
     os.mkdir(tmpdir + "/a")
 
     #Finally, checking functions
-    ExpectEq(Catch(c.CreateVolume, path=tmpdir + "/a", place=placedir, backend="native", layers=["ubuntu-jammy"]), porto.exceptions.LayerNotFound)
+    ExpectEq(Catch(c.CreateVolume, path=tmpdir + "/a", place=placedir, backend="native", layers=["ubuntu-noble"]), porto.exceptions.LayerNotFound)
 
-    v = c.CreateVolume(path=None, layers=["ubuntu-jammy"], backend="plain")
-    v.Export(tmpdir + "/tmp_ubuntu_jammy.tar")
-    c.ImportLayer("place-ubuntu-jammy", tmpdir + "/tmp_ubuntu_jammy.tar", place=placedir)
-    assert Catch(c.FindLayer, "place-ubuntu-jammy") == porto.exceptions.LayerNotFound
+    v = c.CreateVolume(path=None, layers=["ubuntu-noble"], backend="plain")
+    v.Export(tmpdir + "/tmp_ubuntu_noble.tar")
+    c.ImportLayer("place-ubuntu-noble", tmpdir + "/tmp_ubuntu_noble.tar", place=placedir)
+    assert Catch(c.FindLayer, "place-ubuntu-noble") == porto.exceptions.LayerNotFound
 
-    l = c.FindLayer("place-ubuntu-jammy", place=placedir)
+    l = c.FindLayer("place-ubuntu-noble", place=placedir)
 
     assert l.GetPrivate() == ""
     l.SetPrivate("XXXX")
@@ -41,14 +41,14 @@ def Test(tmpdir, placedir):
     l.Merge(tmpdir + "/file_layer.tar", private_value="YYYY")
     assert l.GetPrivate() == "YYYY"
 
-    os.unlink(tmpdir + "/tmp_ubuntu_jammy.tar")
+    os.unlink(tmpdir + "/tmp_ubuntu_noble.tar")
     v.Unlink("/")
 
     #Should also fail because of foreign layer vise versa
-    assert Catch(c.CreateVolume, path=tmpdir + "/a", backend="native", layers=["place-ubuntu-jammy"]) == porto.exceptions.LayerNotFound
+    assert Catch(c.CreateVolume, path=tmpdir + "/a", backend="native", layers=["place-ubuntu-noble"]) == porto.exceptions.LayerNotFound
 
     #Check volume is working properly
-    v = c.CreateVolume(path=tmpdir + "/a", place=placedir, backend="native", layers=["place-ubuntu-jammy"])
+    v = c.CreateVolume(path=tmpdir + "/a", place=placedir, backend="native", layers=["place-ubuntu-noble"])
 
     place_volumes = os.listdir(placedir + "/porto_volumes")
     assert len(place_volumes) == 1
@@ -184,11 +184,11 @@ def Test(tmpdir, placedir):
     os.renames(placedir + "1", placedir)
     assert len(c.ListLayers(place=placedir)) == 1
 
-    v.Export(tmpdir + "/tmp_back_ubuntu_jammy.tar")
+    v.Export(tmpdir + "/tmp_back_ubuntu_noble.tar")
 
     v.Unlink()
 
-    c.RemoveLayer("place-ubuntu-jammy", place=placedir)
+    c.RemoveLayer("place-ubuntu-noble", place=placedir)
 
     assert len(os.listdir(placedir + "/porto_volumes")) == 0
     assert len(c.ListLayers(place=placedir)) == 0
@@ -202,6 +202,6 @@ try:
         Test(vol.path, placedir)
 finally:
     try:
-        c.RemoveLayer("place-ubuntu-jammy", place=PLACE_DIR)
+        c.RemoveLayer("place-ubuntu-noble", place=PLACE_DIR)
     except Exception:
         pass

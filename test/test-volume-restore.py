@@ -29,7 +29,7 @@ assert int(c.GetData('/', 'porto_stat[warnings]')) == 1
 
 # check that ownership transfer completed successfully and we do not receive warning after reload
 ct_c = c.Create("c")
-v_bc = c.CreateVolume(layers=["ubuntu-jammy"], owner_container='c')
+v_bc = c.CreateVolume(layers=["ubuntu-noble"], owner_container='c')
 
 ct_b = c.Create("b")
 ct_b.SetProperty("command", "sleep 10000")

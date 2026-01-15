@@ -6,7 +6,7 @@ conn = porto.Connection(timeout=30)
 
 w = conn.Create("w", weak=True)
 
-root_volume = conn.CreateVolume(backend='overlay', layers=['ubuntu-jammy'], containers='w')
+root_volume = conn.CreateVolume(backend='overlay', layers=['ubuntu-noble'], containers='w')
 volume = conn.CreateVolume(backend='plain', containers='w')
 
 a = conn.Run('a', root=root_volume.path, bind='{} /bin/portoctl ro'.format(portoctl))

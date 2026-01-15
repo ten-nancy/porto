@@ -14,7 +14,7 @@ if WithSystemd():
 else:
     ExpectEq(portod_cg, "/")
 
-a = c.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-jammy"]}, **{"controllers[systemd]": True})
+a = c.Run("a", virt_mode='os', root_volume={'layers': ["ubuntu-noble"]}, **{"controllers[systemd]": True})
 a_pid = a['root_pid']
 
 b = c.Run("b", command="tail -f /dev/null")

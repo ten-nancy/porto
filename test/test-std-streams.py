@@ -91,7 +91,7 @@ ct.Destroy()
 # check fifo pipe for stdin
 ct = c.CreateWeakContainer('test')
 
-vol = c.CreateVolume(layers=['ubuntu-jammy'], containers='test', backend='overlay')
+vol = c.CreateVolume(layers=['ubuntu-noble'], containers='test', backend='overlay')
 ct.SetProperty("root", vol.path)
 
 ct.Start()
@@ -109,7 +109,7 @@ ct.Destroy()
 
 # check fifo pipe for stdout
 with contextlib.ExitStack() as cleanup:
-    vol = cleanup.enter_context(CreateVolume(c, backend='overlay', layers=['ubuntu-jammy']))
+    vol = cleanup.enter_context(CreateVolume(c, backend='overlay', layers=['ubuntu-noble']))
     fifo_path = os.path.join(vol.path, 'stdout')
     os.mkfifo(fifo_path)
 
@@ -121,7 +121,7 @@ with contextlib.ExitStack() as cleanup:
         os.close(fd)
 
 with contextlib.ExitStack() as cleanup:
-    vol = cleanup.enter_context(CreateVolume(c, backend='overlay', layers=['ubuntu-jammy']))
+    vol = cleanup.enter_context(CreateVolume(c, backend='overlay', layers=['ubuntu-noble']))
     fifo_path = os.path.join(vol.path, 'stdout')
     os.mkfifo(fifo_path)
     ExpectException(

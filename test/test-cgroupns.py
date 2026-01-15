@@ -9,7 +9,7 @@ print("use {} hierarchy".format("cgroup2" if USE_CGROUP2 else "cgroup1"))
 
 try:
     def CheckCgroupfsNone():
-        a = conn.Run('a', cgroupfs='none', wait=0, root_volume={'layers': ['ubuntu-jammy']})
+        a = conn.Run('a', cgroupfs='none', wait=0, root_volume={'layers': ['ubuntu-noble']})
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='cat /proc/self/cgroup')
         ExpectEq('0', b['exit_code'])
@@ -25,7 +25,7 @@ try:
 
 
     def CheckCgroupfsRo():
-        a = conn.Run('a', cgroupfs='ro', wait=0, root_volume={'layers': ['ubuntu-jammy']})
+        a = conn.Run('a', cgroupfs='ro', wait=0, root_volume={'layers': ['ubuntu-noble']})
 
         b = conn.Run('a/b', wait=5, virt_mode='job', isolate=False, command='cat /proc/self/cgroup')
         ExpectEq('0', b['exit_code'])
@@ -56,11 +56,11 @@ try:
     def CheckCgroupfsRw(is_os, userns=False, enable_net_cgroups=False):
         if is_os:
             ExpectEq(porto.exceptions.PermissionError,
-                     Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-jammy']}))
+                     Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-noble']}))
 
         # TODO(ovov): user='1044' if userns else '0',
         a = conn.Run('a', cgroupfs='rw', userns=userns, user='0',
-                     virt_mode=('os' if is_os else 'app'), wait=0, root_volume={'layers': ['ubuntu-jammy']})
+                     virt_mode=('os' if is_os else 'app'), wait=0, root_volume={'layers': ['ubuntu-noble']})
         a.Wait(100)
         ExpectIn(a['state'], ('running', 'meta'))
 
@@ -100,7 +100,7 @@ try:
     CheckCgroupfsNone()
     CheckCgroupfsRo()
     ExpectEq(porto.exceptions.PermissionError, \
-             Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-jammy']}))
+             Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-noble']}))
 
     ConfigurePortod('test-cgroupns', """
     container {
@@ -109,7 +109,7 @@ try:
     }""")
 
     # check that container restored correctly
-    a = conn.Run('a', weak=False, virt_mode='os', wait=0, root_volume={'layers': ['ubuntu-jammy']})
+    a = conn.Run('a', weak=False, virt_mode='os', wait=0, root_volume={'layers': ['ubuntu-noble']})
     ReloadPortod()
     a.Destroy()
 

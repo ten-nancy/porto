@@ -163,7 +163,7 @@ def check_tune_inode_limit(c, path, **args):
 
 @contextlib.contextmanager
 def _check_layers(c, path, cleanup=True, **args):
-    args["layers"] = ["ubuntu-jammy", "test-volumes"]
+    args["layers"] = ["ubuntu-noble", "test-volumes"]
     with CreateContainer(c, 'test') as r, CreateVolume(c, path, **args) as v:
         r.SetProperty("capabilities[SYS_RESOURCE]", "true")
         v.Link("test")

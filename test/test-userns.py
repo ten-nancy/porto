@@ -3,7 +3,7 @@ from test_common import *
 
 conn = porto.Connection(timeout=30)
 
-v = conn.CreateVolume(layers=['ubuntu-jammy'])
+v = conn.CreateVolume(layers=['ubuntu-noble'])
 
 def CheckUserNs(userns=True, virt_mode='app'):
     os_mode = virt_mode == 'os'

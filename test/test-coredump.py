@@ -211,7 +211,7 @@ b.Destroy()
 
 
 w = conn.Create('w')
-v = conn.CreateVolume(layers=['ubuntu-jammy'], containers='w')
+v = conn.CreateVolume(layers=['ubuntu-noble'], containers='w')
 AsRoot()
 os.unlink('/tmp/core')
 open(v.path + '/bin/suid_sleep', 'wb').write(open(v.path + '/bin/sleep', 'rb').read())
