@@ -1566,19 +1566,23 @@ TError TContainer::ApplyIoPolicy() const {
 }
 
 TError TContainer::ApplyResolvConf() const {
-    TError error;
-    TFile file;
-
     if (HasProp(EProperty::RESOLV_CONF) ? !ResolvConf.size() : Root == "/")
         return OK;
 
     if (!Task.Pid)
         return TError(EError::InvalidState, "No container task pid");
 
-    error = file.Open("/proc/" + std::to_string(Task.Pid) + "/root/etc/resolv.conf",
-                      O_WRONLY | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY);
+    TFile root, file;
+    auto error = root.OpenPath(fmt::format("/proc/{}/root", Task.Pid));
     if (error)
         return error;
+
+    error = file.OpenAtNoSymlink(root, "etc/resolv.conf", O_WRONLY | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY);
+    if (error) {
+        if (error.Errno == ELOOP)
+            return TError(EError::InvalidValue, "Path /etc/resolv.conf contains symbolic link");
+        return error;
+    }
 
     if (file.FsType() != TMPFS_MAGIC)
         return TError(EError::NotSupported, "resolv.conf not on tmpfs");

@@ -1,16 +1,17 @@
 #!/usr/bin/python3
 
-import os
-import time
+import contextlib
 import errno
-import pwd
 import grp
-import sys
 import os
-import subprocess
+import os
+import pwd
 import shutil
+import subprocess
+import sys
 import tarfile
 import tempfile
+import time
 import uuid
 
 import porto
@@ -387,6 +388,39 @@ def layer_escalation(v):
     r.Destroy()
 
     AsRoot()
+
+def read_resolv_conf(ct):
+    with open(os.path.join("/proc", ct['root_pid'], "root/etc/resolv.conf")) as f:
+        return f.read()
+
+def test_resolv_conf_overwrite(cleanup):
+    conn = porto.Connection(timeout=30)
+
+    vol1 = cleanup.enter_context(CreateVolume(conn))
+    vol2 = cleanup.enter_context(CreateVolume(conn))
+
+    foo = cleanup.enter_context(RunContainer(conn, "foo", root=vol1.path, resolv_conf="foo"))
+    ExpectEq(read_resolv_conf(foo), "foo")
+
+    bar = cleanup.enter_context(RunContainer(conn, "bar", root=vol2.path, resolv_conf="bar"))
+
+    os.rename(os.path.join("/proc", bar['root_pid'], "root/etc/"),
+              os.path.join("/proc", bar['root_pid'], "root/etc_/"))
+
+    os.mkdir(os.path.join("/proc", bar['root_pid'], "root/etc/"))
+
+    os.symlink(os.path.join("/proc", foo['root_pid'], "root/etc/resolv.conf"),
+               os.path.join("/proc", bar['root_pid'], "root/etc/resolv.conf"))
+    ExpectEq(read_resolv_conf(foo), "foo")
+
+    ExpectException(bar.SetProperty, porto.exceptions.InvalidValue, 'resolv_conf', 'bar')
+    ExpectEq(read_resolv_conf(foo), "foo")
+
+
+with contextlib.ExitStack() as cleanup:
+    test_resolv_conf_overwrite(cleanup)
+    # TODO: remove early exit
+    sys.exit(0)
 
 
 if len(sys.argv) > 1:

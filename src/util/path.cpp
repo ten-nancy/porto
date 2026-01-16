@@ -1753,6 +1753,27 @@ TError TFile::OpenAt(const TFile &dir, const TPath &path, int flags, int mode) {
     return OK;
 }
 
+TError TFile::OpenAtNoSymlink(const TFile &dir, const TPath &path, int flags) {
+    // TODO(ovov): replace this with openat2 when we get rid of 5.4:
+    // https://man7.org/linux/man-pages/man2/openat2.2.html
+    auto error = Dup(dir);
+    if (error)
+        return error;
+
+    auto components = path.Components();
+    for (size_t i = 0; i < components.size(); ++i) {
+        if (components[i] == "..")
+            return TError(EError::InvalidPath, "Non-normal path {}", path);
+
+        auto flags1 = i == components.size() - 1 ? flags : O_RDONLY | O_CLOEXEC | O_NOCTTY;
+        error = OpenAt(*this, components[i], flags1 | O_NOFOLLOW);
+        if (error)
+            return error;
+    }
+
+    return OK;
+}
+
 TError TFile::OpenDirAt(const TFile &dir, const TPath &path) {
     return OpenAt(dir, path, O_RDONLY | O_CLOEXEC | O_DIRECTORY);
 }

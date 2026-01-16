@@ -351,6 +351,7 @@ public:
     bool IsMountPoint() const;
     TError Dup(const TFile &other);
     TError OpenAt(const TFile &dir, const TPath &path, int flags, int mode = 0);
+    TError OpenAtNoSymlink(const TFile &dir, const TPath &path, int flags);
     TError OpenDirAt(const TFile &dir, const TPath &path);
     TError OpenDirStrictAt(const TFile &dir, const TPath &path);
     TError OpenAtMount(const TFile &mount, const TFile &file, int flags);
