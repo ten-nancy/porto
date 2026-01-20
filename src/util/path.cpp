@@ -1137,7 +1137,7 @@ TError TPath::WritePrivate(const std::string &text) const {
     if (error)
         return error;
 
-    error = temp.WriteAll(text);
+    error = file.WriteAll(text);
     if (!error)
         error = file.Chmod(0644);
     if (!error)
