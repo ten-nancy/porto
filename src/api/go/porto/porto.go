@@ -36,6 +36,7 @@ type TVolumeDescription struct {
 	Path       *string
 	Properties map[string]string
 	Containers []string
+	Links      []*rpc.TVolumeLink
 }
 
 type TStorageDescription struct {
@@ -133,6 +134,7 @@ type PortoAPI interface {
 
 	// VolumeAPI
 	ListVolumes(path string, container string) ([]*TVolumeDescription, error)
+	GetVolume(path string) (*TVolumeDescription, error)
 	ListVolumeProperties() ([]TProperty, error)
 	CreateVolume(path string, config map[string]string) (*TVolumeDescription, error)
 	TuneVolume(path string, config map[string]string) error
@@ -672,6 +674,32 @@ func (c *client) ListVolumes(path string, container string) (ret []*TVolumeDescr
 		ret = append(ret, desc)
 	}
 	return ret, err
+}
+
+func (c *client) GetVolume(path string) (*TVolumeDescription, error) {
+	req := &rpc.TContainerRequest{
+		ListVolumes: &rpc.TVolumeListRequest{
+			Path: &path,
+		},
+	}
+	rsp, err := c.Call(req)
+	if err != nil {
+		return nil, err
+	}
+	volume := rsp.GetVolumeList().GetVolumes()[0]
+	ret := TVolumeDescription{
+		Path:       volume.Path,
+		Containers: volume.GetContainers(),
+		Properties: make(map[string]string),
+		Links:      volume.Links,
+	}
+	for _, property := range volume.GetProperties() {
+		k := property.GetName()
+		v := property.GetValue()
+		ret.Properties[k] = v
+	}
+
+	return &ret, nil
 }
 
 func (c *client) ListVolumeProperties() (ret []TProperty, err error) {
