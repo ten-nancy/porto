@@ -251,19 +251,6 @@ static void ServerLoop() {
         return;
     }
 
-    int evFd = EventFd();
-    if (evFd == -1) {
-        L_ERR("Can`t create eventFd");
-        return;
-    }
-
-    auto evSource = std::make_shared<TEpollSource>(evFd);
-    error = EpollLoop->AddSource(evSource);
-    if (error) {
-        L_ERR("Can't add evSource to epoll: {}", error);
-        return;
-    }
-
     if (config().daemon().enable_nbd()) {
         error = StartNbd();
         if (error) {
@@ -274,6 +261,14 @@ static void ServerLoop() {
     StartRebalanceJailLoop();
     StartStatFsLoop();
     StartRpcQueue();
+
+    auto gracefullShutdownSource = std::make_shared<TEpollSource>(GracefulShutdownEventFd());
+    error = EpollLoop->AddSource(gracefullShutdownSource);
+    if (error) {
+        L_ERR("Can't add gracefullShutdownSource to epoll: {}", error);
+        return;
+    }
+
     TStorage::StartAsyncRemover();
     EventQueue->Start();
 
@@ -324,8 +319,7 @@ static void ServerLoop() {
                     break;
                 case SIGHUP:
                     L_SYS("Updating...");
-                    if (StartGracefulShutdown())
-                        StartShutdown();
+                    StartGracefulShutdown();
                     break;
                 case SIGUSR1:
                     OpenLog(PORTO_LOG);
@@ -355,7 +349,7 @@ static void ServerLoop() {
                 // from the clients (so clients see updated view of the
                 // world as soon as possible)
                 continue;
-            } else if (source->Fd == evFd) {
+            } else if (source->Fd == gracefullShutdownSource->Fd) {
                 L_SYS("Shutdown...");
                 StartShutdown();
             } else if (source->Flags & EPOLL_EVENT_MEM) {

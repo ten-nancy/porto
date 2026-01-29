@@ -3,6 +3,7 @@
 #include <google/protobuf/descriptor.h>
 
 #include <algorithm>
+#include <climits>
 #include <mutex>
 #include <regex>
 
@@ -36,6 +37,72 @@ extern __thread char ReqId[9];
 extern uint32_t RequestHandlingDelayMs;
 
 static bool PortodFrozen = false;
+
+class TFence {
+    static constexpr unsigned long SHUTDOWN_F = 1UL << ((CHAR_BIT * sizeof(unsigned long)) - 1);
+    static constexpr unsigned long SHUTDOWN_F1 = SHUTDOWN_F >> 1;
+    std::atomic<unsigned long> Count{0};
+
+    void DoShutdown() {
+        unsigned long v = 1;
+        auto ret = write(Fd, &v, sizeof(v));
+        // We ignore the return values because errors can happen if:
+        //     1. the blank value is 0xffffffffffffffff -> EINVAL
+        //     2. the EvFd have inside 0x0xfffffffffffffffe before
+        //          write -> EAGAIN (because EvFd created with EFD_NONBLOCK)
+        // Which both of there cannot happen.
+        if (ret != sizeof(v)) {
+            if (ret < 0)
+                L_ERR("{}", TError::System("Can't write to fence eventfd"));
+            else
+                L_ERR("Partial write to fence eventfd: {}", ret);
+        }
+    }
+
+public:
+    int Fd = -1;
+
+    TFence()
+        : Fd(eventfd(0, 0))
+    {
+        PORTO_ASSERT(Fd >= 0);
+    }
+
+    ~TFence() {
+        close(Fd);
+    }
+
+    bool Enter() {
+        auto c = Count.load();
+        if (c == SHUTDOWN_F)
+            return false;
+
+        // fail-fast on overflow
+        PORTO_ASSERT(!(c & SHUTDOWN_F1));
+
+        while (!Count.compare_exchange_weak(c, c + 1)) {
+            // fail-fast on overflow
+            PORTO_ASSERT(!(c & SHUTDOWN_F1));
+            if (c == SHUTDOWN_F)
+                return false;
+        }
+        return true;
+    }
+
+    void Leave() {
+        auto c = --Count;
+        if (c == SHUTDOWN_F)
+            DoShutdown();
+    }
+
+    void Shutdown() {
+        auto c = Count |= SHUTDOWN_F;
+        if (c == SHUTDOWN_F)
+            DoShutdown();
+    }
+};
+
+static std::shared_ptr<TFence> RequestFence;
 
 void TRequest::Classify() {
     /* Normally not logged in non-verbose mode */
@@ -2360,85 +2427,14 @@ void TRequest::ChangeId() {
     snprintf(ReqId, sizeof(ReqId), "%.8x", rand());
 }
 
-class TRequestMonitor {
-public:
-    TRequestMonitor() = default;
-    ~TRequestMonitor() = default;
-
-    int GetEventFd()
-    {
-        Event.SetFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-        return Event.Fd;
-    }
-
-    bool ActivateGracefulShutdown()
-    {
-        std::lock_guard<std::mutex> lock(Mutex);
-
-        GracefulShutdownPortod = true;
-
-        if (ActiveRequestCount == 0 && !ShutdownStarted)
-            ShutdownStarted = true;
-        return ShutdownStarted;
-    }
-
-    void StartRequestLifecycle(bool &timeToTerminateQueue)
-    {
-        std::lock_guard<std::mutex> lock(Mutex);
-
-        timeToTerminateQueue = GracefulShutdownPortod && ActiveRequestCount == 0;
-
-        if (!timeToTerminateQueue)
-            ActiveRequestCount++;
-    }
-
-    void FinishRequestLifecycle()
-    {
-        std::lock_guard<std::mutex> lock(Mutex);
-        ActiveRequestCount--;
-
-        if (!GracefulShutdownPortod || ActiveRequestCount != 0)
-            return;
-
-        if (!ShutdownStarted) {
-            ShutdownStarted = true;
-            SendShutdownMessage();
-        }
-    }
-
-private:
-    TFile Event;
-    bool GracefulShutdownPortod = false;
-    uint64_t ActiveRequestCount = 0;
-    bool ShutdownStarted = false;
-    std::mutex Mutex;
-
-    void SendShutdownMessage()
-    {
-        long long blank;
-        int ret;
-
-        blank = 1;
-        ret = write(Event.Fd, &blank, sizeof(blank));
-        // We ignore the return values because errors can happen if:
-        //     1. the blank value is 0xffffffffffffffff -> EINVAL
-        //     2. the EvFd have inside 0x0xfffffffffffffffe before
-        //          write -> EAGAIN (because EvFd created with EFD_NONBLOCK)
-        // Which both of there cannot happen.
-        if (ret <= 0)
-            L_ERR("Can't write to eventfd");
-    }
-
-} LifecycleManager;
-
-int EventFd()
+int GracefulShutdownEventFd()
 {
-    return LifecycleManager.GetEventFd();
+    return RequestFence->Fd;
 }
 
-bool StartGracefulShutdown()
+void StartGracefulShutdown()
 {
-    return LifecycleManager.ActivateGracefulShutdown();
+    RequestFence->Shutdown();
 }
 
 class TRequestQueue {
@@ -2449,7 +2445,7 @@ class TRequestQueue {
     std::mutex Mutex;
     bool ShouldStop = false;
     const std::string Name;
-    const bool ShutdownGracefully;
+    std::shared_ptr<TFence> Fence;
     TGauge RequestQueued;
     TMetricFabric<TCounter> RequestCount;
     TCounter ExecTime;
@@ -2458,9 +2454,9 @@ class TRequestQueue {
     TGauge RequestTopRunning;
 
 public:
-    TRequestQueue(const std::string &name, bool shutdownGracefully)
+    TRequestQueue(const std::string &name, const std::shared_ptr<TFence> &fence)
         : Name(name),
-          ShutdownGracefully(shutdownGracefully),
+          Fence(fence),
           RequestQueued(MetricsRegistry->RequestQueued.WithLabels({{"queue", name}})),
           RequestCount(MetricsRegistry->Requests.Add({{"queue", name}})),
           ExecTime(MetricsRegistry->RequestExecTime.WithLabels({{"queue", name}})),
@@ -2495,7 +2491,6 @@ public:
     }
 
     void Run(int index) {
-        bool timeToTerminateQueue = false;
         SetProcessName(fmt::format("{}{}", Name, index));
         srand(GetCurrentTimeMs());
         auto lock = std::unique_lock<std::mutex>(Mutex);
@@ -2511,16 +2506,13 @@ public:
             request->ChangeId();
             RequestQueued--;
 
-            if (ShutdownGracefully) {
-                LifecycleManager.StartRequestLifecycle(timeToTerminateQueue);
-                if (timeToTerminateQueue)
-                    return;
-            }
+            if (Fence && !Fence->Enter())
+                return;
 
             request->Handle(RequestCount, ExecTime, WaitTime, LockTime);
 
-            if (ShutdownGracefully)
-                LifecycleManager.FinishRequestLifecycle();
+            if (Fence)
+                Fence->Leave();
 
             request = nullptr;
             lock.lock();
@@ -2557,12 +2549,13 @@ std::unique_ptr<T> make_unique(Args &&...args) {
 }
 
 void StartRpcQueue() {
+    RequestFence = std::make_shared<TFence>();
     BuildClientPatterns();
 
-    RwQueue = make_unique<TRequestQueue>("portod-RW", true);
-    RoQueue = make_unique<TRequestQueue>("portod-RO", false);
-    IoQueue = make_unique<TRequestQueue>("portod-IO", true);
-    VlQueue = make_unique<TRequestQueue>("portod-Vl", true);
+    RwQueue = make_unique<TRequestQueue>("portod-RW", RequestFence);
+    RoQueue = make_unique<TRequestQueue>("portod-RO", nullptr);
+    IoQueue = make_unique<TRequestQueue>("portod-IO", RequestFence);
+    VlQueue = make_unique<TRequestQueue>("portod-Vl", RequestFence);
     RwQueue->Start(config().daemon().rw_threads());
     RoQueue->Start(config().daemon().ro_threads());
     IoQueue->Start(config().daemon().io_threads());

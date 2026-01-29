@@ -30,8 +30,8 @@ public:
     void ChangeId();
 };
 
-int EventFd();
-bool StartGracefulShutdown();
+int GracefulShutdownEventFd();
+void StartGracefulShutdown();
 void StartRpcQueue();
 void StopRpcQueue();
 void QueueRpcRequest(std::unique_ptr<TRequest> &req);
