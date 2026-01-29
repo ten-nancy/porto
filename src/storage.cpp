@@ -538,8 +538,12 @@ TError TStorage::List(EStorageType type, std::list<TStorage> &list) {
     }
 
     TError error = path.ListSubdirs(names);
-    if (error)
+    if (error) {
+        if (error.Errno == ENOENT)
+            return OK;
+
         return error;
+    }
 
     if (type == EStorageType::DockerLayer) {
         std::vector<std::string> prefixes = std::move(names);

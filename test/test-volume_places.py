@@ -176,14 +176,6 @@ def Test(tmpdir, placedir):
     hierarchyTester.AddChildPlace("/place/***/place1", False)
     hierarchyTester.Test()
 
-    #Check what will be if we rename our place
-
-    assert len(c.ListLayers(place=placedir)) == 1
-    os.renames(placedir, placedir+"1")
-    assert Catch(c.ListLayers, place=placedir) == porto.exceptions.UnknownError
-    os.renames(placedir + "1", placedir)
-    assert len(c.ListLayers(place=placedir)) == 1
-
     v.Export(tmpdir + "/tmp_back_ubuntu_noble.tar")
 
     v.Unlink()
