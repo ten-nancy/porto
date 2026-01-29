@@ -351,6 +351,9 @@ static void ServerLoop() {
                 continue;
             } else if (source->Fd == gracefullShutdownSource->Fd) {
                 L_SYS("Shutdown...");
+                unsigned long val;
+                if (read(gracefullShutdownSource->Fd, &val, sizeof(val)) < 0)
+                    L_ERR("{}", TError::System("Failed read from graceful shutdown eventfd"));
                 StartShutdown();
             } else if (source->Flags & EPOLL_EVENT_MEM) {
                 auto container = source->Container.lock();

@@ -63,7 +63,7 @@ public:
     int Fd = -1;
 
     TFence()
-        : Fd(eventfd(0, 0))
+        : Fd(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK))
     {
         PORTO_ASSERT(Fd >= 0);
     }
@@ -96,8 +96,8 @@ public:
     }
 
     void Shutdown() {
-        auto c = Count |= SHUTDOWN_F;
-        if (c == SHUTDOWN_F)
+        auto c = Count.fetch_or(SHUTDOWN_F);
+        if (c == 0)
             DoShutdown();
     }
 };
