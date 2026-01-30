@@ -14,7 +14,7 @@ import (
 	syscall "syscall"
 	time "time"
 
-	proto "a.yandex-team.ru/library/cpp/porto/proto"
+	rpc "github.com/ten-nancy/porto/src/api/go/porto/pkg/rpc"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -57,10 +57,10 @@ func (mr *MockPortoAPIMockRecorder) AttachProcess(name, pid, comm any) *gomock.C
 }
 
 // Call mocks base method.
-func (m *MockPortoAPI) Call(arg0 *proto.TContainerRequest) (*proto.TContainerResponse, error) {
+func (m *MockPortoAPI) Call(arg0 *rpc.TContainerRequest) (*rpc.TContainerResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Call", arg0)
-	ret0, _ := ret[0].(*proto.TContainerResponse)
+	ret0, _ := ret[0].(*rpc.TContainerResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -72,10 +72,10 @@ func (mr *MockPortoAPIMockRecorder) Call(arg0 any) *gomock.Call {
 }
 
 // CallTimeout mocks base method.
-func (m *MockPortoAPI) CallTimeout(arg0 *proto.TContainerRequest, arg1 time.Duration) (*proto.TContainerResponse, error) {
+func (m *MockPortoAPI) CallTimeout(arg0 *rpc.TContainerRequest, arg1 time.Duration) (*rpc.TContainerResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CallTimeout", arg0, arg1)
-	ret0, _ := ret[0].(*proto.TContainerResponse)
+	ret0, _ := ret[0].(*rpc.TContainerResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -144,7 +144,7 @@ func (mr *MockPortoAPIMockRecorder) Create(name any) *gomock.Call {
 }
 
 // CreateFromSpec mocks base method.
-func (m *MockPortoAPI) CreateFromSpec(spec *proto.TContainerSpec, volumes []*proto.TVolumeSpec, start bool) error {
+func (m *MockPortoAPI) CreateFromSpec(spec *rpc.TContainerSpec, volumes []*rpc.TVolumeSpec, start bool) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateFromSpec", spec, volumes, start)
 	ret0, _ := ret[0].(error)
@@ -216,10 +216,10 @@ func (mr *MockPortoAPIMockRecorder) Dlist() *gomock.Call {
 }
 
 // DockerImageStatus mocks base method.
-func (m *MockPortoAPI) DockerImageStatus(name, place string) (*proto.TDockerImage, error) {
+func (m *MockPortoAPI) DockerImageStatus(name, place string) (*rpc.TDockerImage, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DockerImageStatus", name, place)
-	ret0, _ := ret[0].(*proto.TDockerImage)
+	ret0, _ := ret[0].(*rpc.TDockerImage)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -245,10 +245,10 @@ func (mr *MockPortoAPIMockRecorder) ExportLayer(volume, tarball any) *gomock.Cal
 }
 
 // Get mocks base method.
-func (m *MockPortoAPI) Get(names, properties []string) (*proto.TContainerGetResponse, error) {
+func (m *MockPortoAPI) Get(names, properties []string) (*rpc.TContainerGetResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", names, properties)
-	ret0, _ := ret[0].(*proto.TContainerGetResponse)
+	ret0, _ := ret[0].(*rpc.TContainerGetResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -479,10 +479,10 @@ func (mr *MockPortoAPIMockRecorder) ListContainers(mask any) *gomock.Call {
 }
 
 // ListDockerImages mocks base method.
-func (m *MockPortoAPI) ListDockerImages(place, mask string) ([]*proto.TDockerImage, error) {
+func (m *MockPortoAPI) ListDockerImages(place, mask string) ([]*rpc.TDockerImage, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListDockerImages", place, mask)
-	ret0, _ := ret[0].([]*proto.TDockerImage)
+	ret0, _ := ret[0].([]*rpc.TDockerImage)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -598,10 +598,10 @@ func (mr *MockPortoAPIMockRecorder) Plist() *gomock.Call {
 }
 
 // PullDockerImage mocks base method.
-func (m *MockPortoAPI) PullDockerImage(image DockerImage, creds DockerRegistryCredentials) (*proto.TDockerImage, error) {
+func (m *MockPortoAPI) PullDockerImage(image DockerImage, creds DockerRegistryCredentials) (*rpc.TDockerImage, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PullDockerImage", image, creds)
-	ret0, _ := ret[0].(*proto.TDockerImage)
+	ret0, _ := ret[0].(*rpc.TDockerImage)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -613,10 +613,10 @@ func (mr *MockPortoAPIMockRecorder) PullDockerImage(image, creds any) *gomock.Ca
 }
 
 // ReadResponse mocks base method.
-func (m *MockPortoAPI) ReadResponse() (*proto.TContainerResponse, error) {
+func (m *MockPortoAPI) ReadResponse() (*rpc.TContainerResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ReadResponse")
-	ret0, _ := ret[0].(*proto.TContainerResponse)
+	ret0, _ := ret[0].(*rpc.TContainerResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -848,7 +848,7 @@ func (mr *MockPortoAPIMockRecorder) UnlinkVolumeTarget(path, container, target a
 }
 
 // UpdateFromSpec mocks base method.
-func (m *MockPortoAPI) UpdateFromSpec(spec *proto.TContainerSpec, start bool) error {
+func (m *MockPortoAPI) UpdateFromSpec(spec *rpc.TContainerSpec, start bool) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateFromSpec", spec, start)
 	ret0, _ := ret[0].(error)
@@ -877,7 +877,7 @@ func (mr *MockPortoAPIMockRecorder) Wait(containers, timeout any) *gomock.Call {
 }
 
 // WriteRequest mocks base method.
-func (m *MockPortoAPI) WriteRequest(arg0 *proto.TContainerRequest) error {
+func (m *MockPortoAPI) WriteRequest(arg0 *rpc.TContainerRequest) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "WriteRequest", arg0)
 	ret0, _ := ret[0].(error)
