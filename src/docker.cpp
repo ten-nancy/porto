@@ -13,6 +13,7 @@
 #include "util/http.hpp"
 #include "util/log.hpp"
 #include "util/nlohmann-safe/json.hpp"
+#include "util/sha256.hpp"
 #include "util/string.hpp"
 
 constexpr const char *DOCKER_IMAGES_FILE = "images.json";
@@ -24,6 +25,25 @@ TPath TDockerImage::TLayer::LayerPath(const TPath &place) const {
 
 TPath TDockerImage::TLayer::ArchivePath(const TPath &place) const {
     return LayerPath(place) / (Digest + ".tar.gz");
+}
+
+static TError validateChecksum(const TDockerImage::TLayer &layer, const TPath &place) {
+    L_DBG("Validate digest {}", layer.Digest);
+    const TPath &archivePath = layer.ArchivePath(place);
+    std::string digest;
+    if (layer.DigestAlg != SHA256)
+        return TError("Unsupported digest type");
+
+    TError error = calculateSHA256(archivePath.ToString(), digest);
+    if (error) {
+        return error;
+    }
+
+    if (layer.Digest != digest)
+        return TError("Digest {} not equal to {}", layer.Digest, digest);
+
+    L_DBG("Digest {} is validated", digest);
+    return OK;
 }
 
 TError TDockerImage::TLayer::Remove(const TPath &place) const {
@@ -397,6 +417,10 @@ TError TDockerImage::ParseManifest() {
                 if (error)
                     return TError("Failed to get id: {}", error);
 
+                error = checkDigest(Digest);
+                if (error)
+                    return TError("Incorrect digest of id schemeVersion {}:{}", SchemaVersion, error);
+
                 error = c.Dump(Config);
                 if (error)
                     return TError("Failed to dump config: {}", error);
@@ -416,13 +440,21 @@ TError TDockerImage::ParseManifest() {
             if (error)
                 return TError("Failed to get blobSum: {}", error);
 
-            Layers.emplace_back(TrimDigest(blobSum));
+            std::string trimmedDigest;
+            error = TrimAndCheckDigest(blobSum, trimmedDigest);
+            if (error)
+                return TError("Incorrect digest in schemeVersion {}: {}", SchemaVersion, error);
+
+            TLayer tlayer(trimmedDigest, GetDigestType(blobSum));
+            Layers.emplace_back(tlayer);
         }
     } else if (SchemaVersion == 2) {
         error = manifestJson["config"]["digest"].Get(Digest);
         if (error)
             return TError("Failed to get config digest: {}", error);
-        Digest = TrimDigest(Digest);
+        error = TrimAndCheckDigest(Digest, Digest);
+        if (error)
+            return TError("Incorrect digest: {}", error);
 
         error = manifestJson["config"]["size"].Get(Size);
         if (error)
@@ -453,7 +485,12 @@ TError TDockerImage::ParseManifest() {
             if (error)
                 return TError("Failed to get size: {}", error);
 
-            Layers.emplace_back(TrimDigest(digest), size);
+            std::string trimmedDigest;
+            error = TrimAndCheckDigest(digest, trimmedDigest);
+            if (error)
+                return TError("Incorrect digest in schemaVersion {}: {}", SchemaVersion, error);
+            TLayer tlayer(trimmedDigest, GetDigestType(digest), size);
+            Layers.emplace_back(tlayer);
             Size += size;
         }
     } else
@@ -576,6 +613,9 @@ TError TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TCli
     if (error)
         return TError(error, "Cannot import archive: {}", archivePath);
 
+    error = validateChecksum(layer, place);
+    if (error)
+        return error;
     error = TStorage::SanitizeLayer(portoLayer.Path);
     if (error)
         return TError(error, "Cannot sanitize layer: {}", portoLayer.Path);

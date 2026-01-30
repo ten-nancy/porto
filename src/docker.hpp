@@ -41,7 +41,15 @@ constexpr const char *DOCKER_AUTH_SERVICE = "registry.docker.io";
 struct THttpClient;
 std::string getDefaultTargetArch();
 
+enum DigestType {
+    UnknownDigest,
+    SHA256,
+};
+
 struct TDockerImage {
+#ifdef SELF_TEST
+    friend class TDockerImageForTest;
+#endif
     std::string Digest;
     std::unordered_map<std::string, std::unordered_set<std::string>> Images;  // image:tags
 
@@ -54,10 +62,17 @@ struct TDockerImage {
     struct TLayer {
         std::string Digest;
         size_t Size;
+        DigestType DigestAlg;
 
         TLayer(std::string digest, size_t size = 0)
             : Digest(digest),
               Size(size)
+        {}
+
+        TLayer(std::string digest, DigestType digestAlg, size_t size = 0)
+            : Digest(digest),
+              Size(size),
+              DigestAlg(digestAlg)
         {}
 
         TPath LayerPath(const TPath &place) const;
@@ -112,10 +127,33 @@ private:
         return fmt::format("{}/{}{}", Registry, RepositoryAndName(), hideTag ? "" : ":" + Tag);
     }
 
+    // this function expects already trimmed digest, i.e. w/o sha256 prefix
+    static inline TError checkDigest(const std::string &digest) {
+        if (!std::all_of(digest.begin(), digest.end(), ::isxdigit)) {
+            return TError("{} not a hexadecimal", digest);
+        }
+        return OK;
+    }
+
     static inline std::string TrimDigest(const std::string &digest) {
         if (StringStartsWith(digest, "sha256:"))
             return digest.substr(7);
         return digest;
+    }
+
+    static inline TError TrimAndCheckDigest(const std::string &digest, std::string &outDigest) {
+        std::string trimmedDigest = TrimDigest(digest);
+        TError error = checkDigest(trimmedDigest);
+        if (error)
+            return error;
+        outDigest = std::move(trimmedDigest);
+        return OK;
+    }
+
+    static inline DigestType GetDigestType(const std::string &digest) {
+        if (StringStartsWith(digest, "sha256:"))
+            return SHA256;
+        return UnknownDigest;
     }
 
     void ParseName(const std::string &name) {
@@ -193,3 +231,17 @@ private:
     TError Load(const TPath &place);
     std::string GetPlatform();
 };
+
+#ifdef SELF_TEST
+class TDockerImageForTest {
+    TDockerImage &image;
+
+public:
+    TDockerImageForTest(TDockerImage &img)
+        : image(img)
+    {}
+    TError ParseManifest() {
+        return image.ParseManifest();
+    }
+};
+#endif

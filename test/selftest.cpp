@@ -18,6 +18,7 @@
 #include "util/proc.hpp"
 #include "util/hgram.hpp"
 #include "util/nlohmann-safe/json.hpp"
+#define SELF_TEST
 #include "docker.hpp"
 #include "http.hpp"
 #include "test.hpp"
@@ -5003,6 +5004,116 @@ static void TestDockerImageParsing(Porto::Connection &) {
     test("registry.yandex.net/kndrvt/kek/ubuntu:focal@796f752061726520736f2063757465",     { "registry.yandex.net", "kndrvt/kek", "ubuntu", "focal", "796f752061726520736f2063757465" });
 }
 
+static void TestDockerImageParseManifest(Porto::Connection &) {
+    auto test = [](const std::string &name, const std::string &manifest, const int layersNumber, const int schemaVersion, const std::vector<std::string> &target) {
+        std::cerr << name << std::endl;
+        TDockerImage image(name);
+        image.SchemaVersion = schemaVersion;
+        image.Manifest = manifest;
+        TDockerImageForTest imageForTest(image);
+        ExpectOk(imageForTest.ParseManifest());
+        Say() << "evaluated layers number: " << image.Layers.size() << std::endl;
+        ExpectEq(layersNumber, image.Layers.size());
+        int ti = 0;
+        // expected layers are given starting from 5th index in target vector
+        for (auto layer: image.Layers) {
+            if (ti >= target.size()) {
+                break;
+            }
+            ExpectEq(layer.Digest, target[ti]);
+
+            Say() << "Expected Digest: " << layer.Digest << std::endl;
+            ti++;
+        }
+    };
+
+    Say() << "Make sure layer's digest is hexadecimal" << std::endl;
+
+    // mediatype vnd.oci.image.manifest.v1+json
+    std::string jammyManifest = R"(
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "config": {
+    "mediaType": "application/vnd.oci.image.config.v1+json",
+    "size": 2299,
+    "digest": "sha256:58db3edaf2be6e80f628796355b1bdeaf8bea1692b402f48b7e7b8d1ff100b02"
+  },
+  "layers": [
+    {
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "size": 29528717,
+      "digest": "sha256:677076032cca0a2362d25cf3660072e738d1b96fe860409a33ce901d695d7ee8"
+    }
+  ]
+}
+)";
+    // tag and digest
+    test("registry.yandex.net/ubuntu:jammy", jammyManifest, 1, 2,
+         {"677076032cca0a2362d25cf3660072e738d1b96fe860409a33ce901d695d7ee8"});
+
+    std::string helloWorldManifest = R"(
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+  "config": {
+    "mediaType": "application/vnd.docker.container.image.v1+json",
+    "size": 1687,
+    "digest": "sha256:49cd9431e2a6dd3f11c3a1e6379e079832db9ecf16af38323dc9aec50eeecd2c"
+  },
+  "layers": [
+    {
+      "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+      "size": 126696821,
+      "digest": "sha256:45913f0a8ae18b9ed53b6fdc600f5062ad8ee62812c6d52c890cb122810ceb81"
+    },
+    {
+      "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+      "size": 1782,
+      "digest": "sha256:21249f42e73ea398b459db4050433677ad7cfb68c1df80882324ceedaf735e15"
+    },
+    {
+      "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+      "size": 1042,
+      "digest": "sha256:ad6a4774598b1f1ac6f645433ff932b4a3925d075e11febf3cc85158cdde2db0"
+    }
+  ]
+}
+)";
+
+    test("hello-world:latest", helloWorldManifest, 3, 2,
+         {"45913f0a8ae18b9ed53b6fdc600f5062ad8ee62812c6d52c890cb122810ceb81",
+          "21249f42e73ea398b459db4050433677ad7cfb68c1df80882324ceedaf735e15",
+          "ad6a4774598b1f1ac6f645433ff932b4a3925d075e11febf3cc85158cdde2db0"});
+
+    std::string schema1 = R"(
+{
+  "schemaVersion": 1,
+  "name": "library/ubuntu",
+  "tag": "latest",
+  "architecture": "amd64",
+  "fsLayers": [
+    {
+      "blobSum": "sha256:45913f0a8ae18b9ed53b6fdc600f5062ad8ee62812c6d52c890cb122810ceb81"
+    },
+    {
+      "blobSum": "sha256:21249f42e73ea398b459db4050433677ad7cfb68c1df80882324ceedaf735e15"
+    }
+  ],
+  "history": [
+    {
+      "v1Compatibility": "{\"id\":\"21249f42e73ea398b459db4050433677ad7cfb68c1df80882324ceedaf735e15\", \"parent\":\"45913f0a8ae18b9ed53b6fdc600f5062ad8ee62812c6d52c890cb122810ceb81\"}"
+    },
+    {
+      "v1Compatibility": "{\"id\":\"45913f0a8ae18b9ed53b6fdc600f5062ad8ee62812c6d52c890cb122810ceb81\"}"
+    }
+  ]
+}
+)";
+    test("schema1:latest", schema1, 2, 1, {"45913f0a8ae18b9ed53b6fdc600f5062ad8ee62812c6d52c890cb122810ceb81",
+                                           "21249f42e73ea398b459db4050433677ad7cfb68c1df80882324ceedaf735e15"});
+}
+
 static void TestUriParsing(Porto::Connection &) {
     auto test = [](const std::string &rawUri, const std::vector<std::string> &target) {
         std::cerr << "+ " << rawUri << std::endl;
@@ -5176,6 +5287,7 @@ int SelfTest(std::vector<std::string> args) {
         { "leaks", TestLeaks },
         { "spec", TestContainerSpec },
         { "docker_images_parsing", TestDockerImageParsing },
+        { "docker_image_parse_manifest", TestDockerImageParseManifest },
         { "uri_parsing", TestUriParsing },
         { "json_parsing", TestJsonParsing},
 

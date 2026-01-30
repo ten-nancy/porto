@@ -231,6 +231,8 @@
   "src/util/prometheus-cpp-lite/simpleapi/src/simpleapi.cpp":"infra/porto/porto/src/util/prometheus-cpp-lite/simpleapi/src/simpleapi.cpp",
   "src/util/quota.cpp":"infra/porto/porto/src/util/quota.cpp",
   "src/util/quota.hpp":"infra/porto/porto/src/util/quota.hpp",
+  "src/util/sha256.cpp":"infra/porto/porto/src/util/sha256.cpp",
+  "src/util/sha256.hpp":"infra/porto/porto/src/util/sha256.hpp",
   "src/util/signal.cpp":"infra/porto/porto/src/util/signal.cpp",
   "src/util/signal.hpp":"infra/porto/porto/src/util/signal.hpp",
   "src/util/socket.cpp":"infra/porto/porto/src/util/socket.cpp",
