@@ -1549,11 +1549,18 @@ noinline TError RemoveLayer(const rpc::TLayerRemoveRequest &req) {
     TError error;
     bool async = req.has_async() ? req.async() : false;
 
+    if (!async && !RequestFence->Enter())
+        return TError(EError::SocketError);
+
     error = layer.Resolve(EStorageType::Layer, req.place(), req.layer());
     if (error)
         return error;
 
-    return layer.Remove(false, async);
+    error = layer.Remove(false, async);
+    if (!async)
+        RequestFence->Leave();
+
+    return error;
 }
 
 noinline TError ListLayers(const rpc::TLayerListRequest &req, rpc::TContainerResponse &rsp) {
@@ -1695,11 +1702,16 @@ noinline TError RemoveDockerImage(const rpc::TDockerImageRemoveRequest &req) {
     if (!config().daemon().docker_images_support())
         return TError(EError::NotSupported, "Docker images are not supported");
 
+    if (!RequestFence->Enter())
+        return TError(EError::SocketError);
+
     error = place.Resolve(EStorageType::Place, req.place());
     if (error)
         return error;
 
-    return TDockerImage(req.name()).Remove(place.Place);
+    error = TDockerImage(req.name()).Remove(place.Place);
+    RequestFence->Leave();
+    return error;
 }
 
 noinline TError AttachProcess(const rpc::TAttachProcessRequest &req, bool thread) {
@@ -1854,11 +1866,16 @@ noinline TError RemoveStorage(const rpc::TStorageRemoveRequest &req) {
     TStorage storage;
     TError error;
 
+    if (!RequestFence->Enter())
+        return TError(EError::SocketError);
+
     error = storage.Resolve(EStorageType::Storage, req.place(), req.name());
     if (error)
         return error;
 
-    return storage.Remove();
+    error = storage.Remove();
+    RequestFence->Leave();
+    return error;
 }
 
 noinline TError ImportStorage(const rpc::TStorageImportRequest &req) {
@@ -1957,11 +1974,16 @@ noinline TError RemoveMetaStorage(const rpc::TMetaStorage &req) {
     TStorage storage;
     TError error;
 
+    if (!RequestFence->Enter())
+        return TError(EError::SocketError);
+
     error = storage.Resolve(EStorageType::Meta, req.place(), req.name());
     if (error)
         return error;
 
-    return storage.Remove();
+    error = storage.Remove();
+    RequestFence->Leave();
+    return error;
 }
 
 noinline TError SetSymlink(const rpc::TSetSymlinkRequest &req) {
@@ -2100,7 +2122,7 @@ TError TRequest::Check() {
         if (send(Client->Fd, nullptr, 0, MSG_DONTWAIT) < 0) {
             if (errno != EPIPE)
                 L_WRN("Error during client check: {}", TError::System("send"));
-            return TError(EError::SocketError);
+            return TError(EError::SocketError, "Client disconnected");
         }
     }
 
@@ -2145,7 +2167,8 @@ std::string TransformClientName(const std::string &name) {
     return "...";
 }
 
-void TRequest::Handle(TMetricFabric<TCounter> &count, TCounter &execTime, TCounter &waitTime, TCounter &lockTime) {
+void TRequest::Handle(TFence *fence, TMetricFabric<TCounter> &count, TCounter &execTime, TCounter &waitTime,
+                      TCounter &lockTime) {
     rpc::TContainerResponse rsp;
     TError error;
 
@@ -2164,11 +2187,16 @@ void TRequest::Handle(TMetricFabric<TCounter> &count, TCounter &execTime, TCount
 
     if (!error && (!RoReq || Verbose))
         L_REQ("{} {} {} from {}", Cmd, Arg, Opt, Client->Id);
-    else if (error.Error == EError::SocketError)
-        L_REQ("{} {} {} from {} dropped", Cmd, Arg, Opt, Client->Id);
 
     if (Debug && !SecretReq)
         L_DBG("Raw request: {}", Req.ShortDebugString());
+
+    std::shared_ptr<void> defer;
+    if (fence) {
+        if (!fence->Enter())
+            error = TError(EError::SocketError, "portod is shutting down");
+        defer = std::shared_ptr<void>(nullptr, [&fence](...) { fence->Leave(); });
+    }
 
     if (error && Verbose)
         L_VERBOSE("Invalid request from {} : {} : {}", Client->Id, error, Req.ShortDebugString());
@@ -2505,15 +2533,7 @@ public:
             lock.unlock();
             request->ChangeId();
             RequestQueued--;
-
-            if (Fence && !Fence->Enter())
-                return;
-
-            request->Handle(RequestCount, ExecTime, WaitTime, LockTime);
-
-            if (Fence)
-                Fence->Leave();
-
+            request->Handle(Fence.get(), RequestCount, ExecTime, WaitTime, LockTime);
             request = nullptr;
             lock.lock();
             StartTime[index] = 0;
@@ -2554,7 +2574,7 @@ void StartRpcQueue() {
 
     RwQueue = make_unique<TRequestQueue>("portod-RW", RequestFence);
     RoQueue = make_unique<TRequestQueue>("portod-RO", nullptr);
-    IoQueue = make_unique<TRequestQueue>("portod-IO", RequestFence);
+    IoQueue = make_unique<TRequestQueue>("portod-IO", nullptr);
     VlQueue = make_unique<TRequestQueue>("portod-Vl", RequestFence);
     RwQueue->Start(config().daemon().rw_threads());
     RoQueue->Start(config().daemon().ro_threads());

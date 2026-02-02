@@ -4,6 +4,7 @@
 #include "metrics/metrics.hpp"
 
 class TClient;
+class TFence;
 
 class TRequest {
 public:
@@ -26,7 +27,8 @@ public:
     void Classify();
     void Parse();
     TError Check();
-    void Handle(TMetricFabric<TCounter> &count, TCounter &execTime, TCounter &waitTime, TCounter &lockTime);
+    void Handle(TFence *fence, TMetricFabric<TCounter> &count, TCounter &execTime, TCounter &waitTime,
+                TCounter &lockTime);
     void ChangeId();
 };
 
