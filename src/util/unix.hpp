@@ -136,6 +136,16 @@ public:
     TError Remove();
 };
 
+class TTimer {
+public:
+    TFile Timer;
+    TError SetTimeout(unsigned long ms);
+
+    operator bool() const {
+        return bool(Timer);
+    }
+};
+
 #ifndef PR_SESSION_INFO
 #define PR_SESSION_INFO 0x59410000
 #endif

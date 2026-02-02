@@ -29,6 +29,7 @@ extern "C" {
 #include <sys/syscall.h>
 #include <sys/sysinfo.h>
 #include <sys/time.h>
+#include <sys/timerfd.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <sys/wait.h>
@@ -746,6 +747,29 @@ TError TPidFile::Save(pid_t pid) {
 TError TPidFile::Remove() {
     Pid = 0;
     return Path.Unlink();
+}
+
+TError TTimer::SetTimeout(unsigned long ms) {
+    if (Timer)
+        return TError("timer was already set");
+
+    int fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    if (fd < 0)
+        return TError::System("timerfd_create");
+
+    struct itimerspec timeout = {.it_interval = {},
+                                 .it_value = {
+                                     .tv_sec = long(ms / 1000),
+                                     .tv_nsec = long((ms % 1000) * 1000000),
+                                 }};
+
+    if (timerfd_settime(fd, 0, &timeout, nullptr) < 0) {
+        close(fd);
+        return TError::System("timerfd_settime");
+    }
+
+    Timer.SetFd = fd;
+    return OK;
 }
 
 int SetIoPrio(pid_t pid, int ioprio)

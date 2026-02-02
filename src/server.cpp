@@ -203,6 +203,10 @@ static TError AcceptConnection(int listenFd) {
 }
 
 static void StartShutdown() {
+    if (ShutdownPortod)
+        return;
+
+    L_SYS("Shutdown...");
     ShutdownPortod = true;
     ShutdownStart = GetCurrentTimeMs();
     ShutdownDeadline = ShutdownStart + config().daemon().portod_shutdown_timeout() * 1000;
@@ -222,6 +226,19 @@ static void StartShutdown() {
             it = Clients.erase(it);
         }
     }
+}
+
+static TError StartGracefulTimeout(TTimer &timer, std::shared_ptr<TEpollSource> &source) {
+    auto error = timer.SetTimeout(config().daemon().graceful_shutdown_timeout_ms());
+    if (error)
+        return error;
+
+    source = std::make_shared<TEpollSource>(timer.Timer.Fd);
+    error = EpollLoop->AddSource(source);
+    if (error)
+        timer.Timer.Close();
+
+    return error;
 }
 
 static void ServerLoop() {
@@ -262,12 +279,15 @@ static void ServerLoop() {
     StartStatFsLoop();
     StartRpcQueue();
 
-    auto gracefullShutdownSource = std::make_shared<TEpollSource>(GracefulShutdownEventFd());
-    error = EpollLoop->AddSource(gracefullShutdownSource);
+    auto gracefulShutdownSource = std::make_shared<TEpollSource>(GracefulShutdownEventFd());
+    error = EpollLoop->AddSource(gracefulShutdownSource);
     if (error) {
-        L_ERR("Can't add gracefullShutdownSource to epoll: {}", error);
+        L_ERR("Can't add gracefulShutdownSource to epoll: {}", error);
         return;
     }
+
+    TTimer gracefulTimeout;
+    std::shared_ptr<TEpollSource> gracefulTimeoutSource;
 
     TStorage::StartAsyncRemover();
     EventQueue->Start();
@@ -310,15 +330,18 @@ static void ServerLoop() {
                 switch (sigInfo.ssi_signo) {
                 case SIGINT:
                     DiscardState = true;
-                    L_SYS("Shutdown...");
                     StartShutdown();
                     break;
                 case SIGTERM:
-                    L_SYS("Shutdown...");
                     StartShutdown();
                     break;
                 case SIGHUP:
                     L_SYS("Updating...");
+                    if (!gracefulTimeout) {
+                        auto error = StartGracefulTimeout(gracefulTimeout, gracefulTimeoutSource);
+                        if (error)
+                            L_ERR("Failed start graceful shutdown timer: {}", error);
+                    }
                     StartGracefulShutdown();
                     break;
                 case SIGUSR1:
@@ -349,10 +372,17 @@ static void ServerLoop() {
                 // from the clients (so clients see updated view of the
                 // world as soon as possible)
                 continue;
-            } else if (source->Fd == gracefullShutdownSource->Fd) {
-                L_SYS("Shutdown...");
+
+            } else if (source->Fd == gracefulTimeout.Timer.Fd) {
+                L_SYS("Graceful shutdown timeout...");
                 unsigned long val;
-                if (read(gracefullShutdownSource->Fd, &val, sizeof(val)) < 0)
+                if (read(gracefulTimeout.Timer.Fd, &val, sizeof(val)) < 0)
+                    L_ERR("{}", TError::System("Failed read from graceful shutdown timerfd"));
+                StartShutdown();
+            } else if (source->Fd == gracefulShutdownSource->Fd) {
+                L_SYS("Graceful shutdown satisfied...");
+                unsigned long val;
+                if (read(gracefulShutdownSource->Fd, &val, sizeof(val)) < 0)
                     L_ERR("{}", TError::System("Failed read from graceful shutdown eventfd"));
                 StartShutdown();
             } else if (source->Flags & EPOLL_EVENT_MEM) {
