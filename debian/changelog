@@ -1,3 +1,33 @@
+porto (5.3.57) unstable; urgency=low
+  [ ovov ]
+      metrics: report graceful shutdown state
+      portod: granularize IO requests wrt to graceful shutdown
+      portod: add timeout to graceful shutdown
+      portod: minor fixes of graceful shutdown
+      portod: restore old graceful reload logic for now
+      portod: use lockless fence in graceful shutdown
+      storage: handle non-existent place on listing
+      container: prevent symlink follow for /etc/resolv.conf
+  [ alexperevalov ]
+      Check digest of docker layers
+      porto: regenerate porto_mod.go
+      Pull docker image in case of RunPodSandbox and UnitTest
+      Don't check for ip_limit for netns net in containers
+      portod: allow docker-pull by default place
+      Use callerpid instead of parent pid
+  [ warwish ]
+      util/path: eliminate TOCTOU in TPath::WritePrivate
+      unix: fix strncpy out of bounds
+      container: add implicit security session tracking
+  [ dschervov ]
+      container, network: ability to inherit network spec
+      portod: graceful shutdown
+  [ konstantimp ]
+      rpc: support net_limit_soft in CreateFromSpec request
+  last commit: 4d40622f68c4ed0e7bd46453ffaea8594f04c9ad
+
+ -- Porto Team <porto@yandex-team.ru>  Mon, 02 Feb 2026 21:10:24 -0000
+
 porto (5.3.56) unstable; urgency=low
   [ ovov ]
       volume: forbid shadowing of bind source
