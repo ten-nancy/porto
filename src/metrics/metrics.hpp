@@ -95,6 +95,7 @@ public:
 
     TCounter Reloads       = TCounter(*this, "daemon_reloads_total");
     TCounter ShutdownTime  = TCounter(*this, "daemon_reload_shutdown_ms_total");
+    TGauge GracefulShutdown = TGauge(*this, "daemon_graceful_shutdown");
     TCounter RestoreTime  = TCounter(*this, "daemon_reload_restore_ms_total");
     TCounter ContainerLost = TCounter(*this, "containers_lost_total");
     TCounter VolumeLost    = TCounter(*this, "volumes_lost_total");

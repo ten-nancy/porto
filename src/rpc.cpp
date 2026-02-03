@@ -57,6 +57,8 @@ class TFence {
             else
                 L_ERR("Partial write to fence eventfd: {}", ret);
         }
+
+        MetricsRegistry->GracefulShutdown = 0;
     }
 
 public:
@@ -96,6 +98,7 @@ public:
     }
 
     void Shutdown() {
+        MetricsRegistry->GracefulShutdown = 1;
         auto c = Count.fetch_or(SHUTDOWN_F);
         if (c == 0)
             DoShutdown();
