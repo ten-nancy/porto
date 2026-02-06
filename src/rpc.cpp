@@ -534,7 +534,7 @@ noinline TError CreateFromSpec(rpc::TCreateFromSpecRequest &req) {
     } else
         ct->IsWeak = false;
 
-    if (req.start()) {
+    if (req.start() || StringMatch(ct->Name, config().container().autostart_pattern())) {
         error = ct->Start();
         if (error)
             goto undo;
