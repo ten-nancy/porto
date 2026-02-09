@@ -4137,8 +4137,7 @@ public:
 class TCpuSet: public TProperty {
 public:
     TCpuSet()
-        : TProperty(P_CPU_SET, EProperty::CPU_SET,
-                    "CPU set: [N|N-M,]... | jail N | [jail N;] node N | reserve N | threads N | cores N")
+        : TProperty(P_CPU_SET, EProperty::CPU_SET, "CPU set: [N|N-M,]... | jail N | [jail N;] node N")
     {
         IsDynamic = true;
         RequireControllers = CGROUP_CPUSET;

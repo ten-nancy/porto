@@ -359,8 +359,8 @@ message TContainerCgroups {
 
 
 message TContainerCpuSet {
-    optional string policy = 1;     // inherit|set|node|reserve|threads|cores
-    optional uint32 arg = 2;        // for node|reserve|threads|cores
+    optional string policy = 1;     // inherit|set|node|jail
+    optional uint32 arg = 2;        // for node
     optional string list = 3;       // for set
     repeated uint32 cpu = 4;        // for set (used if list isn't set)
     optional uint32 count = 5;      // out
