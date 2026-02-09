@@ -3,6 +3,8 @@
 import os
 import time
 import array
+import errno
+import functools
 import fcntl
 import struct
 import shutil
@@ -585,6 +587,62 @@ def backend_loop(c):
     ExpectException(c.CreateVolume, porto.exceptions.InvalidFilesystem,
                     backend="squash", layers=[DIR + "/loop.squash"], read_only="true")
 
+
+def setup_loop_blocksize(fd, blocksize):
+    for i in range(64):
+        try:
+            #define LOOP_SET_BLOCK_SIZE	0x4C09
+            fcntl.ioctl(fd, 0x4C09, blocksize)
+            return
+        except OSerror as e:
+            if e.errno != errno.EGAIN:
+                raise
+
+
+def backend_loop_blksize(conn):
+    with contextlib.ExitStack() as es:
+        tmpvol = conn.CreateVolume()
+        es.callback(tmpvol.Unlink)
+        es.callback(functools.partial, os.chdir, os.path.abspath('.'))
+        os.chdir(tmpvol.path)
+
+        with open("image", 'w') as f:
+            f.truncate(1<<20)
+            image_name = f.name
+
+        subprocess.check_call(['mkfs.ext4', '-O', '^has_journal', '-b', '4096', image_name])
+
+        # xenial version of losetup does not have --sector-size  and --direct-io options
+        dev = subprocess.check_output(['losetup',
+                                       '--show',
+                                       '-f',
+                                       image_name]).decode().strip()
+        es.callback(lambda: subprocess.check_call(['losetup', '-d', dev]))
+
+        with open(dev) as f:
+            setup_loop_blocksize(f.fileno(), 4096)
+            #defune LOOP_SET_DIRECT_IO	0x4C08
+            fcntl.ioctl(f.fileno(), 0x4C08, 1)
+
+        os.mkdir('root')
+        subprocess.check_call(['mount', '-t', 'ext4', dev, 'root'])
+        es.callback(lambda: subprocess.check_call(['umount', 'root']))
+
+        dummy = conn.CreateVolume()
+        es.callback(dummy.Unlink)
+
+        overlay = conn.CreateVolume(backend='overlay', layers=[dummy.path], storage=os.path.abspath('root'))
+        es.callback(overlay.Unlink)
+
+        os.mkdir("dir")
+        os.mknod("dir/foobar")
+
+        squash_path = os.path.join(overlay.path, 'image.squash')
+        subprocess.check_call(["mksquashfs", "dir", squash_path])
+        vol = conn.CreateVolume(backend='loop', storage=squash_path, fs_type='squashfs', read_only='true')
+        es.callback(vol.Unlink)
+
+
 def backend_rbd():
     #Not implemented yet
     pass
@@ -612,6 +670,7 @@ def TestBody(c):
     backend_native(c)
     backend_overlay(c)
     backend_loop(c)
+    backend_loop_blksize(c)
 
     c.RemoveLayer("test-volumes")
     ExpectEq(len(c.ListVolumes()), 1)

@@ -628,39 +628,67 @@ public:
     }
 };
 
-static TError SetupLoopDev(const TFile &file, const TPath &path, int &loopNr) {
+static TError ClaimLoop(TFile &dev, const TFile &file, int &nr) {
     static std::mutex BigLoopLock;
-    TFile ctl, dev;
-    struct loop_info64 info;
-    int nr, retry = 10;
-    TError error;
 
-    error = ctl.OpenReadWrite("/dev/loop-control");
+    TFile ctl;
+    auto error = ctl.OpenReadWrite("/dev/loop-control");
     if (error)
         return error;
-
-    if (config().volumes().direct_io_loop() && fcntl(file.Fd, F_SETFL, fcntl(file.Fd, F_GETFL) | O_DIRECT))
-        L("Cannot enable O_DIRECT for loop {}", TError::System("fcntl"));
 
     auto lock = std::unique_lock<std::mutex>(BigLoopLock);
+    constexpr int retries = 10;
+    for (int i = 0; i < retries; ++i) {
+        nr = ioctl(ctl.Fd, LOOP_CTL_GET_FREE);
 
-again:
-    nr = ioctl(ctl.Fd, LOOP_CTL_GET_FREE);
-    if (nr < 0)
-        return TError::System("ioctl(LOOP_CTL_GET_FREE)");
+        TFile f;
+        error = f.OpenReadWrite("/dev/loop" + std::to_string(nr));
+        if (error)
+            return error;
 
-    error = dev.OpenReadWrite("/dev/loop" + std::to_string(nr));
+        if (ioctl(f.Fd, LOOP_SET_FD, file.Fd) < 0) {
+            if (errno != EBUSY)
+                return TError::System("ioctl(LOOP_SET_FD)");
+        } else {
+            dev.Swap(f);
+            return OK;
+        }
+    }
+    return TError(EError::ResourceNotAvailable, "cannot allocate loop device");
+}
+
+static TError SetLoopBlockSize(TFile &dev, unsigned long blksize) {
+    constexpr int retries = 32;
+    for (int i = 0; i < retries; ++i) {
+        if (!ioctl(dev.Fd, LOOP_SET_BLOCK_SIZE, (unsigned long)blksize))
+            return OK;
+        auto error = TError::System("ioctl(LOOP_SET_BLOCK_SIZE, {})", blksize);
+        if (error.Errno != EAGAIN)
+            return error;
+    }
+    return TError(EError::ResourceNotAvailable, "cannot set loop device block size");
+}
+
+// TODO: migrate to LOOP_CONFIGURE (since Linux 5.8)
+static TError SetupLoopDev(const TFile &file, const TPath &path, int &loopNr) {
+    if (config().volumes().direct_io_loop() && fcntl(file.Fd, F_SETFL, fcntl(file.Fd, F_GETFL) | O_DIRECT))
+        L_WRN("Cannot enable O_DIRECT for loop {}", TError::System("fcntl"));
+
+    struct stat st;
+    auto error = file.Stat(st);
     if (error)
         return error;
 
-    if (ioctl(dev.Fd, LOOP_SET_FD, file.Fd) < 0) {
-        if (errno == EBUSY) {
-            if (!ioctl(dev.Fd, LOOP_GET_STATUS64, &info) || errno == ENXIO) {
-                if (--retry > 0)
-                    goto again;
-            }
-        }
-        return TError::System("ioctl(LOOP_SET_FD)");
+    int nr = -1;
+    TFile dev;
+    error = ClaimLoop(dev, file, nr);
+    if (error)
+        return error;
+
+    error = SetLoopBlockSize(dev, st.st_blksize);
+    if (error) {
+        (void)ioctl(dev.Fd, LOOP_CLR_FD, 0);
+        return error;
     }
 
     TPath scheduler(fmt::format("/sys/block/loop{}/queue/scheduler", nr));
@@ -668,6 +696,7 @@ again:
     if (error)
         return error;
 
+    struct loop_info64 info;
     memset(&info, 0, sizeof(info));
     strncpy((char *)info.lo_file_name, path.c_str(), LO_NAME_SIZE - 1);
 
@@ -736,8 +765,6 @@ public:
     }
 
     static TError MakeExt4Image(TFile &file, const TFile &dir, TPath &path, off_t size, off_t guarantee) {
-        TError error;
-
         L_ACT("Allocate loop image with size {} guarantee {}", size, guarantee);
 
         if (ftruncate(file.Fd, size))
@@ -747,8 +774,13 @@ public:
             return TError(EError::ResourceNotAvailable, errno,
                           "cannot fallocate guarantee " + std::to_string(guarantee));
 
-        return RunCommand(
-            {"mkfs.ext4", "-q", "-F", "-m", "0", "-E", "nodiscard", "-O", "^has_journal", path.ToString()}, dir);
+        struct stat st;
+        auto error = file.Stat(st);
+        if (error)
+            return error;
+
+        return RunCommand({"mkfs.ext4", "-b", std::to_string(st.st_blksize), "-q", "-F", "-m", "0", "-E", "nodiscard",
+                           "-O", "^has_journal", path.ToString()}, dir);
     }
 
     static TError ResizeImage(const TFile &file, const TFile &dir, const TPath &path, off_t current, off_t target) {
