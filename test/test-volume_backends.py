@@ -254,6 +254,26 @@ def backend_bind(c):
     os.remove(BIND_STORAGE_DIR + "/file.txt")
     os.rmdir(BIND_STORAGE_DIR)
 
+
+def backend_bind_regular(conn):
+    with contextlib.ExitStack() as cleanup:
+        rootfs = cleanup.enter_context(CreateVolume(conn, backend="overlay", layers=["ubuntu-noble"]))
+        shell = 'touch /foo /bar && portoctl vcreate /foo backend=bind storage=/bar'
+        ct = cleanup.enter_context(
+            RunContainer(
+                conn,
+                name="foobar",
+                root=rootfs.path,
+                command="sh -c '{}'".format(shell),
+                bind='{} /bin/portoctl ro'.format(portoctl),
+                wait=5,
+                enable_porto='isolate'
+            )
+        )
+        ExpectEq(ct['state'], 'dead')
+        assert ct['exit_code'] == '0', 'exit_code={}\n{}'.format(ct['exit_code'], ct['stderr'])
+
+
 def backend_tmpfs(c):
     args = dict()
     args["backend"] = "tmpfs"
@@ -586,6 +606,7 @@ def TestBody(c):
 
     backend_plain(c)
     backend_bind(c)
+    backend_bind_regular(c)
     backend_tmpfs(c)
     backend_quota(c)
     backend_native(c)

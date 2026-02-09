@@ -353,8 +353,11 @@ public:
             return TError(EError::InvalidProperty, "bind backend doesn't support layers");
 
         if (Volume->BindFileStorage()) {
-            if (Volume->InternalPath == Volume->Path)
+            if (Volume->Path == Volume->InternalPath)
                 Volume->Path /= Volume->StoragePath.BaseName();
+            else if (Volume->Path.IsDirectoryStrict())
+                return TError(EError::InvalidPath, "Volume path {} must be a directory", Volume->Path);
+
             Volume->InternalPath /= Volume->StoragePath.BaseName();
         }
 
@@ -4042,9 +4045,6 @@ TError TVolume::Create(const rpc::TVolumeSpec &spec, std::shared_ptr<TVolume> &v
         error = path_dir.OpenPath(path);
         if (error)
             return TError(EError::InvalidPath, "Cannot open volume path: {}", error);
-
-        if (!volume->BindFileStorage() && !path_dir.IsDirectory())
-            return TError(EError::InvalidPath, "Volume path {} must be a directory", path);
 
         TPath real_path = path_dir.RealPath();
         if (real_path != path)
