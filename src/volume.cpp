@@ -3096,8 +3096,8 @@ void TVolume::DestroyAll() {
 TError TVolume::Destroy() {
     TError error, ret;
 
+    std::set<std::shared_ptr<TVolume>> seen = {shared_from_this()};
     std::list<std::shared_ptr<TVolume>> plan = {shared_from_this()};
-    std::list<std::shared_ptr<TVolume>> work = {shared_from_this()};
 
     if (CL->LockedContainer) {
         L_WRN("Locked container {} in TVolume::Destroy()", CL->LockedContainer->Name);
@@ -3107,12 +3107,10 @@ TError TVolume::Destroy() {
 
     auto volumes_lock = LockVolumes();
 
-    auto cycle = shared_from_this();
-
     bool stop_containers = HasDependentContainer;
 
-    for (auto it = work.begin(); it != work.end(); ++it) {
-        auto &volume = (*it);
+    for (auto it = plan.begin(); it != plan.end(); ++it) {
+        auto &volume = *it;
 
         if (Path != volume->Path) {
             while (volume->State == EVolumeState::Building)
@@ -3126,22 +3124,13 @@ TError TVolume::Destroy() {
             volume->SetState(EVolumeState::ToDestroy);
 
         for (auto &nested: volume->Nested) {
-            if (nested == cycle) {
-                L_WRN("Cyclic dependencies for {} detected", cycle->Path);
-            } else {
-                auto plan_idx = std::find(plan.begin(), plan.end(), nested);
-
-                if (plan_idx == plan.end())
-                    cycle = nested;
-                else
-                    plan_idx = plan.erase(plan_idx);
-
-                stop_containers |= nested->HasDependentContainer;
-
-                plan.push_front(nested);
-
-                work.push_back(nested);
+            if (seen.find(nested) != seen.end()) {
+                L_WRN("Cyclic dependency detected: {} -> {}", volume->Path, nested->Path);
+                continue;
             }
+            stop_containers |= nested->HasDependentContainer;
+            plan.push_back(nested);
+            seen.insert(nested);
         }
     }
 
@@ -3167,7 +3156,8 @@ TError TVolume::Destroy() {
         volumes_lock.lock();
     }
 
-    for (auto &volume: plan) {
+    for (auto it = plan.rbegin(); it != plan.rend(); ++it) {
+        auto &volume = *it;
         while (volume->State == EVolumeState::Destroying)
             VolumesCv.wait(volumes_lock);
 
