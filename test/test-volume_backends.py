@@ -595,7 +595,7 @@ def setup_loop_blocksize(fd, blocksize):
             fcntl.ioctl(fd, 0x4C09, blocksize)
             return
         except OSError as e:
-            if e.errno != errno.EGAIN:
+            if e.errno != errno.EAGAIN:
                 raise
 
 
