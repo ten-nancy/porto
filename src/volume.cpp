@@ -2059,6 +2059,10 @@ TError TVolume::DependsOn(const TPath &path) {
     if (link) {
         if (link->Volume->State != EVolumeState::Ready && link->Volume->State != EVolumeState::Tuning)
             return TError(EError::VolumeNotReady, "Volume {} depends on non-ready volume {}", Path, link->Volume->Path);
+        if (link->Volume == shared_from_this()) {
+            L_WRN("Volume cannot depend on itself: {}", Path);
+            return OK;
+        }
         L("Volume {} depends on volume {}", Path, link->Volume->Path);
         link->Volume->Nested.insert(shared_from_this());
     }
@@ -2076,7 +2080,7 @@ TError TVolume::CheckDependencies() {
     if (!error)
         error = DependsOn(Place);
 
-    if (!error && !RemoteStorage())
+    if (!error && !RemoteStorage() && Path != StoragePath)
         error = DependsOn(StoragePath);
 
     for (auto &l: Layers) {

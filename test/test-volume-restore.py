@@ -56,13 +56,12 @@ def test_self_dependency_cycle(conn, cleanup):
         cleanup.enter_context(CreateVolume(conn, path=p, storage=p, backend="native"))
 
     ReloadPortod()
+    c.FindVolume(os.path.join(vol.path, "foo"))
+    c.FindVolume(os.path.join(vol.path, "bar"))
     vol.Unlink()
 
 
 with contextlib.ExitStack() as cleanup:
     test_self_dependency_cycle(c, cleanup)
-
-# TODO: remove after fixing self-dependency on restore
-warns += 2
 
 ExpectEq(int(c.GetData('/', 'porto_stat[warnings]')), warns)
