@@ -134,6 +134,8 @@
   "src/kv.proto":"infra/porto/porto/src/kv.proto",
   "src/kvalue.cpp":"infra/porto/porto/src/kvalue.cpp",
   "src/kvalue.hpp":"infra/porto/porto/src/kvalue.hpp",
+  "src/loop.cpp":"infra/porto/porto/src/loop.cpp",
+  "src/loop.hpp":"infra/porto/porto/src/loop.hpp",
   "src/main.cpp":"infra/porto/porto/src/main.cpp",
   "src/master.cpp":"infra/porto/porto/src/master.cpp",
   "src/metrics/CMakeLists.txt":"infra/porto/porto/src/metrics/CMakeLists.txt",

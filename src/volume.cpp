@@ -16,6 +16,7 @@
 #include "filesystem.hpp"
 #include "helpers.hpp"
 #include "kvalue.hpp"
+#include "loop.hpp"
 #include "nbd.hpp"
 #include "storage.hpp"
 #include "util/http.hpp"
@@ -627,96 +628,6 @@ public:
             return TError(EError::NotSupported, "Volume has no quota or project doesn't exist");
     }
 };
-
-static TError ClaimLoop(TFile &dev, const TFile &file, int &nr) {
-    static std::mutex BigLoopLock;
-
-    TFile ctl;
-    auto error = ctl.OpenReadWrite("/dev/loop-control");
-    if (error)
-        return error;
-
-    auto lock = std::unique_lock<std::mutex>(BigLoopLock);
-    constexpr int retries = 10;
-    for (int i = 0; i < retries; ++i) {
-        nr = ioctl(ctl.Fd, LOOP_CTL_GET_FREE);
-
-        TFile f;
-        error = f.OpenReadWrite("/dev/loop" + std::to_string(nr));
-        if (error)
-            return error;
-
-        if (ioctl(f.Fd, LOOP_SET_FD, file.Fd) < 0) {
-            if (errno != EBUSY)
-                return TError::System("ioctl(LOOP_SET_FD)");
-        } else {
-            dev.Swap(f);
-            return OK;
-        }
-    }
-    return TError(EError::ResourceNotAvailable, "cannot allocate loop device");
-}
-
-static TError SetLoopBlockSize(TFile &dev, unsigned long blksize) {
-    constexpr int retries = 32;
-    for (int i = 0; i < retries; ++i) {
-        if (!ioctl(dev.Fd, LOOP_SET_BLOCK_SIZE, (unsigned long)blksize))
-            return OK;
-        auto error = TError::System("ioctl(LOOP_SET_BLOCK_SIZE, {})", blksize);
-        if (error.Errno != EAGAIN)
-            return error;
-    }
-    return TError(EError::ResourceNotAvailable, "cannot set loop device block size");
-}
-
-// TODO: migrate to LOOP_CONFIGURE (since Linux 5.8)
-static TError SetupLoopDev(const TFile &file, const TPath &path, int &loopNr) {
-    if (config().volumes().direct_io_loop() && fcntl(file.Fd, F_SETFL, fcntl(file.Fd, F_GETFL) | O_DIRECT))
-        L_WRN("Cannot enable O_DIRECT for loop {}", TError::System("fcntl"));
-
-    struct stat st;
-    auto error = file.Stat(st);
-    if (error)
-        return error;
-
-    int nr = -1;
-    TFile dev;
-    error = ClaimLoop(dev, file, nr);
-    if (error)
-        return error;
-
-    error = SetLoopBlockSize(dev, st.st_blksize);
-    if (error) {
-        (void)ioctl(dev.Fd, LOOP_CLR_FD, 0);
-        return error;
-    }
-
-    TPath scheduler(fmt::format("/sys/block/loop{}/queue/scheduler", nr));
-    error = scheduler.WriteAll("none");
-    if (error)
-        return error;
-
-    struct loop_info64 info;
-    memset(&info, 0, sizeof(info));
-    strncpy((char *)info.lo_file_name, path.c_str(), LO_NAME_SIZE - 1);
-
-    if (ioctl(dev.Fd, LOOP_SET_STATUS64, &info) < 0) {
-        error = TError::System("ioctl(LOOP_SET_STATUS64)");
-        (void)ioctl(dev.Fd, LOOP_CLR_FD, 0);
-        return error;
-    }
-
-    loopNr = nr;
-    return error;
-}
-
-TError PutLoopDev(const int loopNr) {
-    TFile loop;
-    TError error = loop.OpenReadWrite("/dev/loop" + std::to_string(loopNr));
-    if (!error && ioctl(loop.Fd, LOOP_CLR_FD, 0) < 0)
-        return TError::System("ioctl(LOOP_CLR_FD)");
-    return error;
-}
 
 /* TVolumeLoopBackend - fs image + loop device */
 
