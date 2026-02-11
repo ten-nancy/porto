@@ -163,7 +163,6 @@ static void DefaultConfig() {
 
     container->set_enable_sched_idle(false);
     container->set_enable_start_parents(true);
-    container->set_autostart_pattern("");
 
     auto *volumes = cfg.mutable_volumes();
     volumes->set_enable_quota(true);
