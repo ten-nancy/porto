@@ -3817,7 +3817,7 @@ static void TestContainerSpec(Porto::Connection &api) {
     Say() << "Check labels filter and stdout property in spec" << std::endl;
     {
         ExpectApiSuccess(api.Start(c));
-        ExpectApiSuccess(api.WaitContainers({c}, {}, tmp, 0));
+        ExpectApiSuccess(api.WaitContainers({c}, {}, tmp, 3));
 
         rpc::TListContainersRequest listContainersRequest;
         auto filter = listContainersRequest.add_filters();
@@ -3835,7 +3835,9 @@ static void TestContainerSpec(Porto::Connection &api) {
 
         auto fieldOptions = listContainersRequest.mutable_field_options();
 
+        fieldOptions->add_properties("state");
         fieldOptions->add_properties("command");
+        fieldOptions->add_properties("stderr");
         fieldOptions->add_properties("stdout");
         auto stdoutOps = fieldOptions->mutable_stdout_options();
         stdoutOps->set_stdstream_limit(10);
@@ -3845,9 +3847,11 @@ static void TestContainerSpec(Porto::Connection &api) {
         ExpectApiSuccess(api.ListContainersBy(listContainersRequest, containers));
         ExpectEq(containers.size(), 2);
         Expect(containers[0].has_status());
+        Expect(containers[0].status().has_state());
+        ExpectEq(containers[0].status().state(), "dead");
+        ExpectEq(containers[0].status().stderr(), "");
         Expect(containers[0].status().has_stdout());
         ExpectEq(containers[0].status().stdout(), "1234567890");
-        ExpectEq(containers[0].status().stderr(), "");
         ExpectApiSuccess(api.Stop(c));
 
         //check response for unknown container
