@@ -1,3 +1,18 @@
+porto (5.3.58) unstable; urgency=low
+  [ ovov ]
+      volume, loop: use LOOP_CONFIGURE
+      volume: fix cycle detection
+      volume, loop: setup loop block size
+      volume, bind: handle file bind mounts inside chroot
+  [ dschervov ]
+      volume: prevent self dependency
+      portod: revert restoring old graceful shutdown logic
+  [ konstantimp ]
+      portoctl: remove unsupported cpu_set params from help message
+  last commit: 9ecda21472fba9f37139bc5454585f167bd83499
+
+ -- Porto Team <porto@yandex-team.ru>  Wed, 11 Feb 2026 18:29:18 -0000
+
 porto (5.3.57) unstable; urgency=low
   [ ovov ]
       metrics: report graceful shutdown state
