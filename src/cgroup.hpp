@@ -227,6 +227,7 @@ public:
     TError GetMLockUsage(const TCgroup &cg, uint64_t &usage) const;
     TError GetReclaimed(const TCgroup &cg, uint64_t &value) const;
     TError Usage(const TCgroup &cg, uint64_t &value) const;
+    std::string CgroupStatName(const std::string &name) const;
 
     // soft limit
     bool SupportSoftLimit() const;

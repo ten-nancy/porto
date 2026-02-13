@@ -5602,7 +5602,8 @@ public:
         TError error = CgroupDriver.MemorySubsystem->Statistics(*cg, stat);
         if (error)
             return error;
-        value = stat["total_pgfault"] - stat["total_pgmajfault"];
+        value = stat[CgroupDriver.MemorySubsystem->CgroupStatName("pgfault")] -
+                stat[CgroupDriver.MemorySubsystem->CgroupStatName("pgmajfault")];
         return OK;
     }
 
@@ -5639,7 +5640,7 @@ public:
         TError error = CgroupDriver.MemorySubsystem->Statistics(*cg, stat);
         if (error)
             return error;
-        value = stat["total_pgmajfault"];
+        value = stat[CgroupDriver.MemorySubsystem->CgroupStatName("pgmajfault")];
         return OK;
     }
 
@@ -6753,7 +6754,7 @@ public:
 
         auto error = CgroupDriver.MemorySubsystem->Statistics(*memCg, memStat);
         if (!error) {
-            map["total_writeback"] = memStat["total_writeback"];
+            map["total_writeback"] = memStat[CgroupDriver.MemorySubsystem->CgroupStatName("writeback")];
             if (CgroupDriver.MemorySubsystem->SupportIoLimit())
                 map["fs"] = memStat["fs_io_write_bytes"];
         }

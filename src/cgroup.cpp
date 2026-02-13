@@ -1069,7 +1069,7 @@ TError TMemorySubsystem::GetCacheUsage(const TCgroup &cg, uint64_t &usage) const
     TUintMap stat;
     TError error = Statistics(cg, stat);
     if (!error)
-        usage = stat["total_inactive_file"] + stat["total_active_file"];
+        usage = stat[CgroupStatName("inactive_file")] + stat[CgroupStatName("active_file")];
     return error;
 }
 
@@ -1100,7 +1100,7 @@ TError TMemorySubsystem::GetMLockUsage(const TCgroup &cg, uint64_t &usage) const
     TUintMap stat;
     TError error = Statistics(cg, stat);
     if (!error)
-        usage = stat["total_unevictable"];
+        usage = stat[CgroupStatName("unevictable")];
     return error;
 }
 
@@ -1113,6 +1113,10 @@ TError TMemorySubsystem::GetReclaimed(const TCgroup &cg, uint64_t &value) const 
 
 TError TMemorySubsystem::Usage(const TCgroup &cg, uint64_t &value) const {
     return cg.GetUint64(IsCgroup2() ? CURRENT : USAGE, value);
+}
+
+std::string TMemorySubsystem::CgroupStatName(const std::string &name) const {
+    return IsCgroup2() ? name : "total_" + name;
 }
 
 bool TMemorySubsystem::SupportSoftLimit() const {
