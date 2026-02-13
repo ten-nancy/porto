@@ -1079,18 +1079,22 @@ TError TMemorySubsystem::GetShmemUsage(const TCgroup &cg, uint64_t &usage) const
     if (error)
         return error;
 
-    if (stat.count("total_shmem")) {
-        usage = stat["total_shmem"];
+    if (IsCgroup2()) {
+        usage = stat["shmem"];
     } else {
-        if (cg.Has(ANON_USAGE))
-            cg.GetUint64(ANON_USAGE, usage);
-        else
-            usage = stat["total_inactive_anon"] + stat["total_active_anon"] + stat["total_unevictable"];
+        if (stat.count("total_shmem")) {
+            usage = stat["total_shmem"];
+        } else {
+            if (cg.Has(ANON_USAGE))
+                cg.GetUint64(ANON_USAGE, usage);
+            else
+                usage = stat["total_inactive_anon"] + stat["total_active_anon"] + stat["total_unevictable"];
 
-        if (usage >= stat["total_rss"])
-            usage -= stat["total_rss"];
-        else
-            usage = 0;
+            if (usage >= stat["total_rss"])
+                usage -= stat["total_rss"];
+            else
+                usage = 0;
+        }
     }
 
     return error;
@@ -1220,9 +1224,13 @@ TError TMemorySubsystem::GetAnonUsage(const TCgroup &cg, uint64_t &usage) const 
 
     TUintMap stat;
     TError error = Statistics(cg, stat);
-    if (!error)
-        usage =
-            stat["total_inactive_anon"] + stat["total_active_anon"] + stat["total_unevictable"] + stat["total_swap"];
+    if (!error) {
+        if (IsCgroup2())
+            usage = stat["anon"];
+        else
+            usage = stat["total_inactive_anon"] + stat["total_active_anon"] + stat["total_unevictable"] +
+                    stat["total_swap"];
+    }
     return error;
 }
 
