@@ -1212,6 +1212,10 @@ TError TMemorySubsystem::ResetAnonMaxUsage(const TCgroup &cg) const {
     return cg.SetUint64(ANON_MAX_USAGE, 0);
 }
 
+bool TMemorySubsystem::SupportAnonMaxUsage() const {
+    return RootCgroup()->Has(ANON_MAX_USAGE);
+}
+
 TError TMemorySubsystem::GetAnonMaxUsage(const TCgroup &cg, uint64_t &usage) const {
     if (!cg.Has(ANON_MAX_USAGE))
         return OK;

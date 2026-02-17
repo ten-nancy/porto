@@ -260,6 +260,7 @@ public:
 
     // anon usage
     TError ResetAnonMaxUsage(const TCgroup &cg) const;
+    bool SupportAnonMaxUsage() const;
     TError GetAnonMaxUsage(const TCgroup &cg, uint64_t &usage) const;
     TError GetAnonUsage(const TCgroup &cg, uint64_t &usage) const;
 

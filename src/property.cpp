@@ -3503,6 +3503,7 @@ public:
 
     void Init(void) override {
         IsDynamic = true;
+        // TODO: This property is from YA kernel private patch, someone can depend on it (research)
         IsSupported = CgroupDriver.MemorySubsystem->HasMemoryLockPolicy || CgroupDriver.MemorySubsystem->IsCgroup2();
         RequireControllers = CGROUP_MEMORY;
     }
@@ -3568,6 +3569,7 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
+        // TODO: This property is from YA kernel private patch, someone can depend on it (research)
         IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
@@ -3614,6 +3616,7 @@ public:
         IsReadOnly = true;
     }
     void Init(void) override {
+        // TODO: This property is from YA kernel private patch, someone can depend on it (research)
         IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
@@ -3635,6 +3638,7 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
+        // TODO: This property is from YA kernel private patch, someone can depend on it (research)
         IsSupported = CgroupDriver.MemorySubsystem->SupportAnonOnly() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
     TError Get(std::string &value) const override {
@@ -3799,6 +3803,7 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
+        // TODO: This property is from YA kernel private patch, someone can depend on it (research)
         IsSupported =
             CgroupDriver.MemorySubsystem->SupportRechargeOnPgfault() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
@@ -5367,6 +5372,10 @@ public:
         IsRuntimeOnly = true;
         RequireControllers = CGROUP_MEMORY;
     }
+    void Init(void) override {
+        // TODO: This property is from crgoupv1, someone can depend on it (research)
+        IsSupported = !CgroupDriver.MemorySubsystem->IsCgroup2() || CgroupDriver.MemorySubsystem->IsCgroup2();
+    }
 
     TError Get(uint64_t &val) const {
         auto cg = CgroupDriver.GetContainerCgroup(*CT, CgroupDriver.MemorySubsystem.get());
@@ -5430,7 +5439,8 @@ public:
         RequireControllers = CGROUP_MEMORY;
     }
     void Init(void) override {
-        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonLimit() || CgroupDriver.MemorySubsystem->IsCgroup2();
+        // TODO: This property is from YA kernel private patch, someone can depend on it (research)
+        IsSupported = CgroupDriver.MemorySubsystem->SupportAnonMaxUsage() || CgroupDriver.MemorySubsystem->IsCgroup2();
     }
 
     TError Get(uint64_t &value) const {
