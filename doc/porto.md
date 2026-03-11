@@ -1493,6 +1493,44 @@ If "thin" is set them volume is allocated from precreated thin pool "group/thin"
 
 If "origin" is set then volume is created as thin snapshot of "group/origin" and belongs to the same pool.
 
+# Docker Images Support
+
+Portod can work not only with layers, but also with docker images. Portod supports
+schemaVersion 1 and 2 of docker image's manifest, and portod supports mediaType as follows:
+* application/vnd.docker.distribution.manifest.v1+json
+* application/vnd.docker.distribution.manifest.v2+json
+* application/vnd.docker.distribution.manifest.list.v2+json
+* application/vnd.oci.image.manifest.v1+json
+* application/vnd.oci.image.index.v1+json
+
+To enable docker images support portod should be configured as follows:
+
+```
+container {
+    docker_images_support: true
+}
+```
+
+Portod as well as dockerd supports insecure registries, it also should be configured
+
+```
+container {
+    docker_insecure_registry: registry1.localhost
+    docker_insecure_registry: another_fqdn
+}
+```
+
+## CLI to Work with Docker Images
+
+portoctl provides commands such as docker-pull, docker-images, docker-rmi, and docker-run for managing Docker images.
+All these commands support the -P option to specify the storage location for Docker images. If -P is omitted, the default place
+on path `/place` is used.
+To authenticate for docker-pull, you can use the `DOCKER_TOKEN` environment variable as follows:
+
+```bash
+export DOCKER_TOKEN="OAuth <your_token>"
+```
+
 # EXAMPLES
 
 Run command in foreground:
