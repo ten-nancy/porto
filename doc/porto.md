@@ -168,12 +168,12 @@ Porto provides API for label lookup, atomic compare-and-set, atomic increment an
 
     Default environment is:
 
-    container="lxc"  
-    PORTO_NAME=_container name_  
-    PORTO_HOST=_host hostname_  
-    PORTO_USER=**owner_user**  
-    HOME=**cwd**  
-    USER=**user**  
+    container="lxc"
+    PORTO_NAME=_container name_
+    PORTO_HOST=_host hostname_
+    PORTO_USER=**owner_user**
+    HOME=**cwd**
+    USER=**user**
     PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     Default environment could be configured in in portod.conf:
@@ -405,21 +405,21 @@ Porto provides API for label lookup, atomic compare-and-set, atomic increment an
 
 * **devices** - access to devices, syntax: \<device\> \[r\]\[w\]\[m\]\[-\]\[?\] \[path\] \[mode\] \[user\] \[group\]|preset \<preset\>;...
 
-    "device" - device path in host (/dev/null)  
-    "rwm-?" - read, write, mknod, no-access, optional  
-    "path" - device path in container, defaults same as in host  
-    "mode", "user", "group" - device node permissions and owner, defaults are taken from host, only host root and device owner are allowed to change this  
+    "device" - device path in host (/dev/null)
+    "rwm-?" - read, write, mknod, no-access, optional
+    "path" - device path in container, defaults same as in host
+    "mode", "user", "group" - device node permissions and owner, defaults are taken from host, only host root and device owner are allowed to change this
 
-    By default porto grants access to:  
-    /dev/null  
-    /dev/zero  
-    /dev/full  
-    /dev/random  
-    /dev/urandom  
-    /dev/tty  
-    /dev/console  (as alias for /dev/null)  
-    /dev/ptmx  
-    /dev/pts/*  
+    By default porto grants access to:
+    /dev/null
+    /dev/zero
+    /dev/full
+    /dev/random
+    /dev/urandom
+    /dev/tty
+    /dev/console  (as alias for /dev/null)
+    /dev/ptmx
+    /dev/pts/*
 
     Inside chroots porto creates device nodes in /dev only for allowed devices.
 
@@ -511,15 +511,15 @@ Visibility is controlled via **enable\_porto** and **porto\_namespace**.
 
 Write access have root user and users from group "porto".
 
-Write access to container requires any of these conditions:  
-* container is a sub-container  
-* owner\_user matches to client user  
+Write access to container requires any of these conditions:
+* container is a sub-container
+* owner\_user matches to client user
 
 ## Filesystem
 
 * **cwd** - working directory
 
-    In host root default is temporary directory: /place/porto/*container-name*  
+    In host root default is temporary directory: /place/porto/*container-name*
     In choot: '/'
 
 * **root** - container root path in parent namespace, default: /
@@ -965,22 +965,22 @@ Possible indexes for statistics and parameters:
 
 * **net\_guarantee** - required egress bandwidth: \<interface\>|group \<group\>|default: \<Bps\>;...
 
-    "eth0 CS0" - egress guarantee for CS0 at eth0 in host  
-    CS0        - egress guarantee for CS0 at each host uplink  
-    eth0       - egress guarantee for each class at eth0 in host  
-    default    - default guarantee for everything  
+    "eth0 CS0" - egress guarantee for CS0 at eth0 in host
+    CS0        - egress guarantee for CS0 at each host uplink
+    eth0       - egress guarantee for each class at eth0 in host
+    default    - default guarantee for everything
 
 * **net\_limit**     - maximum egress bandwidth: \<interface\>|group \<group\>|default: \<Bps\>;...
 
-    "eth0 CS0" - egress limit for CS0 at eth0 in host  
-    CS0        - egress limit for CS0 at each host uplink  
-    veth       - total egress limit for net="L3 veth"  
-    default    - default limit for everything  
-    CS7: 1     - setup blackhole  
+    "eth0 CS0" - egress limit for CS0 at eth0 in host
+    CS0        - egress limit for CS0 at each host uplink
+    veth       - total egress limit for net="L3 veth"
+    default    - default limit for everything
+    CS7: 1     - setup blackhole
 
 * **net\_rx\_limit** - maximum ingress bandwidth: \<interface\>|group \<group\>|default: \<Bps\>;...
 
-    veth       - total ingress limit for net="L3 veth"  
+    veth       - total ingress limit for net="L3 veth"
 
 * **net\_bytes**     - traffic class counters: \<interface\>|\<class\>: \<bytes\>;...
 
@@ -1544,12 +1544,12 @@ See **portoctl(8)** for details.
 
     Porto API unix socket.
 
-/run/portod  
+/run/portod
 /run/portod.version
 
     Symlink to currently running portod binary and it's version.
 
-/run/portoloop.pid  
+/run/portoloop.pid
 /run/portod.pid
 
     Pid file for porto master and slave daemon.
@@ -1558,7 +1558,7 @@ See **portoctl(8)** for details.
 
     Porto daemon log file.
 
-/run/porto/kvs  
+/run/porto/kvs
 /run/porto/pkvs
 
     Container and volumes key-value storage.
@@ -1567,8 +1567,8 @@ See **portoctl(8)** for details.
 
     Porto API protobuf.
 
-/etc/defaults/portod.conf  (deprecated, do not use)  
-/etc/portod.conf  
+/etc/defaults/portod.conf  (deprecated, do not use)
+/etc/portod.conf
 /etc/portod.conf.d/\*.conf  (loaded in sorted order)
 
     Porto daemon configuration in protobuf text format.
@@ -1594,8 +1594,8 @@ See **portoctl(8)** for details.
 
     Default place for persistent volume storages.
 
-/place/porto\_storage/\_meta\_*meta-storage*  
-/place/porto\_storage/\_meta\_*meta-storage*/*sub-storage*  
+/place/porto\_storage/\_meta\_*meta-storage*
+/place/porto\_storage/\_meta\_*meta-storage*/*sub-storage*
 /place/porto\_storage/\_meta\_*meta-storage*/\_layer\_*sub-layer*
 
     Meta-storage with nested layers and storages.
@@ -1652,16 +1652,16 @@ CONFIG_INET_DIAG
 
 # AUTHORS
 
-Roman Gushchin <klamm@yandex-team.ru>  
-Stanislav Fomichev <stfomichev@yandex-team.ru>  
-Konstantin Khlebnikov <khlebnikov@yandex-team.ru>  
-Evgeniy Kilimchuk <ekilimchuk@yandex-team.ru>  
-Michael Mayorov <marchael@yandex-team.ru>  
-Stanislav Ivanichkin <sivanichkin@yandex-team.ru>  
-Vsevolod Minkov <vminkov@yandex-team.ru>  
-Vsevolod Velichko <torkve@yandex-team.ru>  
-Maxim Samoylov <max7255@yandex-team.ru>  
-Dmitry Yakunin <zeil@yandex-team.ru>  
+Roman Gushchin <klamm@yandex-team.ru>
+Stanislav Fomichev <stfomichev@yandex-team.ru>
+Konstantin Khlebnikov <khlebnikov@yandex-team.ru>
+Evgeniy Kilimchuk <ekilimchuk@yandex-team.ru>
+Michael Mayorov <marchael@yandex-team.ru>
+Stanislav Ivanichkin <sivanichkin@yandex-team.ru>
+Vsevolod Minkov <vminkov@yandex-team.ru>
+Vsevolod Velichko <torkve@yandex-team.ru>
+Maxim Samoylov <max7255@yandex-team.ru>
+Dmitry Yakunin <zeil@yandex-team.ru>
 Alexander Kuznetsov <wwfq@yandex-team.ru>
 Alexander Ovechkin <ovov@yandex-team.ru>
 Lev Pantiukhin <kndrvt@yandex-team.ru>
