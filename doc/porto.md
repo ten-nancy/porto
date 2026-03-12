@@ -1510,6 +1510,7 @@ container {
     docker_images_support: true
 }
 ```
+This option affects portoctl commands such as docker-pull, docker-images, docker-rmi, and docker-run.
 
 Portod as well as dockerd supports insecure registries, it also should be configured
 
@@ -1519,6 +1520,16 @@ container {
     docker_insecure_registry: another_fqdn
 }
 ```
+
+By default, all registries are allowed. Use the `docker_allowed_registry` option (supports wildcards) to specify allowed FQDNs:
+
+```
+container {
+    docker_allowed_registry: "registry*.yourcompany.com"
+    docker_allowed_registry: "myregistry.localhost"
+}
+```
+Once an FQDN is specified in the option docker_allowed_registry, all other FQDNs are denied.
 
 ## CLI to Work with Docker Images
 

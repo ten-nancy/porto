@@ -196,6 +196,18 @@ private:
             Name = image;
     }
 
+    inline bool isDockerRegistryAllowed() {
+        // default behaviar
+        if (config().daemon().docker_allowed_registry().size() == 0) {
+            return true;
+        }
+        for (const auto &allowedRegistry: config().daemon().docker_allowed_registry()) {
+            if (StringMatch(Registry, allowedRegistry, true, true))
+                return true;
+        }
+        return false;
+    }
+
     TPath TagPath(const TPath &place) const;
     TPath DigestPath(const TPath &place) const;
 

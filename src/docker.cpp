@@ -963,6 +963,9 @@ std::string defineHttpProto(const std::string &registry) {
 
 TError TDockerImage::Pull(const TPath &place) {
     TError error;
+    if (!isDockerRegistryAllowed())
+        return TError(EError::ResourceNotAvailable, "Docker registry {} isn't allowed", Registry);
+
     const auto httpProto = defineHttpProto(Registry);
     L_DBG("PULL proto {} Registry {} ", httpProto, Registry);
 

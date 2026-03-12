@@ -11,7 +11,9 @@ IMAGE_TAG = REGISTRY + "/library/alpine:3.16.2"
 IMAGE_DIGEST = "9c6f0724472873bb50a2ae67a9e7adcb57673a183cea8b06eb778dca859181b5"
 LAYER_NAME = "alpine"
 
-K8S_IMAGE_TAG = "registry.k8s.io/pause:3.7"
+K8S_REGISTRY = "registry.k8s.io"
+
+K8S_IMAGE_TAG = K8S_REGISTRY + "/pause:3.7"
 K8S_IMAGE_DIGEST = "221177c6082a88ea4f6240ab2450d540955ac6f4d5454f0e15751b653ebda165"
 K8S_IMAGE_ALT_TAG = REGISTRY + "/kndrvt/pause:latest"
 
@@ -27,10 +29,12 @@ TARGET_ARCH = "amd64"
 conn = porto.Connection(timeout=120)
 
 ConfigurePortod('docker-images', """
-daemon {
+daemon {{
     docker_images_support: true
-}
-""")
+    docker_allowed_registry: "{registry}"
+    docker_allowed_registry: "{k8s_registry}"
+}}
+""".format(registry=REGISTRY, k8s_registry=K8S_REGISTRY))
 
 def is_x86_64():
     machine = platform.machine()
