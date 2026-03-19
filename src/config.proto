@@ -135,8 +135,6 @@ message TConfig {
 
         optional string network_limit_soft_bpf_elf_path = 78;
 
-        optional bool watchdog_run_network_ifup_script = 79;
-
         optional bool network_inherit_properties = 80;
 
         /* Deprecated */
@@ -154,6 +152,7 @@ message TConfig {
         }
         repeated TNetworkAlias alias = 8 [deprecated=true];
         optional bool dynamic_ifaces = 9 [deprecated=true];
+        optional bool watchdog_run_network_ifup_script = 79 [deprecated=true];
     }
 
     message TFileCfg {
