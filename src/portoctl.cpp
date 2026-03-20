@@ -3132,6 +3132,11 @@ public:
         launcher.NeedVolume = true;
         launcher.Container = args[0];
         launcher.Image = args[1];
+        error = launcher.SetProperty("place", place);
+        if (error) {
+            std::cerr << "Cannot set property place: " << error << std::endl;
+            return EXIT_FAILURE;
+        }
         launcher.SetCommand(image.Config.Cmd);
         launcher.SetEnvironment(image.Config.Env);
 
