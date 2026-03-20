@@ -75,6 +75,30 @@ except:
             shutil.rmtree("{}/{}/{}".format(STORAGE_PATH, x, y))
 
 
+
+# Docker Run test
+print("Check Docker Run")
+RUN_PLACE="/place"
+conn.PullDockerImage(UBUNTU_JAMMY_IMAGE_TAG, place=RUN_PLACE, platform=TARGET_ARCH)
+speca = porto.rpc_pb2.TContainerSpec()
+speca.name = 'a'
+speca.command = 'sleep inf'
+speca.place.cfg.add(place=RUN_PLACE)
+volumea = porto.rpc_pb2.TVolumeSpec()
+volumea.backend = "overlay"
+volumea.image = UBUNTU_JAMMY_IMAGE_TAG
+volumea.place = RUN_PLACE
+volumea.links.add(container='a')
+a = conn.CreateSpec(container=speca, volume=volumea, start=True)
+
+ExpectEq(a['command'], 'sleep inf')
+ExpectEq(a['state'], 'running')
+
+#cleanup for docker run
+
+a.Destroy()
+conn.RemoveDockerImage(UBUNTU_JAMMY_IMAGE_TAG, place=RUN_PLACE)
+
 # api
 print("Check python api")
 check_storage_is_empty()

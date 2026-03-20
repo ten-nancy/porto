@@ -709,8 +709,11 @@ class Connection(object):
         request = rpc_pb2.TContainerRequest()
         if container:
             request.CreateFromSpec.container.CopyFrom(container)
-        if volume:
-            request.CreateFromSpec.volume.CopyFrom(volume)
+        if not isinstance(volume, (list, tuple)):
+            volume = [volume]
+        for vol in volume:
+            if vol is not None:
+                request.CreateFromSpec.volumes.add().CopyFrom(vol)
         request.CreateFromSpec.start = start
         resp = self.rpc.call(request)
         return Container(self, container.name)
