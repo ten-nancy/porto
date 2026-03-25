@@ -23,18 +23,25 @@ def print_all_qdiscs():
     print()
 
 
-def teardown_dummy_net():
-    ConfigurePortod('test-net-sched', "")
-    subprocess.run(["ip", "link", "del", "dev", ID])
-
-
-def setup_dummy_net():
-    subprocess.check_call(['ip', 'link', 'add', ID, 'type', 'dummy'])
-    with open('/proc/sys/net/ipv6/conf/{}/accept_dad'.format(ID), 'w') as f:
+def setup_net():
+    with open('/proc/sys/net/ipv6/conf/all/forwarding', 'w') as f:
+        f.write('1')
+    with open('/proc/sys/net/ipv6/conf/all/accept_dad', 'w') as f:
+        f.write('0')
+    with open('/proc/sys/net/ipv6/conf/default/accept_dad', 'w') as f:
+        f.write('0')
+    with open('/proc/sys/net/ipv6/conf/all/dad_transmits', 'w') as f:
+        f.write('0')
+    with open('/proc/sys/net/ipv6/conf/default/dad_transmits', 'w') as f:
         f.write('0')
 
+    subprocess.check_call(['ip', 'link', 'add', ID, 'type', 'dummy'])
     subprocess.check_call(['ip', 'address', 'add', 'fd00::1/64', 'dev', ID])
     subprocess.check_call(['ip', 'link', 'set', ID, 'up'])
+
+
+def cleanup_net():
+    subprocess.run(["ip", "link", "del", "dev", ID])
 
 
 def start_iperf_servers():
@@ -53,9 +60,6 @@ network {{
 
     ExpectEq(res, 0)
 
-
-def setup_all_forwarding():
-    subprocess.check_output(["sysctl", "-w", "net.ipv6.conf.all.forwarding=1"])
 
 def qdisc_is_classful():
     return qdisc == "htb" or qdisc == "hfsc"
@@ -144,7 +148,7 @@ def run_iperf_client(name, server, wait, udp=False, mtn=False, cs=None, reverse=
     if udp:
         command.append('--udp')
     # TODO: uncomment this after we get rid of xenial
-    # command.append('--connect-timeout={}'.format((wait - 1)  * 1000))
+    # command.append('--connect-timeout={}'.format(1000))
 
     print(command)
 
@@ -386,11 +390,8 @@ conn = porto.Connection(timeout=60)
 def main():
     ct = conn.Run(ID, isolate='false', enable_porto='true', weak=False)
     try:
-        print("Set net.ipv6.conf.all.forwarding=1")
-        setup_all_forwarding()
-
-        print("Setup dummy network interface")
-        setup_dummy_net()
+        print("Setup network")
+        setup_net()
 
         print("Start iperf servers")
         start_iperf_servers()
@@ -401,8 +402,9 @@ def main():
 
         ExpectEq(int(conn.GetProperty('/', 'porto_stat[errors]')), 0)
     finally:
+        ConfigurePortod('test-net-sched', "")
         ct.Destroy()
-        teardown_dummy_net()
+        cleanup_net()
 
 
 if __name__ == '__main__':
