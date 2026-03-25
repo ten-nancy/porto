@@ -461,7 +461,8 @@ def TestRecovery():
     r.SetProperty("respawn_delay", "50ms")
     r.Start()
 
-    RespawnTicks(r, 0.5, 3)
+    time.sleep(1)
+    ExpectRange(int(r['respawn_count']), 10, 30)
 
     AsRoot()
     KillPid(GetPortodPid(), signal.SIGKILL)
@@ -469,8 +470,11 @@ def TestRecovery():
     c.connect()
 
     r = c.Find("test_respawn_ticks")
+    prev_respawn_count = int(r['respawn_count'])
 
-    RespawnTicks(r, 0.5, 3)
+    time.sleep(1)
+    ExpectRange(int(r['respawn_count']) - prev_respawn_count, 10, 30)
+
     r.Destroy()
 
     n = 100
