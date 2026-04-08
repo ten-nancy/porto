@@ -27,6 +27,32 @@ static std::vector<TPath> ExcludedSystemPaths = {
     "/var/lib",
 };
 
+typedef struct {
+    std::string Type;
+    std::string Path;
+    std::vector<std::string> Options;
+    bool Cgroup1;
+    bool Cgroup2;
+} cgroupInfo;
+
+const std::vector<cgroupInfo> &getCgroupInfos() {
+    static const std::vector<cgroupInfo> cgroup = {{"cgroup2", "", {}, false, true},
+                                                   {"cgroup", "freezer", {"freezer"}, true, true},
+                                                   {"cgroup", "pids", {"pids"}, true, false},
+                                                   {"cgroup", "cpuset", {"cpuset"}, true, false},
+                                                   {"cgroup", "memory", {"memory"}, true, false},
+                                                   {"cgroup", "blkio", {"blkio"}, true, false},
+                                                   {"cgroup", "cpu,cpuacct", {"cpu", "cpuacct"}, true, false},
+                                                   {"cgroup", "cpuacct", {"cpuacct"}, false, true},
+                                                   {"cgroup", "devices", {"devices"}, true, true},
+                                                   {"cgroup", "hugetlb", {"hugetlb"}, true, true},
+                                                   {"cgroup", "net_cls,net_prio", {"net_cls", "net_prio"}, true, false},
+                                                   {"cgroup", "perf_event", {"perf_event"}, true, true},
+                                                   {"cgroup", "systemd", {"name=systemd"}, true, false},
+                                                   {"cgroup2", "unified", {}, true, false}};
+    return cgroup;
+}
+
 bool IsSystemPath(const TPath &path) {
     TPath normal = path.NormalPath();
 
@@ -478,6 +504,8 @@ TError TMountNamespace::MountSystemd() {
 
 TError TMountNamespace::MountCgroups(const TContainer &ct) {
     bool rwCgroupFs = ct.CgroupFs == ECgroupFs::Rw;
+
+    L_DBG("rwCgroupFs {}", rwCgroupFs);
     TError error;
     TPath tmpfs = "sys/fs/cgroup";
 
@@ -489,26 +517,7 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
     if (error)
         return error;
 
-    static const struct {
-        std::string Type;
-        std::string Path;
-        std::vector<std::string> Options;
-        bool Cgroup1;
-        bool Cgroup2;
-    } cgroups[] = {{"cgroup", "freezer", {"freezer"}, true, true}, {"cgroup", "pids", {"pids"}, true, false},
-                   {"cgroup", "cpuset", {"cpuset"}, true, false},
-                   {"cgroup", "memory", {"memory"}, true, false},
-                   {"cgroup", "blkio", {"blkio"}, true, false},
-                   {"cgroup", "cpu,cpuacct", {"cpu", "cpuacct"}, true, false},
-                   {"cgroup", "cpuacct", {"cpuacct"}, false, true},
-                   {"cgroup", "devices", {"devices"}, true, true},
-                   {"cgroup", "hugetlb", {"hugetlb"}, true, true},
-                   {"cgroup", "net_cls,net_prio", {"net_cls", "net_prio"}, true, false},
-                   {"cgroup", "perf_event", {"perf_event"}, true, true},
-                   {"cgroup", "systemd", {"name=systemd"}, true, true},
-                   {"cgroup2", "unified", {}, true, true}};
-
-    for (const auto &cg: cgroups) {
+    for (const auto &cg: getCgroupInfos()) {
         if (CgroupDriver.UseCgroup2()) {
             if (!cg.Cgroup2)
                 continue;
@@ -524,6 +533,7 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
 
         bool rw = rwCgroupFs && !(cg.Path == "net_cls,net_prio" && !config().container().enable_rw_net_cgroups());
         uint64_t flags = MS_NOSUID | MS_NOEXEC | MS_NODEV;
+        L_DBG("rw: {}", rw);
         if (rw)
             flags |= MS_ALLOW_WRITE;
         else
@@ -577,9 +587,13 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         }
     }
 
-    error = tmpfs.Remount(MS_RDONLY);
-    if (error)
-        return error;
+    // this condition exists, due to
+    // it remounts /sys/fs/cgroup - cgroup mount point, not tmpfs, to RO, but it's unexpected.
+    if (!CgroupDriver.UseCgroup2()) {
+        error = tmpfs.Remount(MS_RDONLY);
+        if (error)
+            return error;
+    }
 
     return OK;
 }
