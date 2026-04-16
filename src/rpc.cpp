@@ -2426,13 +2426,11 @@ void TRequest::Handle(TFence *fence, TMetricFabric<TCounter> &count, TCounter &e
     rsp.set_timestamp(timestamp);
 
     if (!RoReq || Verbose) {
-        L_RSP("{} {} {} {} to {} lock={} ms time={}+{} ms", Cmd, Arg, Opt, ResponseAsString(rsp), Client->Id,
-              LockTimer::Get(), WaitTime, ExecTime);
+        L_RSP("{} lock={} ms time={}+{} ms", ResponseAsString(rsp), LockTimer::Get(), WaitTime, ExecTime);
     } else if (error || RequestTime >= 1000) {
         /* Log failed or slow silent requests without details */
         L_REQ("{} {} from {}", Cmd, Arg, Client->Id);
-        L_RSP("{} {} {} to {} lock={} ms time={}+{} ms", Cmd, Arg, error, Client->Id, LockTimer::Get(), WaitTime,
-              ExecTime);
+        L_RSP("{} lock={} ms time={}+{} ms", error, LockTimer::Get(), WaitTime, ExecTime);
     }
 
     if (Debug)
