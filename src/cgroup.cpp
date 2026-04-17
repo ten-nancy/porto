@@ -173,7 +173,6 @@ TError TCgroup::Set(const std::string &knob, const std::string &value) const {
     if (!HasSubsystem())
         return TError("Cannot set to null cgroup");
 
-    L_CG("Set {} {} = {}", *this, knob, value);
     TError error = Knob(knob).WriteAll(value);
     if (error)
         error = TError(error, "Cannot set cgroup {} = {}", knob, value);
