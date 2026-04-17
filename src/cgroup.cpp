@@ -341,7 +341,6 @@ TError TCgroup1::Create() const {
     if (IsSecondary())
         return TError("Cannot create secondary cgroup " + Type());
 
-    L_CG("Create cgroup-v1 {}", *this);
     error = Path().Mkdir(0755);
     if (error) {
         if (error.Errno == ENOMEM)
@@ -368,7 +367,6 @@ TError TCgroup1::Remove() const {
     if (IsSecondary())
         return TError("Cannot remove secondary cgroup " + Type());
 
-    L_CG("Remove cgroup {}", *this);
     error = Path().Rmdir();
 
     std::vector<pid_t> startTasks;
