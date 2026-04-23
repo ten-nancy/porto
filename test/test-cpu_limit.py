@@ -15,7 +15,7 @@ TEST_LIM_SHARE = 0.75 #of the whole machine
 
 DURATION = 1000 #ms
 CPUNR = multiprocessing.cpu_count()
-HAS_RT_LIMIT = os.access("/sys/fs/cgroup/cpu/cpu.rt_runtime_us", os.F_OK)
+HAS_RT_LIMIT = GetUseCgroup2() or os.access("/sys/fs/cgroup/cpu/cpu.rt_runtime_us", os.F_OK)
 TEST_CORES_SHARE = CPUNR * TEST_LIM_SHARE
 
 print("Available cores: {}, using EPS {}, run duration {} ms".format(CPUNR, EPS, DURATION))
@@ -337,6 +337,23 @@ b = None
 try:
     # check cpu_limit_scale
 
+    def _parse_cpumax(ct: str):
+        path = f"/sys/fs/cgroup/porto/{ct}/cpu.max"
+        with open(path) as f:
+            q, p = f.read().strip().split()
+            return (-1 if q == "max" else int(q)), int(p)
+
+    def get_cgroup2_knob(ct: str, knob: str):
+        path = f"/sys/fs/cgroup/porto/{ct}/{knob}"
+        with open(path) as f:
+            return int(f.read().strip())
+
+    def get_cpumax_quota(ct):
+        return _parse_cpumax(ct)[0]
+
+    def get_cpumax_period(ct):
+        return _parse_cpumax(ct)[1]
+
     def get_cpuacct_knob(ct, knob):
         if ct == '/':
             path = knob
@@ -346,9 +363,19 @@ try:
             return int(f.read().strip())
 
     def get_cfs_quota_us(ct):
-        return get_cpuacct_knob(ct, 'cpu.cfs_quota_us')
+        if GetUseCgroup2():
+            return get_cpumax_quota(ct)
+        else:
+            return get_cpuacct_knob(ct, 'cpu.cfs_quota_us')
 
-    cfs_period_us = get_cpuacct_knob('/', 'cpu.cfs_period_us')
+    def get_cfs_period_us(ct):
+        if GetUseCgroup2():
+            return get_cpumax_period(ct)
+        else:
+            return get_cpuacct_knob(ct, 'cpu.cfs_period_us')
+
+
+    cfs_period_us = get_cfs_period_us('/')
 
     limit_cores = 2
 
@@ -396,10 +423,19 @@ try:
     # check proportional_cpu_shares
 
     def get_cpu_shares(ct):
-        return get_cpuacct_knob(ct, 'cpu.shares')
+        if  GetUseCgroup2():
+            return get_cgroup2_knob(ct, 'cpu.weight')
+        else:
+            return get_cpuacct_knob(ct, 'cpu.shares')
 
-    base_shares = get_cpuacct_knob('/', 'cpu.shares')
-    min_shares = 2
+    base_shares = get_cpu_shares('/')
+    # according to TCpuSubsystem::InitializeSubsystem
+    # for cgroup2 hierarchy
+    # MinShares = 1;     /* kernel limit CGROUP_WEIGHT_MIN */
+    # and for cgroup1 hierarchy
+    # MinShares = 2;     /* kernel limit MIN_SHARES */
+
+    min_shares = 1 if GetUseCgroup2() else 2
 
     guarantee_cores = 2
 
