@@ -338,13 +338,13 @@ try:
     # check cpu_limit_scale
 
     def _parse_cpumax(ct: str):
-        path = f"/sys/fs/cgroup/porto/{ct}/cpu.max"
+        path = "/sys/fs/cgroup/porto/{}/cpu.max".format(ct)
         with open(path) as f:
             q, p = f.read().strip().split()
             return (-1 if q == "max" else int(q)), int(p)
 
     def get_cgroup2_knob(ct: str, knob: str):
-        path = f"/sys/fs/cgroup/porto/{ct}/{knob}"
+        path = "/sys/fs/cgroup/porto/{}/{}".format(ct, knob)
         with open(path) as f:
             return int(f.read().strip())
 
