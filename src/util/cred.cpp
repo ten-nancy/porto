@@ -664,14 +664,12 @@ TError TFile::ReadAccess(const TCred &cred) const {
     return TError(EError::Permission, cred.ToString() + " has no read access to " + RealPath().ToString());
 }
 
-TError TFile::WriteAccess(const TCred &cred) const {
-    struct statfs fs;
-    if (fstatfs(Fd, &fs))
-        return TError::System("fstatfs");
+TError TFile::WriteAccess(const TCred &cred, const struct statfs &fs) const {
     if (fs.f_flags & ST_RDONLY)
         return TError(EError::Permission, "read only: " + RealPath().ToString());
-    if (fs.f_type == PROC_SUPER_MAGIC)
-        return TError(EError::Permission, "procfs is read only");
+    if (fs.f_type == PROC_SUPER_MAGIC || fs.f_type == SYSFS_MAGIC)
+        return TError(EError::Permission, "filesystem type is not allowed for write access");
+
     struct stat st;
     TError error = Stat(st);
     if (error)

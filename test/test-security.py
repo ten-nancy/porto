@@ -417,6 +417,17 @@ def test_resolv_conf_overwrite(cleanup):
     ExpectEq(read_resolv_conf(foo), "foo")
 
 
+def test_proc_fs_protection(cleanup):
+    conn = porto.Connection(timeout=30)
+
+    vol = cleanup.enter_context(CreateVolume(conn, backend='overlay', layers=['ubuntu-noble'], owner_user='porto-alice'))
+    ct = cleanup.enter_context(RunContainer(conn, name='foo', root=vol.path, user='root', owner_user='porto-alice'))
+    ExpectException(conn.Run, porto.exceptions.PermissionError, name='foo/bar', bind='/proc/sys /tst rw', user='root', command='sh -c "echo 2 > /tst/vm/drop_caches"')
+
+
+with contextlib.ExitStack() as cleanup:
+    test_proc_fs_protection(cleanup)
+
 with contextlib.ExitStack() as cleanup:
     test_resolv_conf_overwrite(cleanup)
     # TODO: remove early exit

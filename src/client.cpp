@@ -20,6 +20,7 @@
 #include "volume.hpp"
 
 extern "C" {
+#include <linux/magic.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -481,7 +482,11 @@ TError TClient::ReadAccess(const TFile &file) {
 }
 
 TError TClient::WriteAccess(const TFile &file, bool lockVolumes) {
-    TError error = file.WriteAccess(TaskCred);
+    struct statfs fs;
+    if (fstatfs(Fd, &fs))
+        return TError::System("fstatfs");
+
+    TError error = file.WriteAccess(TaskCred, fs);
 
     /* Without chroot write access to file is enough */
     if (!error && ClientContainer->RootPath.IsRoot())
@@ -498,6 +503,10 @@ TError TClient::WriteAccess(const TFile &file, bool lockVolumes) {
 
     /* Also volume owner gains full access inside */
     if (error) {
+        /* Except for procfs and sysfs */
+        if (fs.f_type == PROC_SUPER_MAGIC || fs.f_type == SYSFS_MAGIC)
+            return error;
+
         auto link = lockVolumes ? TVolume::ResolveOrigin(path) : TVolume::ResolveOriginLocked(path);
         if (link && !link->ReadOnly && !CanControl(link->Volume->VolumeOwner))
             error = OK;

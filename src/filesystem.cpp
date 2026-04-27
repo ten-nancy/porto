@@ -183,13 +183,19 @@ void TBindMount::Dump(rpc::TContainerBindMount &spec) {
 }
 
 TError TBindMount::Mount(const TCred &cred, const TPath &target_root) const {
-    bool directory;
     TFile src, dst;
-    TError error;
 
-    error = src.OpenPath(Source);
-    if (!error)
-        directory = src.IsDirectory();
+    auto error = src.OpenPath(Source);
+    if (error)
+        return error;
+
+    if (!(MntFlags & MS_RDONLY)) {
+        auto srcFsType = src.FsType();
+        if (srcFsType == PROC_SUPER_MAGIC || srcFsType == SYSFS_MAGIC)
+            return TError(EError::Permission, "filesystem type is not allowed for write access");
+    }
+
+    auto directory = src.IsDirectory();
 
     if (!error && !ControlSource) {
         /* not read-only means read-write, protect system directories from dac override */

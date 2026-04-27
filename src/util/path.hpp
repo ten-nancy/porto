@@ -14,6 +14,7 @@ extern "C" {
 #include <fts.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 }
 
 struct TStatFS {
@@ -414,7 +415,13 @@ public:
     }
 
     TError ReadAccess(const TCred &cred) const;
-    TError WriteAccess(const TCred &cred) const;
+    TError WriteAccess(const TCred &cred, const struct statfs &fs) const;
+    TError WriteAccess(const TCred &cred) const {
+        struct statfs fs;
+        if (fstatfs(Fd, &fs))
+            return TError::System("fstatfs");
+        return WriteAccess(cred, fs);
+    }
 };
 
 class TPathWalk {
