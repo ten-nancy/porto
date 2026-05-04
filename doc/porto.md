@@ -809,7 +809,6 @@ write permissions to the target or owning related volume.
     - *rt*       - SCHED\_RR    (nice = -20, priority = 10)
     - *batch*    - SCHED\_BATCH
     - *idle*     - SCHED\_IDLE  (also decreases cpu.shares by 16 times)
-    - *iso*      - SCHED\_ISO   (offstream kernel feature)
 
 * **cpu\_set** - CPU affinity
     - \[N|N-M,\]...          - set of CPUs (logical cores)

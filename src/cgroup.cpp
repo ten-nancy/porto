@@ -1730,7 +1730,7 @@ TError TCpuSubsystem::SetShares(const TCgroup &cg, const std::string &policy, ui
     if (policy != "idle")
         shares = (shares * weight) / 100;
 
-    if (policy == "rt" || policy == "high" || policy == "iso")
+    if (policy == "rt" || policy == "high")
         shares *= 16;
     else if (policy == "idle")
         shares = MinShares;

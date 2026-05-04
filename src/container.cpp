@@ -1439,9 +1439,6 @@ void TContainer::ChooseSchedPolicy() {
         SchedPolicy = SCHED_BATCH;
     } else if (CpuPolicy == CPU_POLICY_IDLE) {
         SchedPolicy = SCHED_IDLE;
-    } else if (CpuPolicy == "iso") {
-        SchedPolicy = 4;
-        SchedNice = config().container().high_nice();
     } else if (CpuPolicy == "nosmt") {
         SchedNoSmt = HyperThreadingEnabled;
     }
