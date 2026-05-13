@@ -215,16 +215,21 @@ def CleanupConfigs():
     for f in os.listdir('/etc/portod.conf.d'):
         os.unlink('/etc/portod.conf.d/%s' % f)
 
-def ConfigurePortod(name, conf):
-    path = '/etc/portod.conf.d/{}.conf'.format(name)
-    if os.path.exists(path) and open(path).read() == conf:
+def SyncConfig(path, name, conf):
+    fullpath = os.path.join(path, name)
+    if os.path.exists(fullpath) and open(fullpath).read() == conf:
         return
     if conf:
-        if not os.path.exists('/etc/portod.conf.d'):
-            os.mkdir('/etc/portod.conf.d', 0o775)
-        open(path, 'w').write(conf)
-    elif os.path.exists(path):
-        os.unlink(path)
+        if not os.path.exists(path):
+            os.mkdir(path, 0o775)
+        open(fullpath, 'w').write(conf)
+        print('{} written'.format(fullpath))
+    elif os.path.exists(fullpath):
+        os.unlink(fullpath)
+
+
+def ConfigurePortod(name, conf):
+    SyncConfig('/etc/portod.conf.d', '{}.conf'.format(name), conf)
     ReloadPortod()
 
 def ProcStatus(pid, key):

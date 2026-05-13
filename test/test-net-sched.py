@@ -38,6 +38,7 @@ def setup_net():
     subprocess.check_call(['ip', 'link', 'add', ID, 'type', 'dummy'])
     subprocess.check_call(['ip', 'address', 'add', 'fd00::1/64', 'dev', ID])
     subprocess.check_call(['ip', 'link', 'set', ID, 'up'])
+    print(subprocess.check_output(['ip', '-6', 'a']).decode())
 
 
 def cleanup_net():
@@ -54,7 +55,7 @@ network {{
     run_iperf_server('veth-server1', *server1)
     run_iperf_server('veth-server2', *server2)
 
-    cl = run_iperf_client('cl', server1, time=1, wait=3)
+    cl = run_iperf_client('cl', server1, time=1, wait=10)
     res = int(cl['exit_code'])
     cl.Destroy()
 
@@ -158,7 +159,16 @@ def run_iperf_client(name, server, wait, udp=False, mtn=False, cs=None, reverse=
         net = "L3 veth"
         ip = "veth fd00::100/128"
 
-    ct = conn.Run(os.path.join(ID, name), command_argv='\t'.join(map(str, command)), wait=wait, net=net, ip=ip, **cfg)
+    # better here and every where separate Create and Run
+    ct = conn.Run(os.path.join(ID, name), command_argv='\t'.join(map(str, command)), wait=None, net=net, ip=ip, **cfg)
+    try:
+        ct.WaitContainer(wait)
+    except Exception as e :
+        print('stderr {}'.format(ct['stderr']))
+        print('stdout {}'.format(ct['stdout']))
+        print(subprocess.check_output(['ip', '-6', 'n']).decode())
+        print('exception {}'.format(e))
+
     assert int(ct['exit_code']) == 0, 'stdout:\n{}\nstderr:\n{}'.format(ct['stdout'], ct['stderr'])
 
     # check classes of dead container
@@ -392,7 +402,6 @@ def main():
     try:
         print("Setup network")
         setup_net()
-
         print("Start iperf servers")
         start_iperf_servers()
 
