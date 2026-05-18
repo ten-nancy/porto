@@ -540,10 +540,12 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         bool rw = rwCgroupFs && !(cg.Path == "net_cls,net_prio" && !config().container().enable_rw_net_cgroups());
         uint64_t flags = MS_NOSUID | MS_NOEXEC | MS_NODEV;
         L_DBG("rw: {}", rw);
-        if (rw)
+        // for cgroup2 event RO is required we mount it for RW and then remount for RO
+        if (rw || (cg.Path == "" && cg.Cgroup2))
             flags |= MS_ALLOW_WRITE;
         else
             flags |= MS_RDONLY;
+
         error = cgroup.Mount(cg.Type, cg.Type, flags, cg.Options);
         if (error)
             return error;
@@ -595,8 +597,18 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
 
     // this condition exists, due to
     // it remounts /sys/fs/cgroup - cgroup mount point, not tmpfs, to RO, but it's unexpected.
+    // remount in case of cgroup2 doesn't work, since we already have instances in /sys/fs/cgroup, like freezer which
+    // are controller and resource is busy
     if (!CgroupDriver.UseCgroup2()) {
         error = tmpfs.Remount(MS_RDONLY);
+        if (error)
+            return error;
+    } else if (!(rwCgroupFs && config().container().enable_rw_net_cgroups())) {
+        // for cgroupv2 we still can make bind mount with RO
+        // should be
+        // mount("/sys/fs/cgroup", "/sys/fs/cgroup", NULL or cgroup2, MS_RDONLY|MS_BIND, NULL) = 0
+        // mount("none", "/sys/fs/cgroup", NULL, MS_RDONLY|MS_REMOUNT|MS_BIND, NULL) = 0
+        error = tmpfs.BindRemount(tmpfs, MS_RDONLY);
         if (error)
             return error;
     }
