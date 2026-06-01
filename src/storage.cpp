@@ -916,12 +916,12 @@ TError TStorage::SaveChecksums() {
     return OK;
 }
 
-TError TStorage::ImportArchive(const TPath &archive, const std::string &memCgroup, const std::string &compress,
+TError TStorage::ImportArchive(const TPath &archive, const TCgroupContext &cgCtx, const std::string &compress,
                                bool merge, bool verboseError) {
-    return ImportArchiveSave(archive, memCgroup, compress, merge, verboseError);
+    return ImportArchiveSave(archive, cgCtx, compress, merge, verboseError);
 }
 
-TError TStorage::ImportArchiveSave(const TPath &archive, const std::string &memCgroup, const std::string &compress,
+TError TStorage::ImportArchiveSave(const TPath &archive, const TCgroupContext &cgCtx, const std::string &compress,
                                    bool merge, bool verboseError, bool readAccess) {
     TPath temp = TempPath(IMPORT_PREFIX);
     TError error;
@@ -1019,7 +1019,7 @@ TError TStorage::ImportArchiveSave(const TPath &archive, const std::string &memC
             args.insert(args.begin() + 3, {"--xattrs", "--xattrs-include=security.capability",
                                            "--xattrs-include=trusted.overlay.*", "--xattrs-include=user.*"});
 
-        error = RunCommand(args, {}, import_dir, arc, TFile(), HelperCapabilities, memCgroup, verboseError, true);
+        error = RunCommand(args, {}, import_dir, arc, TFile(), HelperCapabilities, cgCtx, verboseError, true);
     } else if (compress_format == "squashfs") {
         TTuple args = {"unsquashfs", "-force", "-no-progress",  "-processors",
                        "1",          "-dest",  temp.ToString(), archive.ToString()};
@@ -1029,7 +1029,7 @@ TError TStorage::ImportArchiveSave(const TPath &archive, const std::string &memC
         if (error)
             return error;
 
-        error = RunCommand(args, {}, parent_dir, TFile(), TFile(), HelperCapabilities, memCgroup, verboseError, true);
+        error = RunCommand(args, {}, parent_dir, TFile(), TFile(), HelperCapabilities, cgCtx, verboseError, true);
     } else
         error = TError(EError::NotSupported, "Unsuported format " + compress_format);
 

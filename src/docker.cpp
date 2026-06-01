@@ -595,10 +595,11 @@ TError TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TCli
             return TError(error, "Cannot remove layer {} and place {}", layer.Digest, place);
     }
 
-    error = DownloadFile(url, archivePath);
+    auto cgrpCtx = TCgroupContext::FromContainerByPid(client->Pid);
+    error = DownloadFile(url, archivePath, cgrpCtx);
     if (error && !token.empty()) {
         // retry if registry api expects to receive token and we received code 401
-        error = DownloadFile(url, archivePath, {"Authorization: " + token});
+        error = DownloadFile(url, archivePath, cgrpCtx, {"Authorization: " + token});
         if (error)
             return TError(error, "Cannot download layer: {}", layer.Digest);
     }
@@ -609,7 +610,8 @@ TError TDockerImage::DownloadLayer(const TPath &place, const TLayer &layer, TCli
     if (error)
         return TError(error, "Cannot resolve layer storage for place: {} {}", place, layer.Digest);
 
-    error = portoLayer.ImportArchiveSave(archivePath, PORTO_HELPERS_CGROUP, "", false, false, false);
+    cgrpCtx.Pid = 0;  // do not enter network ns
+    error = portoLayer.ImportArchiveSave(archivePath, cgrpCtx, "", false, false, false);
     if (error)
         return TError(error, "Cannot import archive: {}", archivePath);
 
