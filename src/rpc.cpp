@@ -1462,6 +1462,7 @@ noinline TError ImportLayer(const rpc::TLayerImportRequest &req) {
     TError error;
     TStorage layer;
     std::shared_ptr<TContainer> ct;
+    std::string memCgroup = PORTO_HELPERS_CGROUP;
 
     if (req.has_container()) {
         error = CL->ReadContainer(req.container(), ct);
@@ -1471,6 +1472,8 @@ noinline TError ImportLayer(const rpc::TLayerImportRequest &req) {
         error = CL->CanControl(*ct);
         if (error)
             return error;
+
+        memCgroup = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get())->GetName();
     }
 
     error = layer.Resolve(EStorageType::Layer, req.place(), req.layer());
@@ -1482,8 +1485,8 @@ noinline TError ImportLayer(const rpc::TLayerImportRequest &req) {
 
     layer.Owner = CL->Cred;
 
-    return layer.ImportArchive(CL->ResolvePath(req.tarball()), TCgroupContext::FromContainer(ct.get()),
-                               req.has_compress() ? req.compress() : "", req.merge(), req.verbose_error());
+    return layer.ImportArchive(CL->ResolvePath(req.tarball()), memCgroup, req.has_compress() ? req.compress() : "",
+                               req.merge(), req.verbose_error());
 }
 
 noinline TError GetLayerPrivate(const rpc::TLayerGetPrivateRequest &req, rpc::TContainerResponse &rsp) {
@@ -1890,9 +1893,8 @@ noinline TError ImportStorage(const rpc::TStorageImportRequest &req) {
     if (req.has_private_value())
         storage.Private = req.private_value();
 
-    auto cgrpCtx = TCgroupContext::FromContainerByPid(CL->Pid);
-    cgrpCtx.Pid = 0;
-    return storage.ImportArchive(CL->ResolvePath(req.tarball()), cgrpCtx, req.has_compress() ? req.compress() : "");
+    return storage.ImportArchive(CL->ResolvePath(req.tarball()), PORTO_HELPERS_CGROUP,
+                                 req.has_compress() ? req.compress() : "");
 }
 
 noinline TError ExportStorage(const rpc::TStorageExportRequest &req) {

@@ -2,7 +2,6 @@
 
 #include "client.hpp"
 #include "common.hpp"
-#include "container.hpp"
 #include "util/log.hpp"
 #include "util/path.hpp"
 #include "util/unix.hpp"
@@ -10,13 +9,13 @@
 extern "C" {
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/loop.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 }
 
 extern std::atomic_bool NeedStopHelpers;
-extern bool SupportCgroupNs;
 
 static void HelperError(TFile &err, const std::string &text, TError error) __attribute__((noreturn));
 
@@ -26,52 +25,13 @@ static void HelperError(TFile &err, const std::string &text, TError error) {
     _exit(EXIT_FAILURE);
 }
 
-TCgroupContext TCgroupContext::FromContainerByPid(pid_t tpid) {
-    std::shared_ptr<TContainer> ct;
-    TError error = TContainer::FindTaskContainer(tpid, ct, !SupportCgroupNs);
-    if (error) {
-        /* Restrict "recursive" invocations to read-only */
-        L_DBG("Can't find task by pid {} {}", tpid, error);
-        return TCgroupContext();
-    }
-
-    auto cgCtx = FromContainer(ct.get());
-    cgCtx.Pid = tpid;
-    return cgCtx;
-}
-
-TCgroupContext TCgroupContext::FromContainer(const TContainer *ct) {
-    if (!ct || ct->IsRoot())
-        return TCgroupContext();
-
-    auto memCgName = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.MemorySubsystem.get())->GetName();
-    auto cpuCgName = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpuSubsystem.get())->GetName();
-    auto cpusetCgName = CgroupDriver.GetContainerCgroup(*ct, CgroupDriver.CpusetSubsystem.get())->GetName();
-    L_DBG("FromContainer mem:{} cpu:{} cpuset:{}", memCgName, cpuCgName, cpusetCgName);
-    return TCgroupContext(memCgName, cpuCgName, cpusetCgName);
-}
-
-void AttachToCgroup(TFile &err, const TSubsystem *ss, const std::string &cgroupPath) {
-    L_DBG("AttachToCgroup {}", cgroupPath);
-    if (cgroupPath.size() && ss != nullptr) {
-        auto cg = ss->Cgroup(cgroupPath, false);
-        if (!cg->Exists()) {
-            L_DBG("Cgroup {} in controller {} doesn't exists", cgroupPath, cg->Type(), cgroupPath);
-            return;
-        }
-        TError error = cg->Attach(GetPid());
-        if (error)
-            HelperError(err, fmt::format("Cannot attach to helper {} cgroup", cgroupPath), error);
-    }
-}
-
 TError RunCommand(const std::vector<std::string> &command, const TFile &dir, const TFile &in, const TFile &out,
                   const TCapabilities &caps, bool verboseError, bool interruptible) {
-    return RunCommand(command, {}, dir, in, out, caps, TCgroupContext(), verboseError, interruptible);
+    return RunCommand(command, {}, dir, in, out, caps, PORTO_HELPERS_CGROUP, verboseError, interruptible);
 }
 
 TError RunCommand(const std::vector<std::string> &command, const std::vector<std::string> &env, const TFile &dir,
-                  const TFile &in, const TFile &out, const TCapabilities &caps, const TCgroupContext &cgroupContext,
+                  const TFile &in, const TFile &out, const TCapabilities &caps, const std::string &memCgroup,
                   bool verboseError, bool interruptible) {
     TError error;
     TFile err;
@@ -126,19 +86,10 @@ TError RunCommand(const std::vector<std::string> &command, const std::vector<std
     SetProcessName("portod-" + command[0]);
 
     if (CgroupDriver.IsInitialized()) {
-        AttachToCgroup(err, CgroupDriver.MemorySubsystem.get(), cgroupContext.Memory);
-        AttachToCgroup(err, CgroupDriver.CpuSubsystem.get(), cgroupContext.Cpu);
-        AttachToCgroup(err, CgroupDriver.CpusetSubsystem.get(), cgroupContext.Cpuset);
-    }
-    if (cgroupContext.Pid) {
-        TNamespaceFd callersNetns;
-        error = callersNetns.Open(cgroupContext.Pid, "ns/net");
+        auto memcg = CgroupDriver.MemorySubsystem->Cgroup(memCgroup, false);
+        error = memcg->Attach(GetPid());
         if (error)
-            return TError(error, "Cannot open callers netns fd");
-
-        error = callersNetns.SetNs(CLONE_NEWNET);
-        if (error)
-            return TError(error, "Cannot enter callers netns");
+            HelperError(err, "Cannot attach to helper cgroup", error);
     }
 
     SetDieOnParentExit(SIGKILL);
@@ -260,8 +211,7 @@ TError CopyRecursive(const TPath &src, const TPath &dst) {
                       dir);
 }
 
-TError DownloadFile(const std::string &url, const TPath &path, const TCgroupContext &cgrpCtx,
-                    const std::vector<std::string> &headers) {
+TError DownloadFile(const std::string &url, const TPath &path, const std::vector<std::string> &headers) {
     std::vector<std::string> command;
     command.emplace_back("wget");
     command.emplace_back("-qO");
@@ -269,5 +219,5 @@ TError DownloadFile(const std::string &url, const TPath &path, const TCgroupCont
     for (const auto &h: headers)
         command.emplace_back("--header=" + h);
     command.emplace_back(url);
-    return RunCommand(command, {}, TFile(), TFile(), TFile(), HelperCapabilities, cgrpCtx, false, true);
+    return RunCommand(command, TFile(), TFile(), TFile(), HelperCapabilities, false, true);
 }

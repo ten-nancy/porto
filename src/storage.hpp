@@ -2,7 +2,6 @@
 
 #include <list>
 
-#include "helpers.hpp"
 #include "util/path.hpp"
 
 enum EStorageType {
@@ -39,10 +38,10 @@ public:
     static TError Cleanup(const TFile &dir, EStorageType type);
     static TError SanitizeLayer(const TPath &layer);
     TError List(enum EStorageType type, std::list<TStorage> &list);
-    TError ImportArchive(const TPath &archive, const TCgroupContext &cgCtx, const std::string &compress = "",
+    TError ImportArchive(const TPath &archive, const std::string &cgroup, const std::string &compress = "",
                          bool merge = false, bool verboseError = false);
 
-    TError ImportArchiveSave(const TPath &archive, const TCgroupContext &cgCtx, const std::string &compress = "",
+    TError ImportArchiveSave(const TPath &archive, const std::string &cgroup, const std::string &compress = "",
                              bool merge = false, bool verboseError = false, bool readAccess = true);
     TError ExportArchive(const TPath &archive, const std::string &compress = "");
     bool Exists() const;
