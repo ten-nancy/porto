@@ -1,3 +1,35 @@
+porto (5.3.59) unstable; urgency=low
+  [ ovov ]
+      master: fix event loop
+      add neuro review
+      filesystem: do not allow rw proc binds
+      test: do not use literal string interpolation
+      test: fix respawning count test
+      test: disable dad in test-net-sched
+      test: fix test-net-sched
+  [ alexperevalov ]
+      portod: fix cgroup2 mount inside container
+      test: fix test-net-sched
+      container: remove SCHED_ISO
+      porto: adopt cpu_limit test for cgroup2
+      portod: mount cgroup2 inside porto container
+      porto: python api volume in CreateSpec
+      portoctl: pass place into docker-run
+      portod: docker_allowed_registry
+      porto: introduce docs on docker images support
+      porto: remove whitespaces in doc
+  [ dschervov ]
+      cgroup: remove log about set cgroup knob
+      rpc: optimize porto logs
+      Remove properties if they are not supported
+      cgroup: support cgroup-v2 stats
+      cgroup, property: suport new memory total knobs for cgroupv2
+  [ dmitrygx ]
+      net: remove Network IfUp script invocation from Network Watchdog
+  last commit: 1fca4d2fe7e04c3488574266b31aad30b4125edb
+
+ -- Porto Team <porto@yandex-team.ru>  Fri, 05 Jun 2026 16:59:18 -0000
+
 porto (5.3.58) unstable; urgency=low
   [ ovov ]
       volume, loop: use LOOP_CONFIGURE
