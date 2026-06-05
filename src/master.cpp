@@ -28,13 +28,11 @@ extern "C" {
 TPidFile MasterPidFile(PORTO_MASTER_PIDFILE, PORTOD_MASTER_NAME, "portod");
 pid_t MasterPid;
 bool RespawnPortod = true;
-static bool NeedServerUpgrade = false;
+static bool NeedUpgrade = false;
 static uint64_t StartServerShutdown = 0;
 
 static std::string PreviousVersion;
 static ino_t SocketIno = 0;
-static std::map<pid_t, int> Zombies;
-static int PortodStatus;
 
 void ReopenMasterLog() {
     if (MasterPid)
@@ -68,10 +66,6 @@ bool SanityCheck() {
     return EXIT_SUCCESS;
 }
 
-static void UpdateQueueSize() {
-    Statistics->QueuedStatuses = Zombies.size();
-}
-
 static int UpgradeMaster() {
     L_SYS("Updating master...");
 
@@ -99,103 +93,166 @@ static int UpgradeMaster() {
     return EXIT_FAILURE;
 }
 
-static void WaitServer() {
-    (void)waitpid(ServerPid, &PortodStatus, 0);
+static inline void LogError(const TError &err, const char *msg) {
+    if (err)
+        L_ERR("{}: {}", msg, err);
+}
 
-    if (NeedServerUpgrade) {
-        uint64_t finish = GetCurrentTimeMs() - StartServerShutdown;
-        Statistics->ShutdownTime += finish;
-        UpgradeMaster();
+class TServer {
+    std::unordered_set<pid_t> Zombies;
+
+    TError MakePipes(TFile &evtR, TFile &ackW) {
+        auto error = Pipe(evtR, EvtW, O_NONBLOCK | O_CLOEXEC);
+        if (error)
+            return error;
+
+        return Pipe(AckR, ackW, O_NONBLOCK | O_CLOEXEC);
     }
 
-    ServerPid = 0;
-    L_SYS("Portod {}", FormatExitStatus(PortodStatus));
-}
+public:
+    TFile EvtW, AckR;
+    pid_t Pid = -1;
+    TPidFd PidFd;
+    int Status = 0;
 
-static void DestroyServer() {
-    if (ServerPid == 0)
-        return;
+    ~TServer() {
+        LogError(Destroy(), "Cannot destroy server");
+    }
 
-    L_SYS("Kill portod");
-    if (kill(ServerPid, SIGKILL) < 0)
-        L_ERR("Cannot kill portod: {}", TError::System("kill"));
-    WaitServer();
-}
+    TError StartChild(std::function<void()> cleanup) {
+        TFile evtR, ackW;
+        auto error = MakePipes(evtR, ackW);
+        if (error)
+            return error;
 
-static void ReportZombies(int fd) {
-    while (true) {
-        siginfo_t info;
+        auto pid = fork();
 
-        info.si_pid = 0;
-        if (waitid(P_PID, ServerPid, &info, WNOHANG | WNOWAIT | WEXITED) || !info.si_pid)
-            if (waitid(P_ALL, -1, &info, WNOHANG | WNOWAIT | WEXITED) || !info.si_pid)
-                break;
+        if (pid < 0)
+            return TError::System("fork");
+        else if (pid == 0) {
+            cleanup();
+            EvtW.Close();
+            AckR.Close();
+            if (dup2(evtR.Fd, REAP_EVT_FD) < 0) {
+                L_ERR("Cannot dup evt read end: {}", TError::System("dup2"));
+                _exit(EXIT_FAILURE);
+            }
+            evtR.Close();
+            if (dup2(ackW.Fd, REAP_ACK_FD) < 0) {
+                L_ERR("Cannot dup ack write end: {}", TError::System("dup2"));
+                _exit(EXIT_FAILURE);
+            }
+            ackW.Close();
+            _exit(Server());
+        }
 
-        pid_t pid = info.si_pid;
-        int status = 0;
-        if (info.si_code == CLD_KILLED) {
-            status = info.si_status;
-        } else if (info.si_code == CLD_DUMPED) {
-            status = info.si_status | (1 << 7);
+        evtR.Close();
+        ackW.Close();
+
+        error = PidFd.Open(pid);
+        if (error) {
+            if (kill(pid, SIGKILL) < 0)
+                L_ERR("Cannot kill portod: {}", TError::System("kill"));
+            int status;
+            if (waitpid(pid, &status, 0) < 0)
+                L_ERR("Cannot wait portod server: {}", TError::System("waitpid({})", pid));
+            return TError(error, "Cannot open server pidfd");
+        }
+        Pid = pid;
+        return OK;
+    }
+
+    bool HandleZombie(pid_t pid, int status, int code) {
+        if (Zombies.count(pid) || pid == Pid)
+            return false;
+
+        if (code == CLD_KILLED) {
+            // pass
+        } else if (code == CLD_DUMPED) {
+            status = status | (1 << 7);
         } else {  // CLD_EXITED
-            status = info.si_status << 8;
+            status = status << 8;
         }
-
-        if (pid == ServerPid) {
-            WaitServer();
-            break;
-        }
-
-        if (Zombies.count(pid))
-            break;
 
         L_VERBOSE("Report zombie pid={} status={}", pid, status);
         int report[2] = {pid, status};
-        if (write(fd, report, sizeof(report)) != sizeof(report)) {
+
+        if (write(EvtW.Fd, report, sizeof(report)) != sizeof(report)) {
             L_WRN("Cannot report zombie: {}", TError::System("write"));
-            break;
+            return false;
         }
 
-        Zombies[pid] = status;
-        UpdateQueueSize();
+        Zombies.emplace(pid);
+        Statistics->QueuedStatuses = Zombies.size();
+        return true;
     }
-}
 
-static int ReapZombies(int fd) {
-    int pid;
-    int nr = 0;
+    void ReportZombies() {
+        while (true) {
+            siginfo_t info;
 
-    while (read(fd, &pid, sizeof(pid)) == sizeof(pid)) {
-        if (pid <= 0)
-            continue;
+            info.si_pid = 0;
+            if (waitid(P_ALL, -1, &info, WNOHANG | WNOWAIT | WEXITED) || !info.si_pid)
+                break;
 
-        if (Zombies.find(pid) == Zombies.end()) {
-            L_WRN("Got ack for unknown zombie pid={}", pid);
-        } else {
-            L_VERBOSE("Reap zombie pid={}", pid);
-            (void)waitpid(pid, NULL, 0);
-            Zombies.erase(pid);
-            UpdateQueueSize();
+            if (!HandleZombie(info.si_pid, info.si_status, info.si_code))
+                break;
+        }
+    }
+
+    int ReapZombies() {
+        int pid;
+        int nr = 0;
+
+        while (read(AckR.Fd, &pid, sizeof(pid)) == sizeof(pid)) {
+            if (pid <= 0)
+                continue;
+
+            if (Zombies.find(pid) == Zombies.end()) {
+                L_WRN("Got ack for unknown zombie pid={}", pid);
+            } else {
+                L_VERBOSE("Reap zombie pid={}", pid);
+                (void)waitpid(pid, NULL, 0);
+                Zombies.erase(pid);
+                Statistics->QueuedStatuses = Zombies.size();
+            }
+
+            nr++;
         }
 
-        nr++;
+        return nr;
     }
 
-    return nr;
-}
-
-static int UpgradeServer() {
-    L_SYS("Updating server...");
-
-    if (kill(ServerPid, SIGHUP) < 0) {
-        L_ERR("Cannot send SIGHUP to porto: {}", strerror(errno));
-        return EXIT_FAILURE;
-    } else {
-        StartServerShutdown = GetCurrentTimeMs();
-        NeedServerUpgrade = true;
-        return EXIT_SUCCESS;
+    TError Kill(int signo) {
+        return PidFd.Kill(signo);
     }
-}
+
+    TError Wait(int timeoutMs) const {
+        return PidFd.Wait(timeoutMs);
+    }
+
+    TError Reap() {
+        siginfo_t info;
+        auto error = PidFd.Reap(info);
+        if (error)
+            return error;
+        Status = info.si_status;
+        L_SYS("Portod {}", FormatExitStatus(Status));
+        PidFd.Close();
+        return OK;
+    }
+
+    TError Destroy() {
+        if (!PidFd)
+            return OK;
+
+        L_SYS("Kill server");
+        auto error = Kill(SIGKILL);
+        if (error && error.Errno != ESRCH)
+            return error;
+        return Reap();
+    }
+};
 
 static TError CreatePortoSocket() {
     TPath path(PORTO_SOCKET_PATH);
@@ -295,166 +352,128 @@ void CheckPortoSocket() {
     kill(MasterPid, SIGHUP);
 }
 
-static void SpawnServer(std::shared_ptr<TEpollLoop> loop) {
-    int evtfd[2];
-    int ackfd[2];
-    TError error;
-    bool serverPipeActive = false;
+static void HandleSignal(TServer &server, const struct signalfd_siginfo &sigInfo) {
+    int signo = sigInfo.ssi_signo;
+    PrintSignalInfo(sigInfo);
 
-    error = CreatePortoSocket();
-    if (error) {
-        L_ERR("Cannot create porto socket: {}", error);
+    switch (signo) {
+    case SIGINT:
+    case SIGTERM: {
+        L_SYS("Forward signal {} to portod", signo);
+        LogError(server.Kill(signo), "Cannot send signal to server");
+        RespawnPortod = false;
+
+        L_SYS("Waiting for portod shutdown...");
+        auto error = server.Wait(config().daemon().portod_stop_timeout() * 1000);
+        if (error) {
+            L_ERR("Server wait failed: {}", error);
+            LogError(server.Kill(SIGKILL), "Cannot send SIGKILL to server");
+        }
         return;
     }
-
-    if (pipe2(evtfd, O_NONBLOCK | O_CLOEXEC) < 0) {
-        L_ERR("pipe(): {}", strerror(errno));
+    case SIGCHLD: {
+        server.HandleZombie(sigInfo.ssi_pid, sigInfo.ssi_status, sigInfo.ssi_code);
         return;
     }
-
-    if (pipe2(ackfd, O_NONBLOCK | O_CLOEXEC) < 0) {
-        L_ERR("pipe(): {}", strerror(errno));
+    case SIGUSR1: {
+        OpenLog(PORTO_LOG);
+        LogError(server.Kill(signo), "Cannot kill portod");
         return;
     }
-
-    auto AckSource = std::make_shared<TEpollSource>(ackfd[0]);
-
-    int sigFd = SignalFd();
-
-    auto sigSource = std::make_shared<TEpollSource>(sigFd);
-
-    /* Forget all zombies to report them again */
-    Zombies.clear();
-    UpdateQueueSize();
-
-    ServerPid = fork();
-    if (ServerPid < 0) {
-        L_ERR("fork(): {}", strerror(errno));
-        goto exit;
-    } else if (ServerPid == 0) {
-        close(evtfd[1]);
-        close(ackfd[0]);
-        loop->Destroy();
-        (void)dup2(evtfd[0], REAP_EVT_FD);
-        (void)dup2(ackfd[1], REAP_ACK_FD);
-        close(evtfd[0]);
-        close(ackfd[1]);
-        close(sigFd);
-
-        _exit(Server());
+    case SIGUSR2:
+        DumpMallocInfo();
+        return;
+    case SIGHUP: {
+        L_SYS("Updating server...");
+        auto error = server.Kill(SIGHUP);
+        if (error) {
+            L_ERR("Cannot send SIGHUP to server: {}", error);
+            return;
+        }
+        if (!NeedUpgrade) {
+            StartServerShutdown = GetCurrentTimeMs();
+            NeedUpgrade = true;
+        }
+        return;
     }
+    default:
+        /* Ignore other signals */
+        return;
+    }
+}
 
-    close(evtfd[0]);
-    close(ackfd[1]);
+static TError SpawnServer() {
+    TFile sigFd;
 
-    L_SYS("Start portod {}", ServerPid);
+    sigFd.SetFd = SignalFd();
+    if (sigFd.Fd < 0)
+        return TError::System("signalfd");
+
+    auto error = CreatePortoSocket();
+    if (error)
+        return TError(error, "Cannot create porto socket");
+
+    TServer server;
+    error = server.StartChild([&]() { sigFd.Close(); });
+    if (error)
+        return TError(error, "Cannot start server");
+
+    L_SYS("Start portod {}", server.Pid);
     Statistics->PortoStarts++;
 
-    error = loop->AddSource(AckSource);
-    if (error) {
-        L_ERR("Can't add ackfd[0] to epoll: {}", error);
-        DestroyServer();
-        goto exit;
-    }
-    serverPipeActive = true;
+    TEpollLoop loop;
+    error = loop.Create();
+    if (error)
+        return TError(error, "Cannot create event loop");
 
-    error = loop->AddSource(sigSource);
-    if (error) {
-        L_ERR("Can't add sigSource to epoll: {}", error);
-        DestroyServer();
-        goto exit;
-    }
+    auto serverPidSource = std::make_shared<TEpollSource>(server.PidFd.PidFd);
+    error = loop.AddSource(serverPidSource);
+    if (error)
+        return TError(error, "Cannot add server pidfd to epoll");
 
-    while (ServerPid) {
+    auto ackSource = std::make_shared<TEpollSource>(server.AckR);
+    error = loop.AddSource(ackSource);
+    if (error)
+        return TError(error, "Cannot add ack read end to epoll");
+
+    auto sigSource = std::make_shared<TEpollSource>(sigFd);
+    error = loop.AddSource(sigSource);
+    if (error)
+        return TError(error, "Cannot add signal fd to epoll");
+
+    while (true) {
         std::vector<struct epoll_event> events;
 
-        error = loop->GetEvents(events, -1);
-        if (error) {
-            L_ERR("master: epoll error {}", error);
-            DestroyServer();
-            goto exit;
-        }
-
-        struct signalfd_siginfo sigInfo;
-
-        while (read(sigFd, &sigInfo, sizeof sigInfo) == sizeof sigInfo) {
-            int signo = sigInfo.ssi_signo;
-            PrintSignalInfo(sigInfo);
-
-            switch (signo) {
-            case SIGINT:
-            case SIGTERM: {
-                L_SYS("Forward signal {} to portod", signo);
-                if (kill(ServerPid, signo) < 0)
-                    L_ERR("Cannot kill portod: {}", TError::System("kill"));
-
-                L_SYS("Waiting for portod shutdown...");
-                uint64_t deadline = GetCurrentTimeMs() + config().daemon().portod_stop_timeout() * 1000;
-                do {
-                    if (waitpid(ServerPid, &PortodStatus, WNOHANG) == ServerPid) {
-                        ServerPid = 0;
-                        break;
-                    }
-                } while (!WaitDeadline(deadline));
-
-                RespawnPortod = false;
-                goto exit;
-            }
-            case SIGCHLD: {
-                if (pid_t(sigInfo.ssi_pid) == ServerPid) {
-                    WaitServer();
-                    goto exit;
-                }
-                break;
-            }
-            case SIGUSR1: {
-                OpenLog(PORTO_LOG);
-                if (kill(ServerPid, signo) < 0)
-                    L_ERR("Cannot kill portod: {}", TError::System("kill"));
-                break;
-            }
-            case SIGUSR2:
-                DumpMallocInfo();
-                break;
-            case SIGHUP:
-                UpgradeServer();
-                break;
-            default:
-                /* Ignore other signals */
-                break;
-            }
-        }
+        error = loop.GetEvents(events, -1);
+        if (error)
+            return error;
 
         for (auto ev: events) {
-            auto source = loop->GetSource(ev.data.fd);
+            auto source = loop.GetSource(ev.data.fd);
             if (!source)
                 continue;
 
-            if (source->Fd == sigFd) {
-            } else if (source->Fd == ackfd[0]) {
-                if (!ReapZombies(ackfd[0])) {
+            if (source->Fd == server.PidFd.PidFd.Fd) {
+                auto error = server.Reap();
+                if (error)
+                    return TError(error, "Cannot wait server");
+                return OK;
+            } else if (source->Fd == sigFd.Fd) {
+                struct signalfd_siginfo sigInfo;
+                while (read(sigFd.Fd, &sigInfo, sizeof(sigInfo)) == sizeof(sigInfo))
+                    HandleSignal(server, sigInfo);
+            } else if (source->Fd == server.AckR.Fd) {
+                if (!server.ReapZombies()) {
                     L_SYS("Server pipe is inactive");
-                    loop->RemoveSource(AckSource->Fd);
-                    serverPipeActive = false;
+                    loop.RemoveSource(*ackSource);
                 }
             } else {
                 L_WRN("Unknown event {}", source->Fd);
-                loop->RemoveSource(source->Fd);
+                loop.RemoveSource(*source);
             }
         }
-
-        if (serverPipeActive)
-            ReportZombies(evtfd[1]);
+        server.ReportZombies();
     }
-exit:
-    loop->RemoveSource(sigFd);
-    close(sigFd);
-
-    if (serverPipeActive)
-        loop->RemoveSource(AckSource->Fd);
-
-    close(evtfd[1]);
-    close(ackfd[0]);
 }
 
 int PortodMaster() {
@@ -514,7 +533,7 @@ int PortodMaster() {
     }
 
     if (pathVer.WriteAll(PORTO_VERSION))
-        L_ERR("Can't update current version");
+        L_ERR("Cannot update current version");
 
     TPath pathBin(PORTO_BINARY_PATH), prevBin;
     TPath procExe("/proc/self/exe"), thisBin;
@@ -534,24 +553,19 @@ int PortodMaster() {
     L_SYS("Started {} {} {} {}", PORTO_VERSION, PORTO_REVISION, GetPid(), thisBin);
     L_SYS("Previous version: {} {}", PreviousVersion, prevBin);
 
-    std::shared_ptr<TEpollLoop> ELoop = std::make_shared<TEpollLoop>();
-    error = ELoop->Create();
-    if (error)
-        return EXIT_FAILURE;
-
 #ifndef PR_SET_CHILD_SUBREAPER
 #define PR_SET_CHILD_SUBREAPER 36
 #endif
 
     if (prctl(PR_SET_CHILD_SUBREAPER, 1) < 0) {
         TError error(EError::Unknown, errno, "prctl(PR_SET_CHILD_SUBREAPER)");
-        L_ERR("Can't set myself as a subreaper, make sure kernel version is at least 3.4: {}", error);
+        L_ERR("Cannot set myself as a subreaper, make sure kernel version is at least 3.4: {}", error);
         return EXIT_FAILURE;
     }
 
     error = SetOomScoreAdj(-1000);
     if (error)
-        L_ERR("Can't adjust OOM score: {}", error);
+        L_ERR("Cannot adjust OOM score: {}", error);
 
     if (config().daemon().enable_nbd()) {
         error = LoadNbd();
@@ -577,8 +591,12 @@ int PortodMaster() {
         uint64_t started = GetCurrentTimeMs();
         uint64_t next = started + config().container().respawn_delay_ms();
 
-        SpawnServer(ELoop);
-
+        LogError(SpawnServer(), "Spawn server");
+        if (NeedUpgrade) {
+            uint64_t finish = GetCurrentTimeMs() - StartServerShutdown;
+            Statistics->ShutdownTime += finish;
+            UpgradeMaster();
+        }
         if (next >= GetCurrentTimeMs())
             usleep((next - GetCurrentTimeMs()) * 1000);
 

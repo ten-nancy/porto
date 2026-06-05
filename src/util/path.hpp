@@ -334,6 +334,10 @@ public:
     TError CreateTrunc(const TPath &path, int mode);
     void Close(void);
     void Swap(TFile &other);
+    void Set(int fd) {
+        Close();
+        SetFd = fd;
+    }
     static void Close(const std::vector<int> &fds);
     static void CloseAllExcept(const std::vector<int> &except);
     TError Lseek(off_t off, int whence) const;

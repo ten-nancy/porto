@@ -5,6 +5,7 @@
 
 #include "common.hpp"
 #include "util/locks.hpp"
+#include "util/path.hpp"
 
 extern "C" {
 #include <sys/epoll.h>
@@ -33,6 +34,9 @@ public:
           Flags(0),
           Container()
     {}
+    TEpollSource(const TFile &f)
+        : TEpollSource(f.Fd)
+    {}
     TEpollSource()
         : Fd(-1),
           Flags(0),
@@ -41,7 +45,7 @@ public:
 };
 
 class TEpollLoop: public TLockable, public TNonCopyable {
-    int EpollFd = -1;
+    TFile Fd;
 
     size_t MaxEvents = 0;
     struct epoll_event *Events = nullptr;
@@ -50,13 +54,21 @@ class TEpollLoop: public TLockable, public TNonCopyable {
 
     TError ModifySourceEvents(int fd, uint32_t events) const;
 
+    void RemoveSourceLocked(int fd);
+
 public:
     TError Create();
     void Destroy();
     ~TEpollLoop();
 
     TError AddSource(std::shared_ptr<TEpollSource> source);
-    void RemoveSource(int fd);
+    void RemoveSource(int fd) {
+        auto lock = ScopedLock();
+        RemoveSourceLocked(fd);
+    }
+    void RemoveSource(const TEpollSource &source) {
+        RemoveSource(source.Fd);
+    }
     std::shared_ptr<TEpollSource> GetSource(int fd);
 
     TError StartInput(int fd) const;

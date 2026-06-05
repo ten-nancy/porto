@@ -547,21 +547,21 @@ void TestDaemon(Porto::Connection &api) {
     Say() << "Number of portod-master fds=" << nr << std::endl;
     path = ("/proc/" + std::to_string(pid) + "/fd");
     /**
-     * .
-     * ..
      * 0 (stdin)
      * 1 (stdout)
-     * 130 (rpc socket)
      * 2 (stderr)
      * 3 (portod.log)
-     * 4 (epoll)
+     * 4 (signalfd)
+     * 5 (server pidfd)
      * 6 (event pipe)
      * 7 (ack pipe)
-     * 9 (signalfd)
+     * 8 (epoll)
+     * 130 (rpc socket)
+     * 131 (nl socket)
      */
 
     fdPaths.clear();
-    appFds = 9 + 2;
+    appFds = 11;
     nr = scandir(path.c_str(), &lst, NULL, alphasort);
     for (int i = 0; i < nr; i++) {
         if (lst[i]->d_name == string(".") ||
@@ -576,7 +576,7 @@ void TestDaemon(Porto::Connection &api) {
 
     sssFds = CountSssFds(fdPaths);
 
-    nr = scandir(path.c_str(), &lst, NULL, alphasort);
+    nr = scandir(path.c_str(), &lst, NULL, alphasort) - 2; // exclude ’.’ and ’..’
     PrintFds(path, lst, nr);
     ExpectLessEq(nr, appFds + sssFds + ctestFd);
     ExpectLessEq(appFds, nr);

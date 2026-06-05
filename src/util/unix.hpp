@@ -58,6 +58,8 @@ void DumpMallocInfo();
 
 int SetIoPrio(pid_t pid, int ioprio);
 
+TError Pipe(TFile &r, TFile &w, int flags);
+
 class TPidFd {
     TPidFd(const TPidFd &) = delete;
     TPidFd &operator=(const TPidFd &) = delete;
@@ -71,10 +73,14 @@ public:
         : PidFd(fd)
     {}
     TError Open(pid_t pid);
+    void Close() {
+        PidFd.Close();
+    }
     // Check if process exists and is not zombie
     bool Running() const;
     // Wait process to terminate (but not to be reaped!, i.e. it can be zombie).
     TError Wait(int timeoutMs) const;
+    TError Reap(siginfo_t &info) const;
     TError Kill(int signo) const;
     TError KillWait(int signo, int timeoutMs) const;
     TError OpenProcFd(TFile &procFd) const;

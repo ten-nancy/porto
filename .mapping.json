@@ -314,6 +314,7 @@
   "test/test-portod_cli.py":"infra/porto/porto/test/test-portod_cli.py",
   "test/test-prev_release_upgrade.py":"infra/porto/porto/test/test-prev_release_upgrade.py",
   "test/test-recovery.py":"infra/porto/porto/test/test-recovery.py",
+  "test/test-reload.py":"infra/porto/porto/test/test-reload.py",
   "test/test-retriability.py":"infra/porto/porto/test/test-retriability.py",
   "test/test-sched-idle.py":"infra/porto/porto/test/test-sched-idle.py",
   "test/test-security.py":"infra/porto/porto/test/test-security.py",

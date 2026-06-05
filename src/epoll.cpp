@@ -16,23 +16,26 @@ static TError EpollCreate(int &epfd) {
 }
 
 TError TEpollLoop::Create() {
-    TError error = EpollCreate(EpollFd);
+    TFile fd;
+    auto error = EpollCreate(fd.SetFd);
     if (error)
         return error;
 
-    Statistics->EpollSources = 0;
-
+    Fd.Swap(fd);
     return OK;
 }
 
 void TEpollLoop::Destroy() {
     auto lock = ScopedLock();
-    Sources.clear();
-    close(EpollFd);
-    EpollFd = -1;
+    for (const auto &source: Sources) {
+        auto ptr = source.lock();
+        if (ptr)
+            RemoveSourceLocked(ptr->Fd);
+    }
 }
 
 TEpollLoop::~TEpollLoop() {
+    Destroy();
     delete[] Events;
 }
 
@@ -46,7 +49,7 @@ TError TEpollLoop::GetEvents(std::vector<struct epoll_event> &events, int timeou
     }
     PORTO_ASSERT(Events);
 
-    int nr = epoll_wait(EpollFd, Events, MaxEvents, timeout);
+    int nr = epoll_wait(Fd.Fd, Events, MaxEvents, timeout);
     if (nr < 0) {
         if (errno != EINTR)
             return TError::System("epoll() error: ");
@@ -76,22 +79,20 @@ TError TEpollLoop::AddSource(std::shared_ptr<TEpollSource> source) {
     struct epoll_event ev;
     ev.events = source->Events;
     ev.data.fd = fd;
-    if (epoll_ctl(EpollFd, EPOLL_CTL_ADD, fd, &ev) < 0)
+    if (epoll_ctl(Fd.Fd, EPOLL_CTL_ADD, fd, &ev) < 0)
         return TError::System("epoll_add {}", fd);
 
     return OK;
 }
 
-void TEpollLoop::RemoveSource(int fd) {
-    auto lock = ScopedLock();
-
+void TEpollLoop::RemoveSourceLocked(int fd) {
     if (fd < (int)Sources.size() && !Sources[fd].expired()) {
         Sources[fd].reset();
         Statistics->EpollSources--;
     } else
         L_ERR("Invalid epoll fd {}", fd);
 
-    if (epoll_ctl(EpollFd, EPOLL_CTL_DEL, fd, nullptr) < 0)
+    if (epoll_ctl(Fd.Fd, EPOLL_CTL_DEL, fd, nullptr) < 0)
         L_ERR("Cannot remove epoll {} : {}", fd, TError::System("epoll_ctl"));
 }
 
@@ -99,7 +100,7 @@ TError TEpollLoop::ModifySourceEvents(int fd, uint32_t events) const {
     struct epoll_event ev;
     ev.events = events;
     ev.data.fd = fd;
-    if (epoll_ctl(EpollFd, EPOLL_CTL_MOD, fd, &ev) < 0)
+    if (epoll_ctl(Fd.Fd, EPOLL_CTL_MOD, fd, &ev) < 0)
         return TError::System("epoll_mod {}", fd);
     return OK;
 }

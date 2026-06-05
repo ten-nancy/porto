@@ -662,6 +662,12 @@ TError TPidFd::Wait(int timeoutMs) const {
     return TError::System("poll");
 }
 
+TError TPidFd::Reap(siginfo_t &info) const {
+    if (waitid(/* P_PIDFD */ (idtype_t)3, PidFd.Fd, &info, WEXITED) < 0)
+        return TError::System("waitid");
+    return OK;
+}
+
 TError TPidFd::OpenProcFd(TFile &procFd) const {
     auto pid = GetPid();
     auto error = procFd.OpenDir(fmt::format("/proc/{}", pid));
@@ -775,4 +781,13 @@ TError TTimer::SetTimeout(unsigned long ms) {
 int SetIoPrio(pid_t pid, int ioprio)
 {
     return syscall(SYS_ioprio_set, 1, pid, ioprio);
+}
+
+TError Pipe(TFile &r, TFile &w, int flags) {
+    int fds[2];
+    if (pipe2(fds, flags) < 0)
+        return TError::System("pipe2");
+    r.Set(fds[0]);
+    w.Set(fds[1]);
+    return OK;
 }

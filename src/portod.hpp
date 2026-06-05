@@ -17,7 +17,6 @@ extern bool RespawnPortod;
 int Server();
 
 extern TPidFile ServerPidFile;
-extern pid_t ServerPid;
 extern bool DiscardState;
 extern bool ShutdownPortod;
 extern std::unique_ptr<TEpollLoop> EpollLoop;
