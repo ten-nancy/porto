@@ -53,8 +53,8 @@ def test_validation(conn, cleanup):
     a = cleanup.enter_context(CreateContainer(conn, 'a'))
     ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail')
     ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail 0')
-    ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail {}'.format(CPUNR))
     ExpectException(a.SetProperty, porto.exceptions.InvalidValue, 'cpu_set', 'jail {}'.format(CPUNR + 1))
+    a.SetProperty('cpu_set', 'jail {}'.format(CPUNR))
 
 
 def test_basic(conn, cleanup):

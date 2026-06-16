@@ -385,13 +385,23 @@ public:
         if (error)
             return nullptr;
 
-        if (size == 0 || size >= HostCpus.Weight())
-            return nullptr;
-
-        if (node >= 0 && size >= NodeThreads[node].Weight())
+        if (CheckJail(size, node))
             return nullptr;
 
         return std::make_shared<TJailSpec>(size, node);
+    }
+
+    static TError CheckJail(unsigned size, int node) {
+        if (!size)
+            return TError(EError::InvalidValue, "Jail size must be greater than zero");
+
+        if (size > HostCpus.Weight())
+            return TError(EError::InvalidValue, "Jail size exceeds host");
+
+        if (node >= 0 && size > NodeThreads[node].Weight())
+            return TError(EError::InvalidValue, "Jail size exceeds numa node");
+
+        return OK;
     }
 
     void Dump(rpc::TContainerCpuSet &spec) const override {
@@ -500,8 +510,14 @@ std::shared_ptr<TCpuSetSpec> TCpuSetSpec::Load(const TContainer &container, cons
     if (cfg.policy() == "node")
         return std::make_shared<TNodeSpec>(cfg.arg());
 
-    if (cfg.policy() == "jail")
-        return std::make_shared<TJailSpec>(cfg.jail(), cfg.has_arg() ? cfg.arg() : -1);
+    if (cfg.policy() == "jail") {
+        auto size = cfg.jail();
+        auto node = cfg.has_arg() ? cfg.arg() : -1;
+        if (TJailSpec::CheckJail(size, node))
+            return nullptr;
+
+        return std::make_shared<TJailSpec>(size, node);
+    }
 
     return nullptr;
 }
