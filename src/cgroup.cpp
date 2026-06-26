@@ -2566,6 +2566,13 @@ TError TCgroupDriver::InitializeDaemonCgroups() {
     if (error)
         return error;
 
+    if (cg->IsCgroup2()) {
+        auto highLimit = 99 * config().daemon().helpers_memory_limit() / 100;
+        error = MemorySubsystem->SetHighLimit(*cg, highLimit);
+        if (error)
+            return error;
+    }
+
     error = MemorySubsystem->SetDirtyLimit(*cg, config().daemon().helpers_dirty_limit());
     if (error)
         L_ERR("Cannot set portod-helpers dirty limit: {}", error);
