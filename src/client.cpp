@@ -483,7 +483,7 @@ TError TClient::ReadAccess(const TFile &file) {
 
 TError TClient::WriteAccess(const TFile &file, bool lockVolumes) {
     struct statfs fs;
-    if (fstatfs(Fd, &fs))
+    if (fstatfs(file.Fd, &fs))
         return TError::System("fstatfs");
 
     TError error = file.WriteAccess(TaskCred, fs);
