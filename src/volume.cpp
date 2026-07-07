@@ -31,6 +31,7 @@ extern "C" {
 #include <linux/falloc.h>
 #include <linux/kdev_t.h>
 #include <linux/loop.h>
+#include <linux/magic.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
@@ -327,7 +328,8 @@ public:
     }
 
     TError Build() override {
-        return Volume->InternalPath.BindRemount(Volume->StoragePath, Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return Volume->InternalPath.BindRemount(Volume->StorageFd.ProcPath(),
+                                                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
     }
 
     TError Destroy() override {
@@ -366,7 +368,8 @@ public:
     }
 
     TError Build() override {
-        return Volume->InternalPath.BindRemount(Volume->StoragePath, Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return Volume->InternalPath.BindRemount(Volume->StorageFd.ProcPath(),
+                                                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
     }
 
     TError Destroy() override {
@@ -396,7 +399,7 @@ public:
     }
 
     TError Build() override {
-        return Volume->InternalPath.BindRemount(Volume->StoragePath,
+        return Volume->InternalPath.BindRemount(Volume->StorageFd.ProcPath(),
                                                 Volume->GetMountFlags() | MS_REC | MS_SLAVE | MS_SHARED);
     }
 
@@ -585,7 +588,8 @@ public:
                 return error;
         }
 
-        return Volume->InternalPath.BindRemount(Volume->StoragePath, Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return Volume->InternalPath.BindRemount(Volume->StorageFd.ProcPath(),
+                                                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
     }
 
     TError Destroy() override {
