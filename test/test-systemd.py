@@ -9,7 +9,7 @@ from test_common import *
 c = porto.Connection(timeout=10)
 
 portod_cg = GetSystemdCg(GetPortodPid())
-if WithSystemd():
+if WithSystemd() and not GetUseCgroup2():
     ExpectNe(portod_cg, "/")
 else:
     ExpectEq(portod_cg, "/")
