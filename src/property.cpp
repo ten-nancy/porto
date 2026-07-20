@@ -4183,6 +4183,35 @@ public:
     }
 } static CpuSet;
 
+class TMemSet: public TProperty {
+public:
+    TMemSet()
+        : TProperty(P_MEM_SET, EProperty::MEM_SET, "memory set: <list of numa nodes>")
+    {
+        IsDynamic = true;
+        IsHidden = true;
+        RequireControllers = CGROUP_CPUSET;
+    }
+    TError Get(std::string &value) const override {
+        value = CT->MemSet.Format();
+        return OK;
+    }
+
+    TError Set(const std::string &value) override {
+        TBitMap affinity;
+        auto error = affinity.Parse(value);
+        if (error)
+            return TError(EError::InvalidValue, "invalid mem_set: {}", value);
+        error = CheckNumaNodes(affinity);
+        if (error)
+            return error;
+
+        CT->MemSet = affinity;
+        CT->SetProp(EProperty::MEM_SET);
+        return OK;
+    }
+} MemSet;
+
 class TCpuSetAffinity: public TProperty {
 public:
     TCpuSetAffinity()

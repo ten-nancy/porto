@@ -13,7 +13,7 @@ bool HyperThreadingEnabled = false;
 static std::vector<std::vector<unsigned>> NeighborThreads;
 
 static TBitMap HostCpus;
-static TBitMap NumaNodes;
+TBitMap NumaNodes;
 
 /* numa node -> list of cpus */
 static std::vector<TBitMap> NodeThreads;
@@ -779,4 +779,10 @@ std::shared_ptr<TContainer> FindUnbalancedJailContainer(
     }
 
     return unbalancedCt;
+}
+
+TError CheckNumaNodes(const TBitMap &memset) {
+    if (!memset.IsSubsetOf(NumaNodes))
+        return TError(EError::InvalidValue, "{} is not subset of host numa nodes", memset.Format());
+    return OK;
 }

@@ -61,9 +61,9 @@ TIdMap ContainerIdMap(1, CONTAINER_ID_MAX);
 std::vector<ExtraProperty> ExtraProperties;
 std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 
-std::unordered_set<std::string> SupportedExtraProperties = {"cgroupfs",     "command",         "max_respawns",
-                                                            "userns",       "unshare_on_exec", "resolv_conf",
-                                                            "capabilities", "cpu_weight",      "controllers"};
+std::unordered_set<std::string> SupportedExtraProperties = {
+    "cgroupfs",    "command",      "max_respawns", "userns",      "unshare_on_exec",
+    "resolv_conf", "capabilities", "cpu_weight",   "controllers", "mem_set"};
 
 std::vector<TGauge> MakeStateMetrics() {
     std::vector<TGauge> metrics;
@@ -469,6 +469,8 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     ChooseSchedPolicy();
 
     CpuPeriod = Parent ? Parent->CpuPeriod : config().container().cpu_period();
+    if (Parent)
+        MemSet = Parent->MemSet;
     CpuSetSpec = TCpuSetSpec::Empty();
     TargetCpuSetSpec = TCpuSetSpec::Parse(*this, "inherit");
 
@@ -1867,6 +1869,17 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         TestClearPropDirty(EProperty::CPU_SET);
     }
 
+    if (TestPropDirty(EProperty::MEM_SET)) {
+        if (Parent && !MemSet.IsSubsetOf(Parent->MemSet))
+            return TError(EError::InvalidValue, "container mem_set={} is not subset of parent mem_set={}",
+                          MemSet.Format(), Parent->MemSet.Format());
+        auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.CpusetSubsystem.get());
+        error = CgroupDriver.CpusetSubsystem->SetMems(*cg, MemSet);
+        if (error)
+            return error;
+        TestClearPropDirty(EProperty::MEM_SET);
+    }
+
     if (TestPropDirty(EProperty::CPU_GUARANTEE)) {
         error = ApplyCpuGuarantee();
         if (error)
@@ -3034,6 +3047,7 @@ TError TContainer::PrepareResources() {
         error = BuildCpuTopology();
         if (error)
             return error;
+        MemSet = NumaNodes;
     }
 
     error = CheckMemGuarantee();

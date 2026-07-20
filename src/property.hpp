@@ -79,6 +79,7 @@ constexpr const char *P_CPU_LIMIT_BOUND = "cpu_limit_bound";
 constexpr const char *P_CPU_PERIOD = "cpu_period";
 constexpr const char *P_CPU_WEIGHT = "cpu_weight";
 constexpr const char *P_CPU_SET = "cpu_set";
+constexpr const char *P_MEM_SET = "mem_set";
 constexpr const char *P_CPU_SET_AFFINITY = "cpu_set_affinity";
 constexpr const char *P_CPU_USAGE = "cpu_usage";
 constexpr const char *P_CPU_SYSTEM = "cpu_usage_system";
@@ -253,6 +254,7 @@ enum class EProperty {
     CPU_PERIOD,
     CPU_WEIGHT,
     CPU_SET,
+    MEM_SET,
     IO_POLICY,
     IO_WEIGHT,
     IO_LIMIT,

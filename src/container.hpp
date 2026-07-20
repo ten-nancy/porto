@@ -272,6 +272,8 @@ public:
     uint64_t CpuGuaranteeCur = 0;
     uint64_t CpuWeight = 100;
 
+    TBitMap MemSet;
+
     std::shared_ptr<TCpuSetSpec> CpuSetSpec;
     // Protected by both ActionLock and StateLock
     std::shared_ptr<TCpuSetSpec> TargetCpuSetSpec;

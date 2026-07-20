@@ -422,6 +422,7 @@ public:
 
     TError GetCpus(const TCgroup &cg, TBitMap &cpus) const;
     TError SetCpus(const TCgroup &cg, const TBitMap &cpus) const;
+    TError SetMems(const TCgroup &cg, const TBitMap &mems) const;
 };
 
 class TNetclsSubsystem: public TSubsystem {

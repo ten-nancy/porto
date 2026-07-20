@@ -156,6 +156,7 @@ check_numa_balance('0 4')
 
 r.SetProperty("cpu_set", "node 0")
 check_numa_balance('0 4')
+r.SetProperty("mem_set", "0")
 c.Destroy("test")
 
 # numa balance enabled for contaienr with chroot and cpuset='node ...'

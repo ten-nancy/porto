@@ -39,3 +39,6 @@ TBitMap GetNoSmtCpus(const TBitMap &cpuAffinity);
 std::vector<std::pair<unsigned, unsigned>> FindUnbalancedJailCpus();
 std::shared_ptr<TContainer> FindUnbalancedJailContainer(
     const std::vector<std::pair<unsigned, unsigned>> unbalancedCpus);
+
+extern TBitMap NumaNodes;
+TError CheckNumaNodes(const TBitMap &affinity);

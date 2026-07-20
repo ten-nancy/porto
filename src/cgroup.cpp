@@ -1861,9 +1861,6 @@ TError TCpusetSubsystem::SetMems(const TCgroup &cg, const std::string &mems) con
             copy = cg.Path().DirName() / MEMS;
     }
 
-    if (mems == "all")
-        copy = TPath("/sys/devices/system/node/online");
-
     if (!copy.IsEmpty()) {
         error = copy.ReadAll(value);
         if (error)
@@ -1890,6 +1887,10 @@ TError TCpusetSubsystem::GetCpus(const TCgroup &cg, TBitMap &cpus) const {
 
 TError TCpusetSubsystem::SetCpus(const TCgroup &cg, const TBitMap &cpus) const {
     return SetCpus(cg, cpus.Format());
+}
+
+TError TCpusetSubsystem::SetMems(const TCgroup &cg, const TBitMap &mems) const {
+    return SetMems(cg, mems.Format());
 }
 
 // Netcls
