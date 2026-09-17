@@ -38,6 +38,8 @@ std::string to_string(TTaskEnv::EMsgCode code) {
         return "TaskPid";
     case TTaskEnv::EMsgCode::SetupUserMapping:
         return "SetupUserMapping";
+    case TTaskEnv::EMsgCode::WaitAutoconf:
+        return "WaitAutoconf";
     default:
         return "Unknown";
     }
@@ -508,12 +510,25 @@ TError TTaskEnv::ConfigureChild() {
     return OK;
 }
 
+static TError RunInNetNs(const TNamespaceFd &netns, std::function<TError()> func) {
+    TNamespaceFd curNs;
+
+    auto error = curNs.Open("/proc/thread-self/ns/net");
+    if (error)
+        return TError(error, "cannot open self net");
+
+    error = netns.SetNs(CLONE_NEWNET);
+    if (error)
+        return error;
+
+    auto error2 = func();
+
+    PORTO_ASSERT(!curNs.SetNs(CLONE_NEWNET));
+
+    return error2;
+}
+
 TError TTaskEnv::WaitAutoconf() {
-    if (Autoconf.empty())
-        return OK;
-
-    SetProcessName("portod-autoconf");
-
     auto sock = std::make_shared<TNl>();
     TError error = sock->Connect();
     if (error)
@@ -545,7 +560,12 @@ void TTaskEnv::StartChild() {
     /* Reset signals before exec, signal block already lifted */
     ResetIgnoredSignals();
 
-    AbortOnError(WaitAutoconf());
+    if (!Autoconf.empty()) {
+        // TODO(ovov): move actual autoconf here after code that starts task
+        // will be moved to separate program (instead of "long" fork)
+        AbortOnError(Sock.SendInt(int(EMsgCode::WaitAutoconf)));
+        AbortOnError(Sock.RecvZero());
+    }
 
     Abort(ChildExec());
 }
@@ -766,6 +786,20 @@ TError TTaskEnv::CommunicateChild(TPidFd &waitPidFd, TPidFd &taskPidFd) {
                 return error;
 
             error = TNetwork::StartNetwork(*CT, *this);
+            if (error)
+                return error;
+
+            error = MasterSock.SendZero();
+            if (error)
+                return error;
+            break;
+        }
+        case EMsgCode::WaitAutoconf: {
+            TNamespaceFd netns;
+            error = netns.Open(waitPidFd);
+            if (error)
+                return error;
+            error = RunInNetNs(netns, [&]() { return WaitAutoconf(); });
             if (error)
                 return error;
 

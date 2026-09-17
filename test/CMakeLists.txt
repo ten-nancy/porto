@@ -103,6 +103,8 @@ ADD_PYTHON_TEST(coredump)
 ADD_PYTHON_TEST(net-ifup)
 ADD_PYTHON_TEST(net-props)
 ADD_PYTHON_TEST(net-xvlan)
+# race detection, run manually
+# ADD_PYTHON_TEST(net-autoconf)
 
 ADD_PYTHON_TEST(volume-restore)
 ADD_PYTHON_TEST(htb-restore)

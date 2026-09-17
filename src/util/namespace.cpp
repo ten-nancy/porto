@@ -32,6 +32,16 @@ TError TNamespaceFd::Open(pid_t pid) {
     return OK;
 }
 
+TError TNamespaceFd::Open(const TPidFd &pidfd) {
+    Close();
+
+    int fd = dup(pidfd.PidFd.Fd);
+    if (fd < 0)
+        return TError::System("dup");
+    Fd = fd;
+    return OK;
+}
+
 void TNamespaceFd::Close() {
     if (Fd >= 0) {
         PORTO_ASSERT(Fd > 2);

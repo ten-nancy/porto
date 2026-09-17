@@ -26,6 +26,7 @@ public:
     TError Open(TPath path);
     TError Open(pid_t pid, std::string type);
     TError Open(pid_t pid);
+    TError Open(const TPidFd &pidfd);
     int GetFd() const {
         return Fd;
     }

@@ -21,6 +21,7 @@ struct TTaskEnv {
         WaitPid = 8322,
         TaskPid = 8323,
         SetupUserMapping = 8324,
+        WaitAutoconf = 8325,
     };
 
     std::shared_ptr<TContainer> CT;
