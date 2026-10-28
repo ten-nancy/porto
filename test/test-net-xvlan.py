@@ -52,5 +52,41 @@ def TestXvlanInheritance(inherit):
     a.Destroy()
 
 
+def TestXvlanRestart():
+    """The settings a container hands down to its children are parsed again on every start, so a
+    restart used to leave a second entry for the same device. Each entry makes InheritXVlan create
+    an interface, so the child asked for two of one name and could not start."""
+    ConfigurePortod('test-net-xvlan', """
+    network {
+        network_inherit_xvlan: true
+    }""")
+
+    a = conn.Create("a")
+    try:
+        a.SetProperty("net", "L3 veth; ipvlan eth0 eth0;")
+        a.SetProperty("ip", "veth 198.51.100.0")
+        a.SetProperty("default_gw", "veth 198.51.100.1")
+        a.SetProperty("command", "sleep 1000")
+
+        a.Start()
+        a.Stop()
+        a.Start()
+
+        b = conn.Run(
+            "a/b",
+            net="L3 veth;",
+            ip="veth 198.51.100.0",
+            default_gw="veth 198.51.100.1",
+            command="cat /proc/net/if_inet6",
+            wait=1
+        )
+        CheckEthIface(b['stdout'], True)
+    finally:
+        a.Destroy()
+
+
 TestXvlanInheritance(True)
 TestXvlanInheritance(False)
+TestXvlanRestart()
+
+ConfigurePortod('test-net-xvlan', "")

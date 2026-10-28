@@ -3181,6 +3181,9 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
     NetNone = false;
     L3Only = true;
 
+    netXVlanSettings.clear();
+    netPropertiesSettings.clear();
+
     if (config().network().enable_ip6tnl0()) {
         TNetDeviceConfig dev;
         dev.Type = "ip6tnl0";
