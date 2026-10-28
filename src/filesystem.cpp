@@ -551,7 +551,7 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
             return error;
 
         if (rw) {
-            error = cgroup.Chmod(0777);
+            error = cgroup.Chmod(0750);
             if (error)
                 return error;
         }
