@@ -290,6 +290,7 @@
   "test/test-jobs.py":"infra/porto/porto/test/test-jobs.py",
   "test/test-knobs.py":"infra/porto/porto/test/test-knobs.py",
   "test/test-labels.py":"infra/porto/porto/test/test-labels.py",
+  "test/test-layer-lz4.py":"infra/porto/porto/test/test-layer-lz4.py",
   "test/test-legacy-root-loop.py":"infra/porto/porto/test/test-legacy-root-loop.py",
   "test/test-locate-process.py":"infra/porto/porto/test/test-locate-process.py",
   "test/test-mem-overcommit.py":"infra/porto/porto/test/test-mem-overcommit.py",

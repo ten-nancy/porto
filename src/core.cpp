@@ -298,6 +298,10 @@ TError TCore::Save() {
         filter = "zstd";
         format = ".core.zst";
     }
+    if (StringEndsWith(DefaultPattern.ToString(), ".lz4")) {
+        filter = "lz4";
+        format = ".core.lz4";
+    }
 
     Pattern = dir / (Prefix + ExeName + "." + std::to_string(Pid) + ".S" + std::to_string(Signal) + "." +
                      FormatTime(time(nullptr), "%Y%m%dT%H%M%S") + format);

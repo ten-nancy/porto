@@ -764,6 +764,8 @@ static TError Compression(const TPath &archive, const TFile &arc, const std::str
             goto gz;
         if (compress == "tzst" || compress == "tar.zst")
             goto zst;
+        if (compress == "tlz4" || compress == "tar.lz4")
+            goto lz4;
         if (compress == "tbz2" || compress == "tar.bz2")
             goto bz2;
         if (compress == "tar")
@@ -786,6 +788,9 @@ static TError Compression(const TPath &archive, const TFile &arc, const std::str
                 goto gz;
             if (!strncmp(magic, "\x28\xB5\x2F\xFD", 4))
                 goto zst;
+            /* LZ4 has "new" and "legacy" magic number */
+            if (!strncmp(magic, "\x04\x22\x4D\x18", 4) || !strncmp(magic, "\x02\x21\x4C\x18", 4))
+                goto lz4;
             if (!strncmp(magic, "BZh", 3))
                 goto bz2;
             if (!strncmp(magic, "hsqs", 4))
@@ -809,6 +814,9 @@ static TError Compression(const TPath &archive, const TFile &arc, const std::str
 
     if (StringEndsWith(name, ".zst") || StringEndsWith(name, ".tzst"))
         goto zst;
+
+    if (StringEndsWith(name, ".lz4") || StringEndsWith(name, ".tlz4"))
+        goto lz4;
 
     if (StringEndsWith(name, ".bz2") || StringEndsWith(name, ".tbz2"))
         goto bz2;
@@ -855,6 +863,12 @@ zst:
         return OK;
     }
     return TError(EError::NotSupported, "Compression: Can not find /usr/bin/zstd binary");
+lz4:
+    if (!TPath("/usr/bin/lz4").Exists())
+        return TError(EError::NotSupported, "Compression: Can not find /usr/bin/lz4 binary");
+
+    option = "--use-compress-program=lz4";
+    return OK;
 bz2:
     option = "--bzip2";
     return OK;
