@@ -2,7 +2,7 @@ Source: porto
 Maintainer: Porto Team <porto@yandex-team.ru>
 Build-Depends:
  cmake, debhelper (>= 8.0.0), pkg-config, autoconf, libtool,
- protobuf-compiler, libprotobuf-dev, libncurses5-dev,
+ protobuf-compiler, libprotobuf-dev, libncurses-dev,
  libnl-3-dev (>=3.2.27),
  libnl-genl-3-dev (>=3.2.27),
  libnl-route-3-dev (>=3.2.27),
@@ -10,7 +10,7 @@ Build-Depends:
  libelf-dev, zlib1g-dev,
  g++ (>= 4:5),
  libc6-dev, linux-libc-dev (>= 5.15),
- dh-python, python-all, python-setuptools, python3-setuptools,
+ dh-python, python3-all, python3-setuptools,
  bash-completion, pandoc,
  libgoogle-perftools-dev (>= 2.4),
  automake, libseccomp-dev

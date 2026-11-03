@@ -19,7 +19,7 @@ env:
         libnl-genl-3-dev \
         libnl-route-3-dev \
         libnl-idiag-3-dev \
-        libncurses5-dev \
+        libncurses-dev \
         libelf-dev \
         zlib1g-dev \
         pandoc \
@@ -30,12 +30,12 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04]
+        os: [ubuntu-22.04, ubuntu-24.04]
   
     runs-on: ${{matrix.os}}
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Dependencies installation
       run: |
