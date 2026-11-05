@@ -65,3 +65,35 @@ with contextlib.ExitStack() as cleanup:
     test_self_dependency_cycle(c, cleanup)
 
 ExpectEq(int(c.GetData('/', 'porto_stat[warnings]')), warns)
+
+
+# bind volume with file storage is mounted at <internal>/<file name>:
+# restored volume must umount it there, otherwise its internal directory stays as garbage
+def test_bind_file_storage(conn, cleanup):
+    vol0 = cleanup.enter_context(CreateVolume(conn))
+
+    src = os.path.join(vol0.path, "bar")
+    dst = os.path.join(vol0.path, "foo")
+    open(src, "w").close()
+    open(dst, "w").close()
+
+    vol = conn.CreateVolume(dst, backend="bind", storage=src)
+
+    ReloadPortod()
+    conn.FindVolume(vol.path)
+    vol.Unlink()
+
+    ExpectEq(os.path.exists(os.path.join(vol.place, 'porto_volumes', vol.id)), False)
+
+
+# no async junk removal: garbage left by volume destroy stays
+ConfigurePortod('test-volume-restore', """
+volumes {
+    async_remove_watchdog_ms: 86400000
+}
+""")
+try:
+    with contextlib.ExitStack() as cleanup:
+        test_bind_file_storage(c, cleanup)
+finally:
+    ConfigurePortod('test-volume-restore', "")

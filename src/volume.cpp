@@ -344,6 +344,11 @@ public:
 /* TVolumeBindBackend - bind mount */
 
 class TVolumeBindBackend: public TVolumeBackend {
+    /* file storage is mounted at <internal>/<name>, InternalPath is not saved */
+    void SetupFileStorage() {
+        Volume->InternalPath /= Volume->StoragePath.BaseName();
+    }
+
 public:
     TError Configure() override {
         if (!Volume->HaveStorage())
@@ -361,9 +366,15 @@ public:
             else if (Volume->Path.IsDirectoryStrict())
                 return TError(EError::InvalidPath, "Volume path {} must be a directory", Volume->Path);
 
-            Volume->InternalPath /= Volume->StoragePath.BaseName();
+            SetupFileStorage();
         }
 
+        return OK;
+    }
+
+    TError Restore() override {
+        if (Volume->BindFileStorage())
+            SetupFileStorage();
         return OK;
     }
 
@@ -2769,7 +2780,7 @@ TError TVolume::Destroy() {
 
         error = volume->DestroyOne();
         if (error && !ret)
-            ret = error;
+            ret = volume.get() == this ? error : TError(error, "nested volume {}", volume->Path);
 
         volumes_lock.lock();
 
