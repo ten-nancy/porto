@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "util/path.hpp"
+#include "util/file.hpp"
 
 TError Md5Sum(TFile &file, std::string &sum);
 void Md5Sum(const std::string &value, std::string &sum);

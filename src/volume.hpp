@@ -7,9 +7,9 @@
 
 #include "common.hpp"
 #include "storage.hpp"
+#include "util/file.hpp"
 #include "util/log.hpp"
 #include "util/mutex.hpp"
-#include "util/path.hpp"
 
 constexpr const char *V_ID = "id";
 constexpr const char *V_PATH = "path";

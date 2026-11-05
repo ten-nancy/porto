@@ -177,6 +177,8 @@
   "src/util/cred.hpp":"infra/porto/porto/src/util/cred.hpp",
   "src/util/error.cpp":"infra/porto/porto/src/util/error.cpp",
   "src/util/error.hpp":"infra/porto/porto/src/util/error.hpp",
+  "src/util/file.cpp":"infra/porto/porto/src/util/file.cpp",
+  "src/util/file.hpp":"infra/porto/porto/src/util/file.hpp",
   "src/util/hgram.hpp":"infra/porto/porto/src/util/hgram.hpp",
   "src/util/http.cpp":"infra/porto/porto/src/util/http.cpp",
   "src/util/http.hpp":"infra/porto/porto/src/util/http.hpp",

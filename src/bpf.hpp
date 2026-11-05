@@ -8,7 +8,7 @@
 
 #include "common.hpp"
 #include "util/error.hpp"
-#include "util/path.hpp"
+#include "util/file.hpp"
 
 struct bpf_prog_info;
 struct bpf_map_info;

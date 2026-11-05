@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 
-#include "util/path.hpp"
+#include "util/file.hpp"
 
 TError RunCommand(const std::vector<std::string> &command, const TFile &dir = TFile(), const TFile &input = TFile(),
                   const TFile &output = TFile(), const TCapabilities &caps = HelperCapabilities,
