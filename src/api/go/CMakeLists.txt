@@ -1,7 +1,5 @@
 project(portogo)
-cmake_minimum_required(VERSION 3.5)
-
-
+cmake_minimum_required(VERSION 3.18)
 
 #TODO(ovov): use PROTOBUF_GENERATE_CPP
 

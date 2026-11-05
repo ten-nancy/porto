@@ -21,6 +21,7 @@
   "debian/control.in":"infra/porto/porto/debian/control.in",
   "debian/copyright":"infra/porto/porto/debian/copyright",
   "debian/dirs":"infra/porto/porto/debian/dirs",
+  "debian/porto-tests.install.in":"infra/porto/porto/debian/porto-tests.install.in",
   "debian/porto.bash-completion.in":"infra/porto/porto/debian/porto.bash-completion.in",
   "debian/porto.cron.d.in":"infra/porto/porto/debian/porto.cron.d.in",
   "debian/porto.dirs.in":"infra/porto/porto/debian/porto.dirs.in",

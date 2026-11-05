@@ -6,8 +6,6 @@
 #include <cstdint>
 #undef __STDC_LIMIT_MACROS
 
-#define noinline __attribute__((noinline))
-
 #define BIT(nr) ((uint64_t)1ULL << (nr))
 
 #ifndef __has_feature

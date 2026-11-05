@@ -473,7 +473,7 @@ static std::string ResponseAsString(const rpc::TContainerResponse &resp) {
     return ret;
 }
 
-noinline TError CreateFromSpec(rpc::TCreateFromSpecRequest &req) {
+__attribute__((noinline)) TError CreateFromSpec(rpc::TCreateFromSpecRequest &req) {
     std::shared_ptr<TContainer> ct;
     std::string name;
     TError error;
@@ -552,7 +552,7 @@ undo:
     return error;
 }
 
-noinline TError UpdateFromSpec(const rpc::TUpdateFromSpecRequest &req) {
+__attribute__((noinline)) TError UpdateFromSpec(const rpc::TUpdateFromSpecRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error;
 
@@ -573,7 +573,8 @@ noinline TError UpdateFromSpec(const rpc::TUpdateFromSpecRequest &req) {
     return error;
 }
 
-noinline TError ListContainersBy(const rpc::TListContainersRequest &req, rpc::TListContainersResponse &rsp) {
+__attribute__((noinline)) TError ListContainersBy(const rpc::TListContainersRequest &req,
+                                                  rpc::TListContainersResponse &rsp) {
     std::vector<std::pair<std::string, std::shared_ptr<TContainer>>> relnames;
     std::vector<std::string> props;
     std::unordered_map<std::string, std::string> propsOps;
@@ -635,7 +636,7 @@ noinline TError ListContainersBy(const rpc::TListContainersRequest &req, rpc::TL
     return OK;
 }
 
-static noinline TError CreateContainer(std::string reqName, bool weak) {
+static __attribute__((noinline)) TError CreateContainer(std::string reqName, bool weak) {
     std::string name;
     TError error = CL->ResolveName(reqName, name);
     if (error)
@@ -658,7 +659,7 @@ static noinline TError CreateContainer(std::string reqName, bool weak) {
     return error;
 }
 
-noinline TError DestroyContainer(const rpc::TContainerDestroyRequest &req) {
+__attribute__((noinline)) TError DestroyContainer(const rpc::TContainerDestroyRequest &req) {
     std::list<std::shared_ptr<TVolume>> unlinked;
     std::shared_ptr<TContainer> ct;
     TError error;
@@ -676,7 +677,7 @@ noinline TError DestroyContainer(const rpc::TContainerDestroyRequest &req) {
     return error;
 }
 
-static noinline TError StartContainer(const rpc::TContainerStartRequest &req) {
+static __attribute__((noinline)) TError StartContainer(const rpc::TContainerStartRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->WriteContainer(req.name(), ct);
     if (error)
@@ -684,7 +685,7 @@ static noinline TError StartContainer(const rpc::TContainerStartRequest &req) {
     return ct->Start();
 }
 
-noinline TError StopContainer(const rpc::TContainerStopRequest &req) {
+__attribute__((noinline)) TError StopContainer(const rpc::TContainerStopRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->WriteContainer(req.name(), ct);
     if (error)
@@ -693,7 +694,7 @@ noinline TError StopContainer(const rpc::TContainerStopRequest &req) {
     return ct->Stop(timeout_ms);
 }
 
-noinline TError PauseContainer(const rpc::TContainerPauseRequest &req) {
+__attribute__((noinline)) TError PauseContainer(const rpc::TContainerPauseRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->WriteContainer(req.name(), ct);
     if (error)
@@ -702,7 +703,7 @@ noinline TError PauseContainer(const rpc::TContainerPauseRequest &req) {
     return ct->Pause();
 }
 
-noinline TError ResumeContainer(const rpc::TContainerResumeRequest &req) {
+__attribute__((noinline)) TError ResumeContainer(const rpc::TContainerResumeRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->WriteContainer(req.name(), ct);
     if (error)
@@ -710,7 +711,7 @@ noinline TError ResumeContainer(const rpc::TContainerResumeRequest &req) {
     return ct->Resume();
 }
 
-noinline TError RespawnContainer(const rpc::TContainerRespawnRequest &req) {
+__attribute__((noinline)) TError RespawnContainer(const rpc::TContainerRespawnRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->WriteContainer(req.name(), ct);
     if (error)
@@ -718,7 +719,7 @@ noinline TError RespawnContainer(const rpc::TContainerRespawnRequest &req) {
     return ct->Respawn();
 }
 
-noinline TError ListContainers(const rpc::TContainerListRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError ListContainers(const rpc::TContainerListRequest &req, rpc::TContainerResponse &rsp) {
     std::string mask = req.has_mask() ? req.mask() : "***";
     auto lock = LockContainers();
     for (auto &it: Containers) {
@@ -733,7 +734,7 @@ noinline TError ListContainers(const rpc::TContainerListRequest &req, rpc::TCont
     return OK;
 }
 
-noinline TError FindLabel(const rpc::TFindLabelRequest &req, rpc::TFindLabelResponse &rsp) {
+__attribute__((noinline)) TError FindLabel(const rpc::TFindLabelRequest &req, rpc::TFindLabelResponse &rsp) {
     auto label = req.label();
     bool wild_label = label.find_first_of("*?") != std::string::npos;
 
@@ -775,7 +776,7 @@ noinline TError FindLabel(const rpc::TFindLabelRequest &req, rpc::TFindLabelResp
     return OK;
 }
 
-noinline TError SetLabel(const rpc::TSetLabelRequest &req, rpc::TSetLabelResponse &rsp) {
+__attribute__((noinline)) TError SetLabel(const rpc::TSetLabelRequest &req, rpc::TSetLabelResponse &rsp) {
     std::shared_ptr<TContainer> ct;
     TError error;
 
@@ -813,7 +814,7 @@ noinline TError SetLabel(const rpc::TSetLabelRequest &req, rpc::TSetLabelRespons
     return OK;
 }
 
-noinline TError IncLabel(const rpc::TIncLabelRequest &req, rpc::TIncLabelResponse &rsp) {
+__attribute__((noinline)) TError IncLabel(const rpc::TIncLabelRequest &req, rpc::TIncLabelResponse &rsp) {
     std::shared_ptr<TContainer> ct;
     int64_t result = 0;
     TError error;
@@ -839,7 +840,8 @@ noinline TError IncLabel(const rpc::TIncLabelRequest &req, rpc::TIncLabelRespons
     return OK;
 }
 
-noinline TError GetContainerProperty(const rpc::TContainerGetPropertyRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError GetContainerProperty(const rpc::TContainerGetPropertyRequest &req,
+                                                      rpc::TContainerResponse &rsp) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->ReadContainer(req.name(), ct);
     if (!error) {
@@ -865,7 +867,7 @@ noinline TError GetContainerProperty(const rpc::TContainerGetPropertyRequest &re
     return error;
 }
 
-noinline TError SetContainerProperty(const rpc::TContainerSetPropertyRequest &req) {
+__attribute__((noinline)) TError SetContainerProperty(const rpc::TContainerSetPropertyRequest &req) {
     std::string property = req.property();
     std::string value = req.value();
 
@@ -902,7 +904,8 @@ noinline TError SetContainerProperty(const rpc::TContainerSetPropertyRequest &re
     return error;
 }
 
-noinline TError GetContainerData(const rpc::TContainerGetDataRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError GetContainerData(const rpc::TContainerGetDataRequest &req,
+                                                  rpc::TContainerResponse &rsp) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->ReadContainer(req.name(), ct);
     if (!error) {
@@ -975,7 +978,8 @@ out:
         ct->UnlockState();
 }
 
-noinline TError GetContainerCombined(const rpc::TContainerGetRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError GetContainerCombined(const rpc::TContainerGetRequest &req,
+                                                      rpc::TContainerResponse &rsp) {
     auto get = rsp.mutable_get();
     std::list<std::string> masks, names;
 
@@ -1014,7 +1018,7 @@ noinline TError GetContainerCombined(const rpc::TContainerGetRequest &req, rpc::
     return OK;
 }
 
-noinline TError ListProperty(rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError ListProperty(rpc::TContainerResponse &rsp) {
     auto list = rsp.mutable_propertylist();
     for (auto &elem: ContainerProperties) {
         auto &prop = elem.second;
@@ -1029,7 +1033,7 @@ noinline TError ListProperty(rpc::TContainerResponse &rsp) {
     return OK;
 }
 
-noinline TError ListDataProperty(rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError ListDataProperty(rpc::TContainerResponse &rsp) {
     auto list = rsp.mutable_datalist();
     for (auto &elem: ContainerProperties) {
         auto &prop = elem.second;
@@ -1042,7 +1046,7 @@ noinline TError ListDataProperty(rpc::TContainerResponse &rsp) {
     return OK;
 }
 
-noinline TError Kill(const rpc::TContainerKillRequest &req) {
+__attribute__((noinline)) TError Kill(const rpc::TContainerKillRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->ReadContainer(req.name(), ct);
     if (error)
@@ -1056,7 +1060,7 @@ noinline TError Kill(const rpc::TContainerKillRequest &req) {
     return error;
 }
 
-noinline TError Version(rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError Version(rpc::TContainerResponse &rsp) {
     auto ver = rsp.mutable_version();
 
     ver->set_tag(PORTO_VERSION);
@@ -1065,8 +1069,9 @@ noinline TError Version(rpc::TContainerResponse &rsp) {
     return OK;
 }
 
-noinline TError WaitContainers(const rpc::TContainerWaitRequest &req, bool async, rpc::TContainerResponse &rsp,
-                               std::shared_ptr<TClient> &client, bool stop = false) {
+__attribute__((noinline)) TError WaitContainers(const rpc::TContainerWaitRequest &req, bool async,
+                                                rpc::TContainerResponse &rsp, std::shared_ptr<TClient> &client,
+                                                bool stop = false) {
     std::string name, full_name;
     TError error;
 
@@ -1172,7 +1177,7 @@ noinline TError WaitContainers(const rpc::TContainerWaitRequest &req, bool async
     return async ? OK : TError::Queued();
 }
 
-noinline TError ConvertPath(const rpc::TConvertPathRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError ConvertPath(const rpc::TConvertPathRequest &req, rpc::TContainerResponse &rsp) {
     std::shared_ptr<TContainer> src, dst;
     TError error;
 
@@ -1199,7 +1204,7 @@ noinline TError ConvertPath(const rpc::TConvertPathRequest &req, rpc::TContainer
     return OK;
 }
 
-noinline TError ListVolumeProperties(rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError ListVolumeProperties(rpc::TContainerResponse &rsp) {
     auto list = rsp.mutable_volumepropertylist();
     for (auto &prop: VolumeProperties) {
         auto p = list->add_properties();
@@ -1210,7 +1215,7 @@ noinline TError ListVolumeProperties(rpc::TContainerResponse &rsp) {
     return OK;
 }
 
-noinline TError CreateVolume(const rpc::TVolumeCreateRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError CreateVolume(const rpc::TVolumeCreateRequest &req, rpc::TContainerResponse &rsp) {
     std::shared_ptr<TVolume> volume;
     rpc::TVolumeSpec spec;
     TStringMap cfg;
@@ -1245,7 +1250,7 @@ err:
     return error;
 }
 
-noinline TError TuneVolume(const rpc::TVolumeTuneRequest &req) {
+__attribute__((noinline)) TError TuneVolume(const rpc::TVolumeTuneRequest &req) {
     TStringMap cfg;
     for (auto p: req.properties())
         cfg[p.name()] = p.value();
@@ -1258,7 +1263,7 @@ noinline TError TuneVolume(const rpc::TVolumeTuneRequest &req) {
     return volume->Tune(cfg);
 }
 
-noinline TError CheckVolume(const rpc::TVolumeCheckRequest &req, rpc::TVolumeCheckResponse &rsp) {
+__attribute__((noinline)) TError CheckVolume(const rpc::TVolumeCheckRequest &req, rpc::TVolumeCheckResponse &rsp) {
     std::shared_ptr<TVolume> volume;
     std::string message;
     TError error = CL->ControlVolume(req.path(), volume);
@@ -1275,7 +1280,7 @@ noinline TError CheckVolume(const rpc::TVolumeCheckRequest &req, rpc::TVolumeChe
     return OK;
 }
 
-noinline TError LinkVolume(const rpc::TVolumeLinkRequest &req) {
+__attribute__((noinline)) TError LinkVolume(const rpc::TVolumeLinkRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->WriteContainer(req.container() != "" ? req.container() : SELF_CONTAINER, ct, true);
     if (error)
@@ -1293,7 +1298,7 @@ noinline TError LinkVolume(const rpc::TVolumeLinkRequest &req) {
     return OK;
 }
 
-noinline TError UnlinkVolume(const rpc::TVolumeUnlinkRequest &req) {
+__attribute__((noinline)) TError UnlinkVolume(const rpc::TVolumeUnlinkRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error;
 
@@ -1349,7 +1354,7 @@ static std::map<TPath, std::shared_ptr<TVolumeLink>> ListInnerVolumes(const TPat
     return map;
 }
 
-noinline TError ListVolumes(const rpc::TVolumeListRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError ListVolumes(const rpc::TVolumeListRequest &req, rpc::TContainerResponse &rsp) {
     TError error;
 
     if (req.has_path() && !req.path().empty() && !StringContains(req.path(), '*')) {
@@ -1393,7 +1398,7 @@ noinline TError ListVolumes(const rpc::TVolumeListRequest &req, rpc::TContainerR
     return OK;
 }
 
-noinline TError NewVolume(const rpc::TNewVolumeRequest &req, rpc::TNewVolumeResponse &rsp) {
+__attribute__((noinline)) TError NewVolume(const rpc::TNewVolumeRequest &req, rpc::TNewVolumeResponse &rsp) {
     Statistics->VolumesCreated++;
     MetricsRegistry->VolumesCreated++;
 
@@ -1408,7 +1413,7 @@ noinline TError NewVolume(const rpc::TNewVolumeRequest &req, rpc::TNewVolumeResp
     return OK;
 }
 
-noinline TError GetVolume(const rpc::TGetVolumeRequest &req, rpc::TGetVolumeResponse &rsp) {
+__attribute__((noinline)) TError GetVolume(const rpc::TGetVolumeRequest &req, rpc::TGetVolumeResponse &rsp) {
     TError error;
 
     std::shared_ptr<TContainer> ct;
@@ -1458,7 +1463,7 @@ noinline TError GetVolume(const rpc::TGetVolumeRequest &req, rpc::TGetVolumeResp
     return OK;
 }
 
-noinline TError ImportLayer(const rpc::TLayerImportRequest &req) {
+__attribute__((noinline)) TError ImportLayer(const rpc::TLayerImportRequest &req) {
     TError error;
     TStorage layer;
     std::shared_ptr<TContainer> ct;
@@ -1489,7 +1494,8 @@ noinline TError ImportLayer(const rpc::TLayerImportRequest &req) {
                                req.merge(), req.verbose_error());
 }
 
-noinline TError GetLayerPrivate(const rpc::TLayerGetPrivateRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError GetLayerPrivate(const rpc::TLayerGetPrivateRequest &req,
+                                                 rpc::TContainerResponse &rsp) {
     TStorage layer;
     TError error;
 
@@ -1503,7 +1509,7 @@ noinline TError GetLayerPrivate(const rpc::TLayerGetPrivateRequest &req, rpc::TC
     return error;
 }
 
-noinline TError SetLayerPrivate(const rpc::TLayerSetPrivateRequest &req) {
+__attribute__((noinline)) TError SetLayerPrivate(const rpc::TLayerSetPrivateRequest &req) {
     TStorage layer;
     TError error;
 
@@ -1514,7 +1520,7 @@ noinline TError SetLayerPrivate(const rpc::TLayerSetPrivateRequest &req) {
     return layer.SetPrivate(req.private_value());
 }
 
-noinline TError ExportLayer(const rpc::TLayerExportRequest &req) {
+__attribute__((noinline)) TError ExportLayer(const rpc::TLayerExportRequest &req) {
     TStorage layer;
     TError error;
 
@@ -1547,7 +1553,7 @@ noinline TError ExportLayer(const rpc::TLayerExportRequest &req) {
     return layer.ExportArchive(CL->ResolvePath(req.tarball()), req.has_compress() ? req.compress() : "");
 }
 
-noinline TError RemoveLayer(const rpc::TLayerRemoveRequest &req) {
+__attribute__((noinline)) TError RemoveLayer(const rpc::TLayerRemoveRequest &req) {
     TStorage layer;
     TError error;
     bool async = req.has_async() ? req.async() : false;
@@ -1566,7 +1572,7 @@ noinline TError RemoveLayer(const rpc::TLayerRemoveRequest &req) {
     return error;
 }
 
-noinline TError ListLayers(const rpc::TLayerListRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError ListLayers(const rpc::TLayerListRequest &req, rpc::TContainerResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1624,7 +1630,8 @@ static void imageToProtoImage(::rpc::TDockerImage *protoImage, const TDockerImag
         cfg->add_env(env);
 }
 
-noinline TError DockerImageStatus(const rpc::TDockerImageStatusRequest &req, rpc::TDockerImageStatusResponse &rsp) {
+__attribute__((noinline)) TError DockerImageStatus(const rpc::TDockerImageStatusRequest &req,
+                                                   rpc::TDockerImageStatusResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1645,7 +1652,8 @@ noinline TError DockerImageStatus(const rpc::TDockerImageStatusRequest &req, rpc
     return OK;
 }
 
-noinline TError ListDockerImages(const rpc::TDockerImageListRequest &req, rpc::TDockerImageListResponse &rsp) {
+__attribute__((noinline)) TError ListDockerImages(const rpc::TDockerImageListRequest &req,
+                                                  rpc::TDockerImageListResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1667,7 +1675,8 @@ noinline TError ListDockerImages(const rpc::TDockerImageListRequest &req, rpc::T
     return OK;
 }
 
-noinline TError PullDockerImage(const rpc::TDockerImagePullRequest &req, rpc::TDockerImagePullResponse &rsp) {
+__attribute__((noinline)) TError PullDockerImage(const rpc::TDockerImagePullRequest &req,
+                                                 rpc::TDockerImagePullResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1698,7 +1707,7 @@ noinline TError PullDockerImage(const rpc::TDockerImagePullRequest &req, rpc::TD
     return OK;
 }
 
-noinline TError RemoveDockerImage(const rpc::TDockerImageRemoveRequest &req) {
+__attribute__((noinline)) TError RemoveDockerImage(const rpc::TDockerImageRemoveRequest &req) {
     TStorage place;
     TError error;
 
@@ -1717,7 +1726,7 @@ noinline TError RemoveDockerImage(const rpc::TDockerImageRemoveRequest &req) {
     return error;
 }
 
-noinline TError AttachProcess(const rpc::TAttachProcessRequest &req, bool thread) {
+__attribute__((noinline)) TError AttachProcess(const rpc::TAttachProcessRequest &req, bool thread) {
     std::shared_ptr<TContainer> oldCt, newCt;
     pid_t pid = req.pid();
     std::string comm;
@@ -1786,7 +1795,7 @@ undo:
     return error;
 }
 
-noinline TError LocateProcess(const rpc::TLocateProcessRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError LocateProcess(const rpc::TLocateProcessRequest &req, rpc::TContainerResponse &rsp) {
     TError error;
     std::shared_ptr<TContainer> ct;
     pid_t pid = req.pid();
@@ -1814,7 +1823,7 @@ noinline TError LocateProcess(const rpc::TLocateProcessRequest &req, rpc::TConta
     return OK;
 }
 
-noinline TError ListStorage(const rpc::TStorageListRequest &req, rpc::TContainerResponse &rsp) {
+__attribute__((noinline)) TError ListStorage(const rpc::TStorageListRequest &req, rpc::TContainerResponse &rsp) {
     TStorage place;
     TError error;
 
@@ -1865,7 +1874,7 @@ noinline TError ListStorage(const rpc::TStorageListRequest &req, rpc::TContainer
     return error;
 }
 
-noinline TError RemoveStorage(const rpc::TStorageRemoveRequest &req) {
+__attribute__((noinline)) TError RemoveStorage(const rpc::TStorageRemoveRequest &req) {
     TStorage storage;
     TError error;
 
@@ -1881,7 +1890,7 @@ noinline TError RemoveStorage(const rpc::TStorageRemoveRequest &req) {
     return error;
 }
 
-noinline TError ImportStorage(const rpc::TStorageImportRequest &req) {
+__attribute__((noinline)) TError ImportStorage(const rpc::TStorageImportRequest &req) {
     TStorage storage;
     TError error;
 
@@ -1897,7 +1906,7 @@ noinline TError ImportStorage(const rpc::TStorageImportRequest &req) {
                                  req.has_compress() ? req.compress() : "");
 }
 
-noinline TError ExportStorage(const rpc::TStorageExportRequest &req) {
+__attribute__((noinline)) TError ExportStorage(const rpc::TStorageExportRequest &req) {
     TStorage storage;
     TError error;
 
@@ -1912,7 +1921,7 @@ noinline TError ExportStorage(const rpc::TStorageExportRequest &req) {
     return storage.ExportArchive(CL->ResolvePath(req.tarball()), req.has_compress() ? req.compress() : "");
 }
 
-noinline TError CleanupPlace(const rpc::TCleanupPlaceRequest &req) {
+__attribute__((noinline)) TError CleanupPlace(const rpc::TCleanupPlaceRequest &req) {
     TPath place = req.place();
 
     auto error = CL->ClientContainer->ResolvePlace(place);
@@ -1931,7 +1940,7 @@ noinline TError CleanupPlace(const rpc::TCleanupPlaceRequest &req) {
     return TStorage::Cleanup(pin, true, drop);
 }
 
-noinline TError CreateMetaStorage(const rpc::TMetaStorage &req) {
+__attribute__((noinline)) TError CreateMetaStorage(const rpc::TMetaStorage &req) {
     TStorage storage;
     TError error;
 
@@ -1946,7 +1955,7 @@ noinline TError CreateMetaStorage(const rpc::TMetaStorage &req) {
     return storage.CreateMeta(req.space_limit(), req.inode_limit());
 }
 
-noinline TError ResizeMetaStorage(const rpc::TMetaStorage &req) {
+__attribute__((noinline)) TError ResizeMetaStorage(const rpc::TMetaStorage &req) {
     TStorage storage;
     TError error;
 
@@ -1973,7 +1982,7 @@ noinline TError ResizeMetaStorage(const rpc::TMetaStorage &req) {
     return OK;
 }
 
-noinline TError RemoveMetaStorage(const rpc::TMetaStorage &req) {
+__attribute__((noinline)) TError RemoveMetaStorage(const rpc::TMetaStorage &req) {
     TStorage storage;
     TError error;
 
@@ -1989,7 +1998,7 @@ noinline TError RemoveMetaStorage(const rpc::TMetaStorage &req) {
     return error;
 }
 
-noinline TError SetSymlink(const rpc::TSetSymlinkRequest &req) {
+__attribute__((noinline)) TError SetSymlink(const rpc::TSetSymlinkRequest &req) {
     std::shared_ptr<TContainer> ct;
     TError error = CL->WriteContainer(req.container(), ct);
     if (error)
@@ -2000,7 +2009,8 @@ noinline TError SetSymlink(const rpc::TSetSymlinkRequest &req) {
     return ct->Save();
 }
 
-noinline static TError GetSystemProperties(const rpc::TGetSystemRequest *, rpc::TGetSystemResponse *rsp) {
+__attribute__((noinline)) static TError GetSystemProperties(const rpc::TGetSystemRequest *,
+                                                            rpc::TGetSystemResponse *rsp) {
     rsp->set_porto_version(PORTO_VERSION);
     rsp->set_porto_revision(PORTO_REVISION);
     rsp->set_kernel_version(config().linux_version());
@@ -2075,7 +2085,8 @@ noinline static TError GetSystemProperties(const rpc::TGetSystemRequest *, rpc::
     return OK;
 }
 
-noinline static TError SetSystemProperties(const rpc::TSetSystemRequest *req, rpc::TSetSystemResponse *) {
+__attribute__((noinline)) static TError SetSystemProperties(const rpc::TSetSystemRequest *req,
+                                                            rpc::TSetSystemResponse *) {
     if (!CL->IsSuperUser())
         return TError(EError::Permission, "Only for super-user");
 
@@ -2097,7 +2108,7 @@ noinline static TError SetSystemProperties(const rpc::TSetSystemRequest *req, rp
     return OK;
 }
 
-noinline static TError ClearStatistics(const rpc::TClearStatisticsRequest *req) {
+__attribute__((noinline)) static TError ClearStatistics(const rpc::TClearStatisticsRequest *req) {
     if (req->has_stat()) {
         auto it = PortoStatMembers.find(req->stat());
 

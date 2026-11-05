@@ -1,5 +1,5 @@
 project(python-portopy)
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.18)
 
 
 # TODO(ovov): use PROTOBUF_GENERATE_CPP
@@ -18,10 +18,6 @@ add_custom_command(
 	VERBATIM)
 
 add_custom_target(python_rpc_proto ALL DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/porto/rpc_pb2.py ${CMAKE_CURRENT_SOURCE_DIR}/porto/seccomp_pb2.py)
-
-if (Python2_EXECUTABLE)
-	install(CODE "execute_process(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} COMMAND ${Python2_EXECUTABLE} -uB setup.py install --root=\$ENV{DESTDIR} --prefix=\${CMAKE_INSTALL_PREFIX})")
-endif()
 
 if (Python3_EXECUTABLE)
 	install(CODE "execute_process(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} COMMAND ${Python3_EXECUTABLE} -uB setup.py install --root=\$ENV{DESTDIR} --install-lib=\${CMAKE_INSTALL_PREFIX}/lib/python3/dist-packages)")

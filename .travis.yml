@@ -3,7 +3,7 @@ os: linux
 language: cpp
 
 script:
-  - CC=gcc-4.7 CXX=g++-4.7 cmake -D USE_SYSTEM_LIBNL=OFF .
+  - CC=gcc-4.7 CXX=g++-4.7 cmake .
   - make
 
 compiler: gcc

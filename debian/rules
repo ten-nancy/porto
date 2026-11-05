@@ -2,15 +2,19 @@
 
 PKGPREFIX?=
 DESTDIR=$(CURDIR)/debian/$(PKGPREFIX)porto
+# not under /usr: porto wants write access for binds from system paths, see IsSystemPath()
+TESTSDIR=/opt/porto-tests
 SBINDIR=$(DESTDIR)/usr/sbin
 BUILD_TYPE?=Release
-OPENSSL_TGZ_URL?=https://github.com/openssl/openssl/archive/refs/tags/openssl-3.0.2.tar.gz
-LIBBPF_TGZ_URL?=https://github.com/libbpf/libbpf/archive/refs/tags/v1.2.2.tar.gz
 PORTO_INSTALL_ADDON?=
+
+# fixed name for debian/porto-tests.install.in; not "build", that shadows the target
+PORTO_BUILDDIR=obj
 
 sedpkgprefix:=sed -e "s/PKGPREFIX/$(PKGPREFIX)/gI"
 
 export DH_VERBOSE=1
+export DEB_BUILD_MAINT_OPTIONS = optimize=-lto
 
 override_dh_auto_configure:
 	rm -f debian/control
@@ -21,12 +25,17 @@ override_dh_auto_configure:
 	$(sedpkgprefix) debian/porto.docs.in            > debian/$(PKGPREFIX)porto.docs
 	$(sedpkgprefix) debian/porto.init.in            > debian/$(PKGPREFIX)porto.init
 	$(sedpkgprefix) debian/porto.install.in         > debian/$(PKGPREFIX)porto.install
+	$(sedpkgprefix) debian/porto-tests.install.in   > debian/$(PKGPREFIX)porto-tests.install
 	$(sedpkgprefix) debian/porto.logrotate.in       > debian/$(PKGPREFIX)porto.logrotate
 	$(sedpkgprefix) debian/porto.postinst.in        > debian/$(PKGPREFIX)porto.postinst
 	$(sedpkgprefix) debian/porto.service.in         > debian/$(PKGPREFIX)porto.service
 	$(sedpkgprefix) debian/porto.upstart.in         > debian/$(PKGPREFIX)porto.upstart
 
-	dh_auto_configure -- -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DOPENSSL_TGZ_URL=$(OPENSSL_TGZ_URL) -DLIBBPF_TGZ_URL=$(LIBBPF_TGZ_URL)
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=$(BUILD_TYPE)
+
+override_dh_strip:
+	dh_strip -N$(PKGPREFIX)porto-tests
+	dh_strip -p$(PKGPREFIX)porto-tests --no-automatic-dbgsym
 
 override_dh_installinit:
 	dh_installinit --no-restart-on-upgrade
@@ -36,6 +45,10 @@ override_dh_shlibdeps:
 
 override_dh_install:
 	dh_install
+	# CTest files use absolute build paths
+	sed -i 's|$(CURDIR)|$(TESTSDIR)|g' \
+		debian/$(PKGPREFIX)porto-tests$(TESTSDIR)/$(PORTO_BUILDDIR)/CTestTestfile.cmake \
+		debian/$(PKGPREFIX)porto-tests$(TESTSDIR)/$(PORTO_BUILDDIR)/test/CTestTestfile.cmake
 	$(PORTO_INSTALL_ADDON)
 	dh_bash-completion
 	$(SBINDIR)/portoctl --help
@@ -43,4 +56,4 @@ override_dh_install:
 override_dh_auto_test:
 
 %:
-	dh $@ --with python3 --without python-support --parallel
+	dh $@ --with python3 --without python-support --parallel --builddir=$(PORTO_BUILDDIR)

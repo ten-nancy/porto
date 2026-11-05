@@ -1,0 +1,6 @@
+test opt/porto-tests
+scripts opt/porto-tests
+src/api/python opt/porto-tests/src/api
+obj/CTestTestfile.cmake opt/porto-tests/obj
+obj/test/CTestTestfile.cmake opt/porto-tests/obj/test
+obj/portotest obj/hijack obj/mem_touch opt/porto-tests/obj

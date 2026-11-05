@@ -6184,7 +6184,7 @@ public:
         return OK;
     }
     TError Set(const std::string &value) override {
-        int tos;
+        int tos = 0;
         TError error = TNetwork::ParseTos(value, tos);
         if (!error) {
             CT->NetClass.DefaultTos = tos;

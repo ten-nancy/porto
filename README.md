@@ -71,8 +71,7 @@ sudo apt install -y libtool-bin
 ```bash
 mkdir build && cd build
 
-# use DUSE_SYSTEM_LIBBPF for xenial and bionic
-cmake .. # -DUSE_SYSTEM_LIBBPF=OFF
+cmake ..
 
 # use make -j for parallel build
 make
