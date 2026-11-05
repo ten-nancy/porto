@@ -1669,6 +1669,13 @@ bool TFile::IsMountPointFallback(const TError &error) const {
 }
 
 bool TFile::IsMountPoint() const {
+    struct statx st;
+    if (!statx(Fd, "", AT_EMPTY_PATH, 0, &st)) {
+        if (st.stx_attributes_mask & STATX_ATTR_MOUNT_ROOT)
+            return st.stx_attributes & STATX_ATTR_MOUNT_ROOT;
+    } else
+        L_WRN("{}", TError::System("statx"));
+
     TFile parent;
     auto error = parent.OpenDirAt(*this, "..");
     if (error)
