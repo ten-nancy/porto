@@ -351,7 +351,6 @@ public:
     TError WriteAll(const std::string &text) const;
     TError WriteAllAt(const TPath &path, const std::string &text) const;
     static TError Chattr(int fd, unsigned add_flags, unsigned del_flags);
-    int GetMountId(const TPath &relative = "") const;
     TError GetMountId(int &mountId) const;
     bool IsMountPoint() const;
     TError Dup(const TFile &other);

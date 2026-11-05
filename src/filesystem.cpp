@@ -813,7 +813,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         return error;
 
     // new root must be a different mounts
-    if (!Root.IsRoot() && RootFd.GetMountId() == RootFd.GetMountId("..")) {
+    if (!Root.IsRoot() && !RootFd.IsMountPoint()) {
         error = dot.Bind(dot, MS_REC);
         if (error)
             return error;

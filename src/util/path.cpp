@@ -982,12 +982,8 @@ TError TPath::Remount(uint64_t mnt_flags) const {
                 error = mnt.Target.Remount(remount_flags | MS_SILENT);
                 if (error) {
                     TFile dst;
-                    TError error2 = dst.OpenPath(mnt.Target);
-                    if (error2)
-                        L("cannot remount {} {} and open {}", mnt.Target, error, error2);
-                    else if (dst.GetMountId() != mnt.MountId)
-                        L("cannot remount {} {} different mount id", mnt.Target, error);
-                    else
+                    int mountId;
+                    if (!dst.OpenPath(mnt.Target) && !dst.GetMountId(mountId) && mountId == mnt.MountId)
                         return error;
                 }
             }
@@ -1652,14 +1648,6 @@ TError TFile::Chattr(int fd, unsigned add_flags, unsigned del_flags) {
         return TError::System("ioctl(FS_IOC_SETFLAGS)");
 
     return OK;
-}
-
-int TFile::GetMountId(const TPath &relative) const {
-    FileHandle fh;
-    int mnt;
-    if (name_to_handle_at(Fd, relative.ToString().c_str(), &fh.head, &mnt, AT_EMPTY_PATH))
-        return -1;
-    return mnt;
 }
 
 bool TFile::IsMountPointFallback(const TError &error) const {
