@@ -1418,10 +1418,10 @@ Like for container volume configuration is a set of key-value pairs.
 
 * **space\_guarantee** - disk space guarantee, default: 0
 
-    Guarantees that resource is available time of creation and
-    protects from claiming by guarantees in following requests.
+    Supported only by backend *loop*: this amount of the image is preallocated at creation,
+    and by *tmpfs* and *hugetmpfs* for compatibility, where it has no effect.
 
-* **inode\_guarantee** - disk inode guarantee, default: 0
+* **inode\_guarantee** - read-only, deprecated
 
 * **space\_used**      - current disk space usage
 

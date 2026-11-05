@@ -705,7 +705,7 @@ def CreateVolume(conn, pathstr):
     if layers is not None:
         kwargs["layers"] = layers
 
-    for prop in ['space_limit', 'inode_limit', 'space_guarantee', 'inode_guarantee']:
+    for prop in ['space_limit', 'inode_limit', 'space_guarantee']:
         size = select_size()
         if size is not None:
             kwargs[prop] = size

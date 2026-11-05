@@ -1722,78 +1722,6 @@ unsigned long TVolume::GetMountFlags(void) const {
 }
 
 /* Called under VolumesMutex */
-TError TVolume::CheckGuarantee(uint64_t space_guarantee, uint64_t inode_guarantee) {
-    TStatFS current, total;
-    TPath storage;
-    TError error;
-
-    if (RemoteStorage() || (!space_guarantee && !inode_guarantee))
-        return OK;
-
-    if (UserStorage())
-        storage = StoragePath;
-    else if (HaveStorage()) {
-        TStorage back;
-        back.Open(EStorageType::Storage, Place, Storage);
-        storage = back.Path.DirName();
-    } else
-        storage = Place / PORTO_VOLUMES;
-
-    error = storage.StatFS(total);
-    if (error)
-        return error;
-
-    StatFS(current);
-
-    /* Check available space as is */
-    if (total.SpaceAvail + current.SpaceUsage < space_guarantee)
-        return TError(EError::NoSpace, "Not enough space for volume guarantee {}, avail {}, our usage {}",
-                      StringFormatSize(space_guarantee), StringFormatSize(total.SpaceAvail),
-                      StringFormatSize(current.SpaceUsage));
-
-    if (total.InodeAvail + current.InodeUsage < inode_guarantee && BackendType != "loop")
-        return TError(EError::NoSpace, "Not enough inodes for volume guarantee {}, avail {}, our usage {}",
-                      inode_guarantee, total.InodeAvail, current.InodeUsage);
-
-    /* Estimate unclaimed guarantees */
-    uint64_t space_claimed = 0, space_guaranteed = 0;
-    uint64_t inode_claimed = 0, inode_guaranteed = 0;
-
-    for (auto &it: Volumes) {
-        auto volume = it.second;
-
-        /* data stored remotely, plain cannot provide usage */
-        if (volume.get() == this || volume->RemoteStorage() || volume->BackendType == "plain" ||
-            volume->StoragePath.GetDev() != storage.GetDev() || (!volume->SpaceGuarantee && !volume->InodeGuarantee))
-            continue;
-
-        TStatFS stat;
-        volume->StatFS(stat);
-
-        space_guaranteed += volume->SpaceGuarantee;
-        space_claimed += std::min(stat.SpaceUsage, volume->SpaceGuarantee);
-
-        if (volume->BackendType != "loop") {
-            inode_guaranteed += volume->InodeGuarantee;
-            inode_claimed += std::min(stat.InodeUsage, volume->InodeGuarantee);
-        }
-    }
-
-    if (total.SpaceAvail + current.SpaceUsage + space_claimed < space_guarantee + space_guaranteed)
-        return TError(
-            EError::NoSpace, "Not enough space for volume guarantee {}, avail {}, claimed {} of {}, our usage {}",
-            StringFormatSize(space_guarantee), StringFormatSize(total.SpaceAvail), StringFormatSize(space_claimed),
-            StringFormatSize(space_guaranteed), StringFormatSize(current.SpaceUsage));
-
-    if (BackendType != "loop" &&
-        total.InodeAvail + current.InodeUsage + inode_claimed < inode_guarantee + inode_guaranteed)
-        return TError(EError::NoSpace,
-                      "Not enough inodes for volume guarantee {}, avail {}, claimed {} of {}, our usage {}",
-                      inode_guarantee, total.InodeAvail, inode_claimed, inode_guaranteed, current.InodeUsage);
-
-    return OK;
-}
-
 TError TVolume::DependsOn(const TPath &path) {
     if (State == EVolumeState::Ready && !path.Exists())
         return TError(EError::VolumeNotFound, "Volume {} depends on non-existent path {}", Path, path);
@@ -2045,21 +1973,17 @@ TError TVolume::Configure(const TPath &target_root) {
         return TError(EError::InvalidValue, "Backend {} does not support copy-on-write shares", BackendType);
 
     /* Verify guarantees */
+    if (SpaceGuarantee && !SupportsSpaceGuarantee())
+        return TError(EError::InvalidValue, "Backend {} does not support space_guarantee", BackendType);
+
     if (SpaceLimit && SpaceLimit < SpaceGuarantee)
         return TError(EError::InvalidValue, "Space guarantree bigger than limit");
-
-    if (InodeLimit && InodeLimit < InodeGuarantee)
-        return TError(EError::InvalidValue, "Inode guarantree bigger than limit");
 
     error = OpenBackend();
     if (error)
         return error;
 
     error = Backend->Configure();
-    if (error)
-        return error;
-
-    error = CheckGuarantee(SpaceGuarantee, InodeGuarantee);
     if (error)
         return error;
 
@@ -2989,13 +2913,25 @@ TError TVolume::StatFS(TStatFS &result) {
 }
 
 TError TVolume::Tune(const std::map<std::string, std::string> &properties) {
-    TError error;
+    if (properties.empty())
+        return OK;
 
     for (auto &p: properties) {
-        if (p.first != V_INODE_LIMIT && p.first != V_INODE_GUARANTEE && p.first != V_SPACE_LIMIT &&
-            p.first != V_SPACE_GUARANTEE)
+        if (p.first != V_INODE_LIMIT && p.first != V_SPACE_LIMIT)
             /* Prop not found omitted */
             return TError(EError::InvalidProperty, "Volume property " + p.first + " cannot be changed");
+    }
+
+    uint64_t spaceLimit1 = 0, inodeLimit1 = 0;
+    if (properties.count(V_SPACE_LIMIT)) {
+        auto error = StringToSize(properties.at(V_SPACE_LIMIT), spaceLimit1);
+        if (error)
+            return error;
+    }
+    if (properties.count(V_INODE_LIMIT)) {
+        auto error = StringToSize(properties.at(V_INODE_LIMIT), inodeLimit1);
+        if (error)
+            return error;
     }
 
     auto volumes_lock = LockVolumes();
@@ -3006,64 +2942,23 @@ TError TVolume::Tune(const std::map<std::string, std::string> &properties) {
     SetState(EVolumeState::Tuning);
     volumes_lock.unlock();
 
-    if (properties.count(V_SPACE_LIMIT) || properties.count(V_INODE_LIMIT)) {
-        uint64_t spaceLimit = SpaceLimit, inodeLimit = InodeLimit;
+    // TODO: replace with std::optional
+    uint64_t spaceLimit = properties.count(V_SPACE_LIMIT) ? spaceLimit1 : SpaceLimit;
+    uint64_t inodeLimit = properties.count(V_INODE_LIMIT) ? inodeLimit1 : InodeLimit;
 
-        if (properties.count(V_SPACE_LIMIT)) {
-            error = StringToSize(properties.at(V_SPACE_LIMIT), spaceLimit);
-            if (error)
-                goto out;
-        }
-        if (properties.count(V_INODE_LIMIT)) {
-            error = StringToSize(properties.at(V_INODE_LIMIT), inodeLimit);
-            if (error)
-                goto out;
-        }
+    L_ACT("Resize volume: {} to bytes: {} inodes: {}", Path, spaceLimit, inodeLimit);
 
-        L_ACT("Resize volume: {} to bytes: {} inodes: {}", Path, spaceLimit, inodeLimit);
-
-        error = Backend->Resize(spaceLimit, inodeLimit);
-        if (error)
-            goto out;
-
-        volumes_lock.lock();
-        SpaceLimit = spaceLimit;
-        InodeLimit = inodeLimit;
-        volumes_lock.unlock();
-    }
-
-    if (properties.count(V_SPACE_GUARANTEE) || properties.count(V_INODE_GUARANTEE)) {
-        uint64_t space_guarantee = SpaceGuarantee, inode_guarantee = InodeGuarantee;
-
-        if (properties.count(V_SPACE_GUARANTEE)) {
-            error = StringToSize(properties.at(V_SPACE_GUARANTEE), space_guarantee);
-            if (error)
-                goto out;
-        }
-        if (properties.count(V_INODE_GUARANTEE)) {
-            error = StringToSize(properties.at(V_INODE_GUARANTEE), inode_guarantee);
-            if (error)
-                goto out;
-        }
-
-        volumes_lock.lock();
-        error = CheckGuarantee(space_guarantee, inode_guarantee);
-        if (!error) {
-            SpaceGuarantee = space_guarantee;
-            InodeGuarantee = inode_guarantee;
-        }
-        volumes_lock.unlock();
-    }
-
-out:
+    auto error = Backend->Resize(spaceLimit, inodeLimit);
 
     volumes_lock.lock();
     if (State == EVolumeState::Tuning)
         SetState(EVolumeState::Ready);
+    if (!error) {
+        SpaceLimit = spaceLimit;
+        InodeLimit = inodeLimit;
+        Save(true);
+    }
     volumes_lock.unlock();
-
-    if (!error)
-        Save();
 
     return error;
 }
@@ -3331,7 +3226,7 @@ void TVolume::DumpDescription(TVolumeLink *link, const TPath &path, rpc::TVolume
     ret[V_SPACE_LIMIT] = std::to_string(SpaceLimit);
     ret[V_INODE_LIMIT] = std::to_string(InodeLimit);
     ret[V_SPACE_GUARANTEE] = std::to_string(SpaceGuarantee);
-    ret[V_INODE_GUARANTEE] = std::to_string(InodeGuarantee);
+    ret[V_INODE_GUARANTEE] = "0";
 
     if (HaveLayers()) {
         std::vector<std::string> layers = Layers;
@@ -3446,7 +3341,7 @@ TError TVolume::Save(bool locked) {
     node.Set(V_SPACE_LIMIT, std::to_string(SpaceLimit));
     node.Set(V_SPACE_GUARANTEE, std::to_string(SpaceGuarantee));
     node.Set(V_INODE_LIMIT, std::to_string(InodeLimit));
-    node.Set(V_INODE_GUARANTEE, std::to_string(InodeGuarantee));
+    node.Set(V_INODE_GUARANTEE, "0");
 
     if (DeviceName.size())
         node.Set(V_DEVICE_NAME, DeviceName);
@@ -3631,8 +3526,9 @@ std::vector<TVolumeProperty> VolumeProperties = {
     {V_DEVICE_NAME, "name of backend disk device (ro)", true},
     {V_SPACE_LIMIT, "disk space limit (dynamic, default zero - unlimited)", false},
     {V_INODE_LIMIT, "disk inode limit (dynamic, default zero - unlimited)", false},
-    {V_SPACE_GUARANTEE, "disk space guarantee (dynamic, default - zero)", false},
-    {V_INODE_GUARANTEE, "disk inode guarantee (dynamic, default - zero)", false},
+    {V_SPACE_GUARANTEE, "disk space guarantee, loop and [huge]tmpfs backends only (creation-time, default - zero)",
+     false},
+    {V_INODE_GUARANTEE, "disk inode guarantee (ro, deprecated)", true},
     {V_SPACE_USED, "current disk space usage (ro)", true},
     {V_INODE_USED, "current disk inode used (ro)", true},
     {V_SPACE_AVAILABLE, "available disk space (ro)", true},
@@ -4286,7 +4182,6 @@ TError TVolume::Load(const rpc::TVolumeSpec &spec, bool full) {
 
     if (spec.has_inodes()) {
         InodeLimit = spec.inodes().limit();
-        InodeGuarantee = spec.inodes().guarantee();
     }
 
     if (spec.has_build_time() && full)
@@ -4351,8 +4246,6 @@ void TVolume::Dump(rpc::TVolumeSpec &spec, bool full) {
         spec.mutable_space()->set_guarantee(SpaceGuarantee);
     if (InodeLimit)
         spec.mutable_inodes()->set_limit(InodeLimit);
-    if (InodeGuarantee)
-        spec.mutable_inodes()->set_guarantee(InodeGuarantee);
 
     if (!Image.empty())
         spec.set_image(Image);

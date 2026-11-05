@@ -4119,27 +4119,6 @@ static void TestVolumeImpl(Porto::Connection &api) {
         Expect(!StringStartsWith(m[b].source, "/dev/loop"));
     }
 
-    /*
-    ExpectOk(StringToUint64(volumes[0].Properties["space_usage"], usage));
-    ExpectOk(StringToUint64(volumes[0].Properties["space_limit"], limit));
-    ExpectOk(StringToUint64(volumes[0].Properties["space_avail"], avail));
-    ExpectOk(StringToUint64(volumes[0].Properties["space_guarantee"], guarantee));
-
-    Expect(limit == 104857600);
-    Expect(usage + avail <= limit);
-    Expect(usage + avail >= guarantee);
-
-    ExpectOk(StringToUint64(volumes[0].Properties["inode_usage"], usage));
-    ExpectOk(StringToUint64(volumes[0].Properties["inode_limit"], limit));
-    ExpectOk(StringToUint64(volumes[0].Properties["inode_avail"], avail));
-    ExpectOk(StringToUint64(volumes[0].Properties["inode_guarantee"], guarantee));
-
-    Expect(limit == 100);
-    Expect(usage + avail <= limit);
-    Expect(usage + avail >= guarantee);
-
-    */
-
     ExpectApiSuccess(api.UnlinkVolume(a, ""));
     ExpectApiSuccess(api.UnlinkVolume(b));
 

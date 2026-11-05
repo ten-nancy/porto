@@ -149,7 +149,6 @@ public:
     uint64_t SpaceLimit = 0;
     uint64_t SpaceGuarantee = 0;
     uint64_t InodeLimit = 0;
-    uint64_t InodeGuarantee = 0;
 
     /* protected with VolumesLock */
     std::shared_ptr<TContainer> VolumeOwnerContainer;
@@ -238,8 +237,6 @@ public:
 
     TError Check(std::string &message);
 
-    TError CheckGuarantee(uint64_t space_guarantee, uint64_t inode_guarantee);
-
     bool HaveQuota(void) const {
         return SpaceLimit || InodeLimit;
     }
@@ -257,6 +254,11 @@ public:
     bool RemoteStorage(void) const {
         return BackendType == "nbd" || BackendType == "tmpfs" || BackendType == "hugetmpfs" || BackendType == "dir" ||
                BackendType == "quota";
+    }
+
+    /* loop preallocates image, tmpfs is legacy */
+    bool SupportsSpaceGuarantee(void) const {
+        return BackendType == "loop" || BackendType == "tmpfs" || BackendType == "hugetmpfs";
     }
 
     bool Ephemeral(void) const {
