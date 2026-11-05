@@ -347,7 +347,7 @@ message TConfig {
         optional uint64 max_total = 9;
         optional string place_load_limit = 10;
         optional bool direct_io_loop = 11;
-        optional string default_lvm_group = 12;
+        optional string default_lvm_group = 12 [deprecated=true];
         optional string squashfs_compression = 13;
         optional bool parallel_compression = 15;
         optional bool keep_project_quota_id = 16;

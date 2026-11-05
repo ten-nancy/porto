@@ -643,11 +643,6 @@ def backend_loop_blksize(conn):
         es.callback(vol.Unlink)
 
 
-def backend_rbd():
-    #Not implemented yet
-    pass
-
-
 def TestBody(c):
     ExpectEq(len(os.listdir(PLACE)), 1)
     ExpectEq(len(c.ListVolumes()), 1)

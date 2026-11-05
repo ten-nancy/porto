@@ -594,7 +594,7 @@ Write access to container requires any of these conditions:
 
 * **place\_limit** - limits sum of volume **space\_limit** owned by subtree [deprecated]
 
-    Format: total|default|\<place\>|tmpfs|lvm \<group\>|rbd: \<bytes\>;...
+    Format: total|default|\<place\>|tmpfs: \<bytes\>;...
 
 * **place\_usage** - current sum of volume **space\_limit** owned by subtree [deprecated]
 
@@ -1322,8 +1322,6 @@ Like for container volume configuration is a set of key-value pairs.
     - *overlay*   - mount overlayfs and optional project quota for upper layer
     - *squash*    - overlayfs and quota on top of squashfs image set in **layers**
     - *loop*      - create and mount ext4 image **storage**/loop.img or **storage** if this's file
-    - *rbd*       - map and mount ext4 image from caph rbd **storage**="id@pool/image"
-    - *lvm*       - ext4 in **lvm(8)** **storage**="\[group\]\[/name\]\[@thin\]\[:origin\]"
 
     Depending on chosen backend some properties becomes required of not-supported.
 
@@ -1331,8 +1329,6 @@ Like for container volume configuration is a set of key-value pairs.
 
     - */path*     - path to directory to be used as storage
     - *name*      - name of internal persistent storage, see [Volume Storage]
-
-    Some backends (*rbd*, *lvm*) expects configuration in special format.
 
     Storage directory must be writeable for user (or readable for read-only volume).
     Loop image file is read-only, parent directory must be writable.
@@ -1393,7 +1389,7 @@ Like for container volume configuration is a set of key-value pairs.
 
     Backend *squash* expects path to a squashfs image as top-layer.
 
-    Some backends (plain, native, loop, lvm, rbd) copy layers into volume during construction.
+    Some backends (plain, native, loop) copy layers into volume during construction.
 
 * **place**         - place for layers and default storage
 
@@ -1414,7 +1410,7 @@ Like for container volume configuration is a set of key-value pairs.
     Key is empty if backend doesn't limit or own data.
     Like plain, bind, quota, or if storage is provided by user.
 
-    Some backend use own keys: "tmpfs", "lvm \<group\>", "rbd".
+    Backend tmpfs uses own key "tmpfs".
 
 * **space\_limit**     - disk space limit, default: 0 - unlimited
 
@@ -1473,24 +1469,6 @@ Such layers and storages have name with prefix **meta-storage**/
 -- **meta-storage**/**sub-layer** and **meta-storage**/**sub-storage**.
 
 For details see **portoctl** command storage and API.
-
-## Backend LVM
-
-Backend *lvm* takes configuration from property **storage** in format: \[group\]\[/name\]\[@thin\]\[:origin\]".
-
-Default volume group could be set in portod.conf
-```
-volumes {
-    default_lvm_group: "group"
-}
-```
-
-It "name" is set volume becomes persistent: porto keeps and reuse logical volume "group/name".
-User have to remove it using **lvremove(8)**.
-
-If "thin" is set them volume is allocated from precreated thin pool "group/thin".
-
-If "origin" is set then volume is created as thin snapshot of "group/origin" and belongs to the same pool.
 
 # Docker Images Support
 

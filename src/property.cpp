@@ -3232,9 +3232,8 @@ public:
 class TPlaceLimit: public TProperty {
 public:
     TPlaceLimit()
-        : TProperty(
-              P_PLACE_LIMIT, EProperty::PLACE_LIMIT,
-              "Limits sum of volume space_limit: total|default|/place|tmpfs|lvm group|rbd: bytes;... [deprecated]")
+        : TProperty(P_PLACE_LIMIT, EProperty::PLACE_LIMIT,
+                    "Limits sum of volume space_limit: total|default|/place|tmpfs: bytes;... [deprecated]")
     {}
     TError Get(std::string &) const override {
         return OK;
@@ -3270,7 +3269,7 @@ class TPlaceUsage: public TProperty {
 public:
     TPlaceUsage()
         : TProperty(P_PLACE_USAGE, EProperty::NONE,
-                    "Current sum of volume space_limit: total|/place|tmpfs|lvm group|rbd: bytes;... [deprecated]")
+                    "Current sum of volume space_limit: total|/place|tmpfs: bytes;... [deprecated]")
     {
         IsReadOnly = true;
     }

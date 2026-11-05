@@ -255,8 +255,8 @@ public:
 
     /* They do not keep data in StoragePath */
     bool RemoteStorage(void) const {
-        return BackendType == "rbd" || BackendType == "nbd" || BackendType == "lvm" || BackendType == "tmpfs" ||
-               BackendType == "hugetmpfs" || BackendType == "dir" || BackendType == "quota";
+        return BackendType == "nbd" || BackendType == "tmpfs" || BackendType == "hugetmpfs" || BackendType == "dir" ||
+               BackendType == "quota";
     }
 
     bool Ephemeral(void) const {
