@@ -4,6 +4,7 @@
 #include "config.hpp"
 #include "container.hpp"
 #include "util/log.hpp"
+#include "util/mount.hpp"
 
 extern "C" {
 #include <linux/fs.h>
@@ -73,28 +74,30 @@ bool IsSystemPath(const TPath &path) {
     return false;
 }
 
-/*static TError PreparePortoctlBind() {
-    TPath dot(".");
-    TPath portoctl(PORTO_PORTOCTL_PATH);
-    TError error;
+TError TBindMount::ParseOptions(const std::string &options) {
+    auto error = TMount::ParseMountAttr(options, Attr, Recursive);
+    if (error)
+        return error;
 
-    if (portoctl.Exists()) {
-        TPath dest = dot / portoctl;
-        if (!dest.Exists()) {
-            if (!dest.DirName().Exists()) {
-                error = dest.DirName().MkdirAll(0755);
-                if (error)
-                    return error;
-            }
+    if (Attr.Set & MOUNT_ATTR_NOSYMFOLLOW)
+        return TError(EError::InvalidValue, "Bind mount option nosymfollow is not supported");
 
-            error = dest.Mkfile(0755);
-            if (error)
-                return error;
-        }
-    }
+    // by default disable backward propagation
+    Propagation = Attr.Propagation ? Attr.Propagation : MS_SLAVE | MS_SHARED;
+    Attr.Propagation = 0;
 
     return OK;
-}*/
+}
+
+uint64_t TBindMount::GetFlags() const {
+    uint64_t mnt_flags = Attr.ToFlags();
+
+    if (Recursive)
+        mnt_flags |= MS_REC;
+
+    /* default MS_SLAVE | MS_SHARED is not shown */
+    return mnt_flags | (Propagation & (MS_PRIVATE | MS_UNBINDABLE));
+}
 
 TError TBindMount::Parse(const std::string &str, std::vector<TBindMount> &binds) {
     auto lines = SplitEscapedString(str, ' ', ';');
@@ -109,24 +112,9 @@ TError TBindMount::Parse(const std::string &str, std::vector<TBindMount> &binds)
         bind.Source = line[0];
         bind.Target = line[1];
 
-        if (line.size() > 2) {
-            error = TMount::ParseFlags(line[2], bind.MntFlags,
-                                       MS_RDONLY | MS_ALLOW_WRITE | MS_NODEV |
-                                           MS_ALLOW_DEV | /* check permissions at start */
-                                           MS_NOSUID | MS_ALLOW_SUID | MS_NOEXEC | MS_ALLOW_EXEC | MS_REC | MS_PRIVATE |
-                                           MS_UNBINDABLE | MS_NOATIME | MS_NODIRATIME | MS_RELATIME);
-            if (error)
-                return error;
-        }
-
-        // by default disable backward propagation
-        if (!(bind.MntFlags & (MS_PRIVATE | MS_UNBINDABLE)))
-            bind.MntFlags |= MS_SLAVE | MS_SHARED;
-
-        // FIXME temporary hack
-        for (auto &src: config().container().rec_bind_hack())
-            if (bind.Source == src)
-                bind.MntFlags |= MS_REC;
+        error = bind.ParseOptions(line.size() > 2 ? line[2] : "");
+        if (error)
+            return error;
 
         binds.push_back(bind);
     }
@@ -137,39 +125,23 @@ TError TBindMount::Parse(const std::string &str, std::vector<TBindMount> &binds)
 std::string TBindMount::Format(const std::vector<TBindMount> &binds) {
     TMultiTuple lines;
     for (auto &bind: binds)
-        lines.push_back({bind.Source.ToString(), bind.Target.ToString(),
-                         TMount::FormatFlags(bind.MntFlags & ~(MS_SLAVE | MS_SHARED))});
+        lines.push_back({bind.Source.ToString(), bind.Target.ToString(), TMount::FormatFlags(bind.GetFlags())});
     return MergeEscapeStrings(lines, ' ', ';');
 }
 
 TError TBindMount::Load(const rpc::TContainerBindMount &spec) {
     TError error;
-    uint64_t flag;
+    std::string options;
 
     Source = spec.source();
     Target = spec.target();
-    MntFlags = 0;
 
-    for (const auto &flag_str: spec.flag()) {
-        error =
-            TMount::ParseFlags(flag_str, flag,
-                               MS_RDONLY | MS_ALLOW_WRITE | MS_NODEV | MS_ALLOW_DEV | /* check permissions at start */
-                                   MS_NOSUID | MS_ALLOW_SUID | MS_NOEXEC | MS_ALLOW_EXEC | MS_REC | MS_PRIVATE |
-                                   MS_UNBINDABLE | MS_NOATIME | MS_NODIRATIME | MS_RELATIME);
-        if (error)
-            return error;
+    for (const auto &flag_str: spec.flag())
+        options += flag_str + ",";
 
-        MntFlags |= flag;
-    }
-
-    // by default disable backward propagation
-    if (!(MntFlags & (MS_PRIVATE | MS_UNBINDABLE)))
-        MntFlags |= MS_SLAVE | MS_SHARED;
-
-    // FIXME temporary hack
-    for (auto &src: config().container().rec_bind_hack())
-        if (Source == src)
-            MntFlags |= MS_REC;
+    error = ParseOptions(options);
+    if (error)
+        return error;
 
     return OK;
 }
@@ -177,8 +149,9 @@ TError TBindMount::Load(const rpc::TContainerBindMount &spec) {
 void TBindMount::Dump(rpc::TContainerBindMount &spec) {
     spec.set_source(Source.ToString());
     spec.set_target(Target.ToString());
-    for (uint64_t flag = 1; flag <= MntFlags && flag; flag <<= 1)
-        if (flag & (MntFlags & ~(MS_SLAVE | MS_SHARED)))
+    uint64_t mnt_flags = GetFlags();
+    for (uint64_t flag = 1; flag <= mnt_flags && flag; flag <<= 1)
+        if (flag & mnt_flags)
             spec.add_flag(TMount::FormatFlags(flag));
 }
 
@@ -189,7 +162,7 @@ TError TBindMount::Mount(const TCred &cred, const TPath &target_root) const {
     if (error)
         return error;
 
-    if (!(MntFlags & MS_RDONLY)) {
+    if (!(Attr.Set & MOUNT_ATTR_RDONLY)) {
         auto srcFsType = src.FsType();
         if (srcFsType == PROC_SUPER_MAGIC || srcFsType == SYSFS_MAGIC)
             return TError(EError::Permission, "filesystem type is not allowed for write access");
@@ -199,7 +172,7 @@ TError TBindMount::Mount(const TCred &cred, const TPath &target_root) const {
 
     if (!error && !ControlSource) {
         /* not read-only means read-write, protect system directories from dac override */
-        if (!(MntFlags & MS_RDONLY) || (directory && IsSystemPath(src.RealPath())))
+        if (!(Attr.Set & MOUNT_ATTR_RDONLY) || (directory && IsSystemPath(src.RealPath())))
             error = src.WriteAccess(cred);
         else
             error = src.ReadAccess(cred);
@@ -278,11 +251,14 @@ TError TBindMount::Mount(const TCred &cred, const TPath &target_root) const {
     if (new_root && !real_target.IsInside(new_root.RealPath()))
         return TError(EError::InvalidPath, "Bindmount real target {} out of root {}", real_target, target_root);
 
-    error = dst.ProcPath().Bind(src.ProcPath(), MntFlags & MS_REC);
-    if (error)
-        return error;
-
-    error = real_target.Remount(MS_BIND | MntFlags);
+    TMountFd mnt;
+    error = mnt.Clone(src, TPath(), Recursive);
+    if (!error && (Attr.Set || Attr.Clr))
+        error = mnt.SetAttr(Attr.Set, Attr.Clr, Recursive);
+    if (!error)
+        error = mnt.SetFlagsPropagation(Propagation | (Recursive ? MS_REC : 0));
+    if (!error)
+        error = mnt.Move(dst, TPath());
     if (error)
         return error;
 
@@ -401,7 +377,7 @@ TError TMountNamespace::RemountRun(const TContainer &ct) {
     if (error)
         return error;
 
-    error = run_lock.BindRemount(run_lock, MS_NOSUID | MS_NODEV | MS_NOEXEC);
+    error = BindMount(run_lock, run_lock, {MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV | MOUNT_ATTR_NOEXEC, 0, 0}, false);
     if (error)
         return error;
 
@@ -414,7 +390,8 @@ TError TMountNamespace::RemountRun(const TContainer &ct) {
     if (error)
         return error;
 
-    error = dev_shm.BindRemount(run_shm, MS_NOSUID | MS_NODEV | MS_STRICTATIME);
+    error = BindMount(run_shm, dev_shm,
+                      {MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV | MOUNT_ATTR_STRICTATIME, MOUNT_ATTR__ATIME, 0}, false);
     if (error)
         return error;
 
@@ -463,20 +440,24 @@ TError TMountNamespace::MountTraceFs() {
         return TError(EError::Unknown, "Tracefs is not mounted");
 
     /* read-only bind instead for new mount to preserve read-write in host */
-    error = tracefs.BindRemount(parent_tracefs, MS_RDONLY);
+    error = BindMount(parent_tracefs, tracefs, {MOUNT_ATTR_RDONLY, 0, 0}, false);
     if (error)
         return error;
 
     TPath debugfs = "sys/kernel/debug";
     if (debugfs.Exists()) {
-        TPath tracing = debugfs / "tracing";
-        error = debugfs.Mount("none", "tmpfs", 0, {"mode=755", "size=0"});
+        /* stub with only tracing inside */
+        TMountFd mnt;
+        error = mnt.Create("tmpfs", 0, {"mode=755", "size=0"});
         if (!error)
-            error = tracing.Mkdir(0700);
+            error = mnt.MkdirAt("tracing", 0700);
+        /* bind into detached mount needs move_mount to detached tree: kernel >= 6.15, attach first */
         if (!error)
-            error = tracing.BindRemount(tracefs, MS_RDONLY);
+            error = mnt.Move(TFile(), debugfs);
         if (!error)
-            error = debugfs.Remount(MS_RDONLY);
+            error = BindMount(tracefs, debugfs / "tracing", {MOUNT_ATTR_RDONLY, 0, 0}, false);
+        if (!error)
+            error = mnt.SetAttr(MOUNT_ATTR_RDONLY, 0, false);
         if (error)
             return error;
     }
@@ -499,11 +480,12 @@ TError TMountNamespace::MountSystemd() {
     if (!error)
         error = systemd.MkdirAll(0755);
     if (!error)
-        error = tmpfs.Remount(MS_RDONLY);
+        error = SetMountAttr(TFile(), tmpfs, {MOUNT_ATTR_RDONLY, 0, 0}, false);
     if (!error)
         error = systemd.Mount("cgroup", "cgroup", MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_RDONLY, {"name=systemd"});
     if (!error)
-        error = systemd_rw.BindRemount(systemd_rw, MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_ALLOW_WRITE);
+        error = BindMount(systemd_rw, systemd_rw,
+                          {MOUNT_ATTR_NOSUID | MOUNT_ATTR_NOEXEC | MOUNT_ATTR_NODEV, MOUNT_ATTR_RDONLY, 0}, false);
 
     return error;
 }
@@ -595,25 +577,11 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         }
     }
 
-    // this condition exists, due to
-    // it remounts /sys/fs/cgroup - cgroup mount point, not tmpfs, to RO, but it's unexpected.
-    // remount in case of cgroup2 doesn't work, since we already have instances in /sys/fs/cgroup, like freezer which
-    // are controller and resource is busy
-    if (!CgroupDriver.UseCgroup2()) {
-        error = tmpfs.Remount(MS_RDONLY);
-        if (error)
-            return error;
-    } else if (!(rwCgroupFs && config().container().enable_rw_net_cgroups())) {
-        // for cgroupv2 we still can make bind mount with RO
-        // should be
-        // mount("/sys/fs/cgroup", "/sys/fs/cgroup", NULL or cgroup2, MS_RDONLY|MS_BIND, NULL) = 0
-        // mount("none", "/sys/fs/cgroup", NULL, MS_RDONLY|MS_REMOUNT|MS_BIND, NULL) = 0
-        error = tmpfs.BindRemount(tmpfs, MS_RDONLY);
-        if (error)
-            return error;
-    }
+    /* cgroup2 is mounted at /sys/fs/cgroup itself, keep it writable for rw cgroupfs */
+    if (CgroupDriver.UseCgroup2() && rwCgroupFs && config().container().enable_rw_net_cgroups())
+        return OK;
 
-    return OK;
+    return SetMountAttr(TFile(), tmpfs, {MOUNT_ATTR_RDONLY, 0, 0}, false);
 }
 
 TError TMountNamespace::SetupRoot(const TContainer &ct) {
@@ -688,13 +656,6 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
         error = dest.Bind(sock);
         if (error)
             return error;
-
-        /*if (portoctl.Exists()) {
-            dest = dot / portoctl;
-            error = dest.BindRemount(portoctl, MS_RDONLY);
-            if (error)
-                return error;
-        }*/
     }
 
     struct {
@@ -739,14 +700,14 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
     struct {
         TPath dst;
         TPath src;
-        unsigned long flags;
+        TMountAttr attr;
     } binds[] = {
-        {"run/lock", "run/lock", MS_NOSUID | MS_NODEV | MS_NOEXEC},
-        {"dev/shm", "run/shm", MS_NOSUID | MS_NODEV | MS_STRICTATIME},
+        {"run/lock", "run/lock", {MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV | MOUNT_ATTR_NOEXEC, 0, 0}},
+        {"dev/shm", "run/shm", {MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV | MOUNT_ATTR_STRICTATIME, MOUNT_ATTR__ATIME, 0}},
     };
 
     for (auto &b: binds) {
-        error = b.dst.BindRemount(b.src, b.flags);
+        error = BindMount(b.src, b.dst, b.attr, false);
         if (error)
             return error;
     }
@@ -779,12 +740,12 @@ TError TMountNamespace::ProtectProc() {
         return error;
 
     for (auto &path: proc_ro) {
-        error = path.BindRemount(path, MS_RDONLY);
+        error = BindMount(path, path, {MOUNT_ATTR_RDONLY, 0, 0}, false);
         if (error)
             return error;
     }
 
-    error = TPath("kcore").BindRemount("/dev/null", MS_RDONLY);
+    error = BindMount("/dev/null", "kcore", {MOUNT_ATTR_RDONLY, 0, 0}, false);
     if (error)
         return error;
 
@@ -800,7 +761,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
     TError error;
 
     // remount as slave to receive propagations from parent namespace
-    error = TPath("/").Remount(MS_SLAVE | MS_REC);
+    error = SetMountAttr(TFile(), "/", {0, 0, MS_SLAVE}, true);
     if (error)
         return error;
 
@@ -827,20 +788,13 @@ TError TMountNamespace::Setup(const TContainer &ct) {
 
     // allow suid binaries at root volume
     if (!Root.IsRoot()) {
-        error = dot.Remount(MS_BIND | MS_ALLOW_SUID);
+        error = SetMountAttr(TFile(), dot, {0, MOUNT_ATTR_NOSUID, 0}, false);
         if (error)
             return error;
     }
 
-    // create portoctl file before remounting root to ro
-    /*if (!Root.IsRoot() && BindPortoSock) {
-        error = PreparePortoctlBind();
-        if (error)
-            return error;
-    }*/
-
     if (RootRo) {
-        error = dot.Remount(MS_BIND | MS_REC | MS_RDONLY);
+        error = SetMountAttr(TFile(), dot, {MOUNT_ATTR_RDONLY, 0, 0}, false);
         if (error)
             return error;
     }
@@ -955,11 +909,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
     }
 
     // remount as shared: subcontainers will get propgation from us
-    error = dot.Remount(MS_SHARED | MS_REC);
-    if (error)
-        return error;
-
-    return OK;
+    return SetMountAttr(TFile(), dot, {0, 0, MS_SHARED}, true);
 }
 
 TError TMountNamespace::Enter(pid_t pid) {

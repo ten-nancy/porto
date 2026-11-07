@@ -3,6 +3,7 @@
 #include "client.hpp"
 #include "common.hpp"
 #include "util/log.hpp"
+#include "util/mount.hpp"
 #include "util/path.hpp"
 #include "util/unix.hpp"
 
@@ -124,13 +125,9 @@ TError RunCommand(const std::vector<std::string> &command, const std::vector<std
         if (unshare(CLONE_NEWNS))
             HelperError(err, "newns", TError::System("unshare"));
 
-        error = root.Remount(MS_PRIVATE | MS_REC);
+        error = SetMountAttr(TFile(), root, {MOUNT_ATTR_RDONLY, 0, MS_PRIVATE}, true);
         if (error)
-            HelperError(err, "remont", error);
-
-        error = root.Remount(MS_BIND | MS_REC | MS_RDONLY);
-        if (error)
-            HelperError(err, "remont", error);
+            HelperError(err, "set root mount attr", error);
 
         error = dot.Bind(dot, MS_REC);
         if (error)
@@ -140,9 +137,9 @@ TError RunCommand(const std::vector<std::string> &command, const std::vector<std
         if (error)
             HelperError(err, "chdir bind", error);
 
-        error = dot.Remount(MS_BIND | MS_REC | MS_ALLOW_WRITE);
+        error = SetMountAttr(TFile(), dot, {0, MOUNT_ATTR_RDONLY, 0}, true);
         if (error)
-            HelperError(err, "remount bind", error);
+            HelperError(err, "set dot mount attr", error);
     } else {
         error = root.Chdir();
         if (error)

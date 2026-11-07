@@ -14,6 +14,7 @@
 #include "device.hpp"
 #include "util/error.hpp"
 #include "util/log.hpp"
+#include "util/mount.hpp"
 #include "util/string.hpp"
 #include "util/task.hpp"
 #include "util/unix.hpp"
@@ -2344,7 +2345,11 @@ TError TCgroupDriver::InitializeCgroups() {
             return error;
         }
     } else if (StringStartsWith(mount.Options, "ro,")) {
-        error = root.Remount(MS_NODEV | MS_NOSUID | MS_NOEXEC | MS_ALLOW_WRITE);
+        /* superblock and mount */
+        error = TMountFd::Reconfigure(root, {"rw"});
+        if (!error)
+            error = SetMountAttr(
+                TFile(), root, {MOUNT_ATTR_NODEV | MOUNT_ATTR_NOSUID | MOUNT_ATTR_NOEXEC, MOUNT_ATTR_RDONLY, 0}, false);
         if (error) {
             L_ERR("Cannot remount cgroups root: {}", error);
             return error;

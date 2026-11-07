@@ -2500,7 +2500,7 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
         TBindMount bm;
         bm.Source = "/etc/hosts";
         bm.Target = "/etc/hosts";
-        bm.MntFlags |= MS_RDONLY;
+        bm.Attr.Set |= MOUNT_ATTR_RDONLY;
         TaskEnv.Mnt.BindMounts.push_back(bm);
     }
 
@@ -2519,7 +2519,8 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
         bm.ControlTarget = dst && !CL->CanControl(dst->Volume->VolumeOwner);
 
         /* allow suid inside by default */
-        bm.MntFlags |= MS_ALLOW_SUID;
+        if (!(bm.Attr.Set & MOUNT_ATTR_NOSUID))
+            bm.Attr.Clr |= MOUNT_ATTR_NOSUID;
 
         /* this allows to inject suid binaries into host */
         if (Parent->RootPath.IsRoot() && !TaskEnv.Mnt.Root.IsRoot() && bm.Source.IsDirectoryFollow()) {
@@ -2530,11 +2531,11 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
             }
         }
 
-        if (bm.MntFlags & MS_ALLOW_DEV) {
+        if (bm.Attr.Clr & MOUNT_ATTR_NODEV) {
             if (!OwnerCred.IsRootUser())
                 return TError(EError::Permission, "Not enough permissions to allow devices at bind mount");
         } else
-            bm.MntFlags |= MS_NODEV;
+            bm.Attr.Set |= MOUNT_ATTR_NODEV;
     }
 
     TaskEnv.Mnt.BindPortoSock = AccessLevel != EAccessLevel::None;

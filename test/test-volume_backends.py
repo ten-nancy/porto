@@ -1,3 +1,4 @@
+
 #!/usr/bin/python3
 
 import os
@@ -275,6 +276,52 @@ def backend_bind_regular(conn):
         ExpectEq(ct['state'], 'dead')
         assert ct['exit_code'] == '0', 'exit_code={}\n{}'.format(ct['exit_code'], ct['stderr'])
 
+
+
+
+def backend_rbind_propagation(conn):
+    # If InternalPath is under the source of another bind volume,
+    # attaching an rbind mount at InternalPath creates a propagated
+    # copy under the other bind target. Destroying the rbind volume
+    # must remove that copy too.
+    #
+    # Applying MS_SLAVE to the rbind mount at InternalPath after
+    # attachment stops unmounts below InternalPath from reaching the
+    # propagated copy.  Applying MS_SHARED to the rbind mount at
+    # InternalPath does not restore that propagation. Unmounting the
+    # rbind mount at InternalPath itself still follows the propagation
+    # relationships of its parent mount.
+    #
+    # With a nested mount, destroying the rbind volume in such case
+    # has this result:
+    # 1. The nested mount below InternalPath is removed, but its propagated
+    #    copy remains.
+    # 2. The unmount at InternalPath reaches the other bind target.
+    # 3. The kernel leaves the propagated copy of the rbind mounted because
+    #    that copy still contains the nested mount.
+    #
+    # Set propagation before attaching the rbind mount to InternalPath.
+    with contextlib.ExitStack() as cleanup:
+        root = cleanup.enter_context(CreateVolume(conn))
+        yt = os.path.join(root.path, 'yt')
+        foo = os.path.join(root.path, 'foo')
+        os.mkdir(yt)
+        os.mkdir(foo)
+        cleanup.enter_context(CreateVolume(conn, foo, backend='bind', storage=yt))
+
+        tools = os.path.join(root.path, 'bin/tools')
+        src = os.path.join(root.path, 'src')
+        os.makedirs(tools)
+        os.mkdir(src)
+        cleanup.enter_context(CreateVolume(conn, tools, backend='bind', storage=src))
+
+        volume = cleanup.enter_context(
+            CreateVolume(conn, backend='rbind',
+                         storage=os.path.join(root.path, 'bin'), place=yt))
+        propagated = os.path.join(foo, 'porto_volumes', volume.id, 'volume')
+        ExpectExists(os.path.join(propagated, 'tools'))
+        volume.Unlink()
+        ExpectNotExists(propagated)
 
 def backend_tmpfs(c):
     args = dict()
@@ -660,6 +707,7 @@ def TestBody(c):
     backend_plain(c)
     backend_bind(c)
     backend_bind_regular(c)
+    backend_rbind_propagation(c)
     backend_tmpfs(c)
     backend_quota(c)
     backend_native(c)

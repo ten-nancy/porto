@@ -21,6 +21,7 @@
 #include "storage.hpp"
 #include "util/http.hpp"
 #include "util/log.hpp"
+#include "util/mount.hpp"
 #include "util/quota.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
@@ -316,6 +317,20 @@ public:
     }
 };
 
+/* Bind as slave of source in own shared group: mounts propagate into volume and its links, but not back */
+static TError BindVolume(const TFile &srcDir, const TPath &source, const TFile &dstDir, const TPath &target,
+                         uint64_t attr_set, uint64_t attr_clr, bool recursive) {
+    TMountFd mnt;
+    auto error = mnt.Clone(srcDir, source, recursive);
+    if (!error)
+        error = SetMountAttr(mnt, TPath(), {attr_set, attr_clr, MS_SLAVE}, recursive);
+    if (!error)
+        error = SetMountAttr(mnt, TPath(), {0, 0, MS_SHARED}, recursive);
+    if (!error)
+        error = mnt.Move(dstDir, target);
+    return error;
+}
+
 /* TVolumePlainBackend - bindmount */
 
 class TVolumePlainBackend: public TVolumeBackend {
@@ -328,8 +343,7 @@ public:
     }
 
     TError Build() override {
-        return Volume->InternalPath.BindRemount(Volume->StorageFd.ProcPath(),
-                                                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return BindVolume(Volume->StorageFd, TPath(), TFile(), Volume->InternalPath, Volume->GetMountFlags(), 0, false);
     }
 
     TError Destroy() override {
@@ -379,8 +393,7 @@ public:
     }
 
     TError Build() override {
-        return Volume->InternalPath.BindRemount(Volume->StorageFd.ProcPath(),
-                                                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return BindVolume(Volume->StorageFd, TPath(), TFile(), Volume->InternalPath, Volume->GetMountFlags(), 0, false);
     }
 
     TError Destroy() override {
@@ -410,8 +423,7 @@ public:
     }
 
     TError Build() override {
-        return Volume->InternalPath.BindRemount(Volume->StorageFd.ProcPath(),
-                                                Volume->GetMountFlags() | MS_REC | MS_SLAVE | MS_SHARED);
+        return BindVolume(Volume->StorageFd, TPath(), TFile(), Volume->InternalPath, Volume->GetMountFlags(), 0, true);
     }
 
     TError Destroy() override {
@@ -455,7 +467,7 @@ public:
         if (Volume->InodeLimit)
             opts.emplace_back("nr_inodes=" + std::to_string(Volume->InodeLimit));
 
-        return Volume->InternalPath.Mount("porto_tmpfs_" + Volume->Id, "tmpfs", Volume->GetMountFlags(), opts);
+        return Volume->MountFilesystem("porto_tmpfs_" + Volume->Id, "tmpfs", opts);
     }
 
     TError Resize(uint64_t space_limit, uint64_t inode_limit) override {
@@ -470,8 +482,7 @@ public:
         if (inode_limit)
             opts.emplace_back("nr_inodes=" + std::to_string(inode_limit));
 
-        return Volume->InternalPath.Mount("porto_tmpfs_" + Volume->Id, "tmpfs", Volume->GetMountFlags() | MS_REMOUNT,
-                                          opts);
+        return TMountFd::Reconfigure(Volume->InternalPath, opts);
     }
 
     TError Destroy() override {
@@ -599,8 +610,7 @@ public:
                 return error;
         }
 
-        return Volume->InternalPath.BindRemount(Volume->StorageFd.ProcPath(),
-                                                Volume->GetMountFlags() | MS_SLAVE | MS_SHARED);
+        return BindVolume(Volume->StorageFd, TPath(), TFile(), Volume->InternalPath, Volume->GetMountFlags(), 0, false);
     }
 
     TError Destroy() override {
@@ -815,7 +825,7 @@ public:
 
         Volume->DeviceName = fmt::format("loop{}", Volume->DeviceIndex);
 
-        error = Volume->InternalPath.Mount(GetLoopDevice(), fsType, Volume->GetMountFlags(), {});
+        error = Volume->MountFilesystem(GetLoopDevice().ToString(), fsType, {});
         if (error) {
             PutLoopDev(Volume->DeviceIndex);
             Volume->DeviceIndex = -1;
@@ -1015,7 +1025,9 @@ public:
         if (error)
             return error;
 
-        error = volume.InternalPath.Mount("overlay", "overlay", volume.GetMountFlags(), options);
+        /* not fsconfig(2): its values are limited to 256 bytes, lowerdir with many layers is longer */
+        error = volume.InternalPath.Mount("overlay", "overlay",
+                                          MS_NODEV | MS_NOSUID | (volume.IsReadOnly ? MS_RDONLY : 0), options);
         (void)TPath("/").Chdir();
 
         if (error) {
@@ -1379,7 +1391,7 @@ public:
         NbdVolumes.emplace(index, Volume->shared_from_this());
         VolumesMutex.unlock();
 
-        error = Volume->InternalPath.Mount(GetDevice(), FilesystemType, Volume->GetMountFlags(), {});
+        error = Volume->MountFilesystem(GetDevice(), FilesystemType, {});
         if (error.Errno == EIO)
             return TError(buildInfo->Reconn ? EError::NbdSocketTimeout : EError::InvalidFilesystem,
                           "Cannot mount nbd device: {}", error);
@@ -1720,16 +1732,34 @@ TPath TVolume::GetInternal(const std::string &type) const {
         return base;
 }
 
-unsigned long TVolume::GetMountFlags(void) const {
-    unsigned flags = 0;
+/* MOUNT_ATTR_* of volume in host namespace */
+uint64_t TVolume::GetMountFlags(void) const {
+    uint64_t flags = 0;
 
     if (IsReadOnly)
-        flags |= MS_RDONLY;
+        flags |= MOUNT_ATTR_RDONLY;
 
     /* in host namespace volumes are nodev and nosuid */
-    flags |= MS_NODEV | MS_NOSUID;
+    flags |= MOUNT_ATTR_NODEV | MOUNT_ATTR_NOSUID;
 
     return flags;
+}
+
+/* New filesystem instance at InternalPath, opts as in TMountFd::Create */
+TError TVolume::MountFilesystem(const std::string &source, const std::string &type,
+                                std::vector<std::string> opts) const {
+    TMountFd mnt;
+
+    opts.insert(opts.begin(), "source=" + source);
+    /* superblock too: read-only device cannot be mounted read-write */
+    if (IsReadOnly)
+        opts.push_back("ro");
+
+    auto error = mnt.Create(type, GetMountFlags(), opts);
+    if (error)
+        return error;
+
+    return mnt.Move(TFile(), InternalPath);
 }
 
 /* Called under VolumesMutex */
@@ -2026,7 +2056,7 @@ TError TVolume::MergeLayers() {
             temp = GetInternal("temp");
             error = temp.Mkdir(0700);
             if (!error)
-                error = temp.BindRemount(pin.ProcPath(), MS_RDONLY | MS_NODEV | MS_PRIVATE);
+                error = BindMount(pin.ProcPath(), temp, {MOUNT_ATTR_RDONLY | MOUNT_ATTR_NODEV, 0, MS_PRIVATE}, false);
             if (error) {
                 (void)temp.Rmdir();
                 return error;
@@ -2525,9 +2555,8 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
     Statistics->VolumeLinksMounted++;
 
     TFile targetPin;
-    TPath link_mount, real_target;
-    std::unique_lock<std::mutex> internal_lock;
-    unsigned long flags = 0;
+    TPath real_target;
+    uint64_t attr_set = 0;
 
     auto error = targetPin.OpenDirStrict(link->Container->RootPath);
     if (error)
@@ -2545,45 +2574,16 @@ TError TVolume::MountLink(std::shared_ptr<TVolumeLink> link) {
     }
 
     if (IsReadOnly || link->ReadOnly)
-        flags |= MS_RDONLY;
-
-    if (BackendType == "rbind" || BackendType == "dir")
-        flags |= MS_REC;
+        attr_set |= MOUNT_ATTR_RDONLY;
 
     /* save state before changes */
     error = Save();
     if (error)
         goto undo;
 
-    /* Several links can be created for one volume at a time */
-    internal_lock = link->Volume->LockInternal();
-
-    link_mount = GetInternal("volume_link");
-    if (!BindFileStorage())
-        error = link_mount.Mkdir(700);
-    else
-        error = link_mount.CreateRegular();
-
-    /*
-      make private - cannot move from shared mount
-      make unbindable - we dont want bind to leak into rbind
-    */
-    if (!error)
-        error = link_mount.BindRemount(link_mount, MS_UNBINDABLE);
-
-    /* Start new shared group and make read-only - that isn't propagated */
-    if (!error)
-        error = link_mount.BindRemount(InternalPath, flags | MS_SLAVE | MS_SHARED | MS_ALLOW_SUID);
-
-    /* Move to target path and propagate into namespaces */
-    if (!error)
-        error = link_mount.MoveMount(targetPin.ProcPath());
-
-    (void)link_mount.UmountAll();
-    (void)link_mount.Rmdir();
-
-    internal_lock.unlock();
-
+    /* volume is nosuid in host, links allow suid */
+    error = BindVolume(TFile(), InternalPath, targetPin, TPath(), attr_set, MOUNT_ATTR_NOSUID,
+                       BackendType == "rbind" || BackendType == "dir");
     if (error)
         goto undo;
 

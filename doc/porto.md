@@ -537,7 +537,10 @@ Write access to container requires any of these conditions:
 
 * **root\_path** - container root path in client namespace
 
-* **root\_readonly** - remount everything read-only
+* **root\_readonly** - remount the container root mount read-only
+
+    Existing submounts retain their read/write flags. Mounts created during container setup,
+    such as /run and /dev/shm, and explicit bind mounts are configured independently.
 
 * **bind** - bind mounts: \<source\> \<target\> \[ro|rw|rec|dev|nodev|suid|nosuid|exec|noexec|private|unbindable|noatime|nodiratime|relatime\],... ;...
 

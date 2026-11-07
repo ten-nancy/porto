@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "util/log.hpp"
+#include "util/mount.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
 
@@ -866,16 +867,6 @@ static const TFlagsNames UmountFlags = {
     {UMOUNT_NOFOLLOW, "nofollow"},
 };
 
-TError TMount::ParseFlags(const std::string &str, uint64_t &mnt_flags, uint64_t allowed)
-{
-    TError error = StringParseFlags(str, MountFlags, mnt_flags);
-    if (error)
-        return error;
-    if (mnt_flags & ~allowed)
-        return TError(EError::InvalidValue, "Not allowed flags {}", TMount::FormatFlags(mnt_flags & ~allowed));
-    return OK;
-}
-
 std::string TMount::FormatFlags(uint64_t mnt_flags) {
     return StringFormatFlags(mnt_flags, MountFlags);
 }
@@ -932,90 +923,6 @@ TError TPath::Bind(const TPath &source, uint64_t mnt_flags) const {
     L_ACT("mount bind {} {} {} {}", Path, source, mnt_flags, TMount::FormatFlags(mnt_flags));
     if (mount(source.c_str(), Path.c_str(), NULL, MS_BIND | (uint32_t)mnt_flags, NULL))
         return TError::System("mount({}, {}, {})", source, Path, TMount::FormatFlags(MS_BIND | mnt_flags));
-    return OK;
-}
-
-TError TPath::Remount(uint64_t mnt_flags) const {
-    if (!(mnt_flags & MS_SILENT))
-        L_ACT("remount {} {}", Path, TMount::FormatFlags(mnt_flags));
-
-    uint32_t recursive = mnt_flags & MS_REC;
-
-    if (mnt_flags & MS_PRIVATE) {
-        if (mount(NULL, Path.c_str(), NULL, MS_PRIVATE | recursive, NULL))
-            return TError::System("Remount {} MS_PRIVATE", Path);
-    }
-
-    if (mnt_flags & MS_SLAVE) {
-        if (mount(NULL, Path.c_str(), NULL, MS_SLAVE | recursive, NULL))
-            return TError::System("Remount {} MS_SLAVE", Path);
-    }
-
-    if (mnt_flags & MS_SHARED) {
-        if (mount(NULL, Path.c_str(), NULL, MS_SHARED | recursive, NULL))
-            return TError::System("Remount {} MS_SHARED", Path);
-    }
-
-    if (mnt_flags & MS_UNBINDABLE) {
-        if (mount(NULL, Path.c_str(), NULL, MS_UNBINDABLE | recursive, NULL))
-            return TError::System("Remount {} MS_UNBINDABLE", Path);
-    }
-
-    uint64_t remount_flags = mnt_flags & ~(uint64_t)(MS_UNBINDABLE | MS_PRIVATE | MS_SLAVE | MS_SHARED | MS_REC);
-
-    /* vfsmount remount isn't recursive in kernel */
-    if (recursive && (remount_flags & MS_BIND)) {
-        TPath normal = NormalPath();
-        std::vector<TMount> mounts;
-        TError error = TPath::ListAllMounts(mounts);
-        if (error)
-            return error;
-        for (auto &mnt: mounts) {
-            if (mnt.Target.IsInside(normal) && mnt.Target != normal) {
-                error = mnt.Target.Remount(remount_flags | MS_SILENT);
-                if (error) {
-                    TFile dst;
-                    int mountId;
-                    if (!dst.OpenPath(mnt.Target) && !dst.GetMountId(mountId) && mountId == mnt.MountId)
-                        return error;
-                }
-            }
-        }
-    }
-
-    if (remount_flags) {
-        struct statfs st;
-        if (statfs(Path.c_str(), &st))
-            return TError::System("statfs {}", Path);
-
-        /* preserve ro,nodev,noexec,nosuid */
-        if ((st.f_flags & ST_RDONLY) && !(MS_ALLOW_WRITE & remount_flags))
-            remount_flags |= MS_RDONLY;
-        if ((st.f_flags & ST_NODEV) && !(MS_ALLOW_DEV & remount_flags))
-            remount_flags |= MS_NODEV;
-        if ((st.f_flags & ST_NOEXEC) && !(MS_ALLOW_EXEC & remount_flags))
-            remount_flags |= MS_NOEXEC;
-        if ((st.f_flags & ST_NOSUID) && !(MS_ALLOW_SUID & remount_flags))
-            remount_flags |= MS_NOSUID;
-
-        if (mount(NULL, Path.c_str(), NULL, MS_REMOUNT | (uint32_t)remount_flags, NULL))
-            return TError::System("Remount {} {}", Path, TMount::FormatFlags(remount_flags));
-    }
-
-    return OK;
-}
-
-TError TPath::BindRemount(const TPath &source, uint64_t mnt_flags) const {
-    TError error;
-
-    error = Bind(source, mnt_flags & MS_REC);
-    if (error)
-        return error;
-
-    error = Remount(MS_BIND | mnt_flags);
-    if (error)
-        return error;
-
     return OK;
 }
 
@@ -1292,9 +1199,10 @@ TError TMount::ParseMountinfo(const std::string &line) {
     BindPath = TMount::Demangle(tokens[3]);
     Target = TMount::Demangle(tokens[4]);
 
-    error = TMount::ParseFlags(tokens[5], MntFlags);
-    if (error)
-        return TError(error, "while parsing mountinfo flags");
+    TMountAttr attr;
+    bool recursive;
+    (void)TMount::ParseMountAttr(tokens[5], attr, recursive, false);
+    MountAttr = attr.Set;
 
     std::string opt;
     std::stringstream ss(tokens[6]);

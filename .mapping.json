@@ -188,6 +188,8 @@
   "src/util/log.hpp":"infra/porto/porto/src/util/log.hpp",
   "src/util/md5.cpp":"infra/porto/porto/src/util/md5.cpp",
   "src/util/md5.hpp":"infra/porto/porto/src/util/md5.hpp",
+  "src/util/mount.cpp":"infra/porto/porto/src/util/mount.cpp",
+  "src/util/mount.hpp":"infra/porto/porto/src/util/mount.hpp",
   "src/util/mutex.cpp":"infra/porto/porto/src/util/mutex.cpp",
   "src/util/mutex.hpp":"infra/porto/porto/src/util/mutex.hpp",
   "src/util/namespace.cpp":"infra/porto/porto/src/util/namespace.cpp",

@@ -13,9 +13,14 @@
 extern "C" {
 #include <fts.h>
 #include <sys/mount.h>
+
+/* glibc mount flags must be declared before the Linux header defines them as macros. */
+#include <linux/mount.h>
 #include <sys/stat.h>
 #include <sys/vfs.h>
 }
+
+struct TMountAttr;
 
 struct TStatFS {
     uint64_t SpaceUsage;
@@ -238,8 +243,6 @@ public:
     TError SecureTmpfsMount(const TCred &cred, size_t size) const;
     TError Bind(const TPath &source, uint64_t flags = 0) const;
     TError MoveMount(const TPath &target) const;
-    TError Remount(uint64_t flags) const;
-    TError BindRemount(const TPath &source, uint64_t flags) const;
     TError Umount(uint64_t flags) const;
     TError UmountAll(int flags = 0) const;
     TError UmountNested() const;
@@ -268,8 +271,8 @@ struct TMount {
     int MountId;
     int ParentId;
     dev_t Device;
-    TPath BindPath; /* path within filesystem */
-    uint64_t MntFlags;
+    TPath BindPath;     /* path within filesystem */
+    uint64_t MountAttr; /* MOUNT_ATTR_* from per-mount options */
 
     static std::string Demangle(const std::string &s);
     TError ParseMountinfo(const std::string &line);
@@ -280,7 +283,12 @@ struct TMount {
         return stream;
     }
 
-    static TError ParseFlags(const std::string &str, uint64_t &flags, uint64_t allowed = -1);
+    /*
+     * Mount options "ro,nosuid,..." to MOUNT_ATTR_* to set and clear in attr, "private" and "unbindable"
+     * to attr.Propagation, "rec" to recursive. Unknown options are error if strict, else ignored.
+     * Defined in util/mount.cpp.
+     */
+    static TError ParseMountAttr(const std::string &options, TMountAttr &attr, bool &recursive, bool strict = true);
     static std::string FormatFlags(uint64_t flags);
 };
 

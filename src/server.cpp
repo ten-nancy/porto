@@ -19,6 +19,7 @@
 #include "rpc.hpp"
 #include "storage.hpp"
 #include "util/log.hpp"
+#include "util/mount.hpp"
 #include "util/signal.hpp"
 #include "util/string.hpp"
 #include "util/unix.hpp"
@@ -742,9 +743,9 @@ void PrepareServer() {
         FatalError("Cannot chdir to /", error);
 
     // We want propagate mounts into containers
-    error = root.Remount(MS_SHARED | MS_REC);
+    error = SetMountAttr(TFile(), root, {0, 0, MS_SHARED}, true);
     if (error)
-        FatalError("Cannot remount / recursively as shared", error);
+        FatalError("Cannot recursively set / shared", error);
 
     TPath tracefs = "/sys/kernel/tracing";
     if (config().container().enable_tracefs() && tracefs.Exists()) {

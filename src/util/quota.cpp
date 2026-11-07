@@ -519,7 +519,8 @@ static TError LookupDeviceRoot(dev_t dev, TMount &mnt) {
     std::string line;
 
     while (std::getline(istrm, line)) {
-        if (!mnt.ParseMountinfo(line) && dev == mnt.Device && mnt.BindPath.IsRoot() && !(mnt.MntFlags & MS_RDONLY)) {
+        if (!mnt.ParseMountinfo(line) && dev == mnt.Device && mnt.BindPath.IsRoot() &&
+            !(mnt.MountAttr & MOUNT_ATTR_RDONLY)) {
             if (mnt.Type != "ext4" && mnt.Type != "xfs")
                 return TError(EError::NotSupported, "Unsupported filesystem {}", mnt.Type);
             return OK;

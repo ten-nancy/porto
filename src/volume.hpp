@@ -104,7 +104,6 @@ public:
 };
 
 class TVolume: public std::enable_shared_from_this<TVolume>, public TNonCopyable {
-    std::mutex InternalMutex;
     TError OpenBackend();
     void CacheQuotaFile();
 
@@ -231,7 +230,8 @@ public:
     static TError CheckRequired(TContainer &ct);
 
     TPath GetInternal(const std::string &type) const;
-    unsigned long GetMountFlags(void) const;
+    uint64_t GetMountFlags(void) const;
+    TError MountFilesystem(const std::string &source, const std::string &type, std::vector<std::string> opts) const;
 
     TError Tune(const TStringMap &cfg);
 
@@ -283,10 +283,6 @@ public:
 
     TError GetUpperLayer(TPath &upper);
     EStorageType GetLayerType() const;
-
-    inline std::unique_lock<std::mutex> LockInternal() {
-        return std::unique_lock<std::mutex>(InternalMutex);
-    }
 
     friend bool operator<(const std::shared_ptr<TVolume> &lhs, const std::shared_ptr<TVolume> &rhs) {
         return lhs->Path < rhs->Path;

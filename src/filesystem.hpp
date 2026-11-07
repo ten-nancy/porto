@@ -6,6 +6,7 @@
 #include "util/cred.hpp"
 #include "util/error.hpp"
 #include "util/file.hpp"
+#include "util/mount.hpp"
 #include "util/namespace.hpp"
 
 class TContainer;
@@ -13,7 +14,9 @@ class TContainer;
 struct TBindMount {
     TPath Source;
     TPath Target;
-    uint64_t MntFlags = 0;
+    TMountAttr Attr = {0, 0, 0};                 /* MOUNT_ATTR_* to set and clear, Propagation unused */
+    uint64_t Propagation = MS_SLAVE | MS_SHARED; /* MS_PRIVATE, MS_SLAVE, MS_SHARED, MS_UNBINDABLE */
+    bool Recursive = false;
     bool ControlSource = false;
     bool ControlTarget = false;
 
@@ -24,6 +27,11 @@ struct TBindMount {
 
     TError Load(const rpc::TContainerBindMount &spec);
     void Dump(rpc::TContainerBindMount &spec);
+
+    /* options of bind property: "ro,nodev,rec,..." */
+    TError ParseOptions(const std::string &options);
+    /* MS_* and MS_ALLOW_* flags of bind property for formatting */
+    uint64_t GetFlags() const;
 };
 
 struct TMountNamespace {
