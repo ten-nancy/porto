@@ -176,4 +176,13 @@ public:
                 CPU_SET(i, mask);
         }
     }
+
+    unsigned IntersectionSize(const TBitMap &other) const {
+        unsigned size = 0;
+        for (unsigned i = 0; i < Size(); ++i) {
+            if (Get(i) && other.Get(i))
+                ++size;
+        }
+        return size;
+    }
 };

@@ -11,6 +11,7 @@
 #include "container.hpp"
 #include "cpuset.hpp"
 #include "network.hpp"
+#include "resctrl.hpp"
 #include "rpc.hpp"
 #include "task.hpp"
 #include "util/cred.hpp"
@@ -88,7 +89,7 @@ TError TProperty::Save(std::string &value) {
     return Get(value);
 }
 
-TError TProperty::Load(const std::string &value) {
+TError TProperty::Restore(const std::string &value) {
     return Set(value);
 }
 
@@ -1634,7 +1635,7 @@ public:
         return TStdStreamProperty::SaveStream(value, CT->Stdin);
     }
 
-    TError Load(const std::string &value) override {
+    TError Restore(const std::string &value) override {
         return TStdStreamProperty::LoadStream(value, CT->Stdin);
     }
 
@@ -1674,7 +1675,7 @@ public:
         return TStdStreamProperty::SaveStream(value, CT->Stdout);
     }
 
-    TError Load(const std::string &value) override {
+    TError Restore(const std::string &value) override {
         return TStdStreamProperty::LoadStream(value, CT->Stdout);
     }
 
@@ -1720,7 +1721,7 @@ public:
         return TStdStreamProperty::SaveStream(value, CT->Stderr);
     }
 
-    TError Load(const std::string &value) override {
+    TError Restore(const std::string &value) override {
         return TStdStreamProperty::LoadStream(value, CT->Stderr);
     }
 
@@ -4210,6 +4211,66 @@ public:
         return OK;
     }
 } MemSet;
+
+class TMemBw: public TProperty {
+public:
+    TMemBw()
+        : TProperty(P_MEM_BW, EProperty::MEM_BW, "memory bandwidth per single cpu (do not use this)")
+    {
+        IsHidden = true;
+    }
+
+    TError Reset() override {
+        CT->MemBw = 0;
+        return OK;
+    }
+
+    TError Get(std::string &value) const override {
+        value = std::to_string(CT->MemBw);
+        return OK;
+    }
+
+    /* Only one container in a branch may have membw, zero means unset */
+    TError Validate() const {
+        for (auto ct = CT->Parent; ct; ct = ct->Parent) {
+            if (ct->HasProp(EProperty::MEM_BW))
+                return TError(EError::InvalidValue, "membw is already set for parent {}", ct->Slug);
+        }
+
+        for (auto &ct: CT->Subtree()) {
+            if (ct.get() == CT.get())
+                continue;
+
+            if (ct->HasProp(EProperty::MEM_BW))
+                return TError(EError::InvalidValue, "membw is already set for child {}", ct->Slug);
+        }
+
+        return OK;
+    }
+
+    TError Restore(const std::string &value) override {
+        if (!IsResctrlAvailable())
+            return TError(EError::NotSupported);
+        return Set(value);
+    }
+    TError Set(const std::string &value) override {
+        // TODO: return error
+        if (!IsResctrlAvailable())
+            return OK;
+        uint64_t membw;
+        TError error = StringToUint64(value, membw);
+        if (error || !membw)
+            return TError(EError::InvalidValue, "invalid membw: {}", value);
+
+        error = Validate();
+        if (error)
+            return error;
+
+        CT->MemBw = membw;
+        CT->SetProp(EProperty::MEM_BW);
+        return OK;
+    }
+} static MemBw;
 
 class TCpuSetAffinity: public TProperty {
 public:

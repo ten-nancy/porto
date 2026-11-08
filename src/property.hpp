@@ -68,6 +68,7 @@ constexpr const char *P_MEM_GUARANTEE_TOTAL = "memory_guarantee_total";
 constexpr const char *P_MEM_LOCK_POLICY = "memory_lock_policy";
 constexpr const char *P_ANON_LIMIT_TOTAL = "anon_limit_total";
 constexpr const char *P_MEM_PRESSURE = "memory_pressure";
+constexpr const char *P_MEM_BW = "_membw_per_cpu";
 
 constexpr const char *P_CPU_POLICY = "cpu_policy";
 constexpr const char *P_CPU_GUARANTEE = "cpu_guarantee";
@@ -255,6 +256,7 @@ enum class EProperty {
     CPU_WEIGHT,
     CPU_SET,
     MEM_SET,
+    MEM_BW,
     IO_POLICY,
     IO_WEIGHT,
     IO_LIMIT,
@@ -356,7 +358,7 @@ public:
     virtual void DumpIndexed(const std::string &index, rpc::TContainerStatus &spec);
 
     virtual TError Save(std::string &value);
-    virtual TError Load(const std::string &value);
+    virtual TError Restore(const std::string &value);
 
     virtual TError Start(void);
 };

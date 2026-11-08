@@ -16,6 +16,7 @@
 #include "network.hpp"
 #include "portod.hpp"
 #include "property.hpp"
+#include "resctrl.hpp"
 #include "rpc.hpp"
 #include "storage.hpp"
 #include "util/log.hpp"
@@ -752,6 +753,12 @@ void PrepareServer() {
         error = tracefs.Mount("none", "tracefs", MS_NOEXEC | MS_NOSUID | MS_NODEV, {"mode=755"});
         if (error && error.Errno != EBUSY)
             L_SYS("Cannot mount tracefs: {}", error);
+    }
+
+    if (config().daemon().enable_membw_limit()) {
+        error = MountResctrl();
+        if (error)
+            L_ERR("Cannot initialize resctrl: {}", error);
     }
 
     EpollLoop = std::unique_ptr<TEpollLoop>(new TEpollLoop());

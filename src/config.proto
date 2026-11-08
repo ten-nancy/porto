@@ -218,6 +218,7 @@ message TConfig {
         optional uint64 graceful_shutdown_timeout_ms = 38;
 
         repeated string docker_allowed_registry = 39;
+        optional bool enable_membw_limit = 40;
     }
 
     message TContainerCfg {

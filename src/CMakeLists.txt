@@ -48,7 +48,7 @@ find_library(LIBSECCOMP NAMES libseccomp.a REQUIRED)
 
 add_library(portocore main.cpp master.cpp server.cpp core.cpp cgroup.cpp rpc.cpp container.cpp
 	    cpuset.cpp event.cpp task.cpp env.cpp device.cpp nbd.cpp
-	    network.cpp netlimitsoft.cpp filesystem.cpp volume.cpp storage.cpp
+	    network.cpp netlimitsoft.cpp filesystem.cpp volume.cpp storage.cpp resctrl.cpp
 	    kvalue.cpp config.cpp property.cpp loop.cpp
 	    epoll.cpp client.cpp stream.cpp helpers.cpp waiter.cpp bpf.cpp
 	    docker.cpp seccomp.cpp)

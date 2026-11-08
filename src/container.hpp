@@ -113,6 +113,8 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
 
     TError SetCpuLimit(uint64_t limit, uint64_t period);
     TError ApplyCpuLimit();
+    TError ApplyMemBw();
+    TError ApplyMemBwSubtree();
     TError ApplyExtraProperties();
 
     void CollectOoms();
@@ -274,6 +276,8 @@ public:
 
     TBitMap MemSet;
 
+    uint64_t MemBw = 0;
+
     std::shared_ptr<TCpuSetSpec> CpuSetSpec;
     // Protected by both ActionLock and StateLock
     std::shared_ptr<TCpuSetSpec> TargetCpuSetSpec;
@@ -375,10 +379,14 @@ public:
         return PropDirty[(int)prop];
     }
 
+    void ClearPropDirty(EProperty prop) {
+        PropDirty[(int)prop] = false;
+    }
+
     bool TestClearPropDirty(EProperty prop) {
         if (!PropDirty[(int)prop])
             return false;
-        PropDirty[(int)prop] = false;
+        ClearPropDirty(prop);
         return true;
     }
 
@@ -463,7 +471,7 @@ public:
 
     TError StartTask();
     TError StartParents();
-    TError PrepareStart();
+    TError PrepareStart(bool respawn);
     TError Start();
 
     TError Stop(uint64_t timeout);

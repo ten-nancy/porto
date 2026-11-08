@@ -7,6 +7,7 @@
 #include "cpuset.hpp"
 #include "device.hpp"
 #include "network.hpp"
+#include "resctrl.hpp"
 #include "util/cred.hpp"
 #include "util/log.hpp"
 #include "util/mount.hpp"
@@ -570,12 +571,21 @@ TError TTaskEnv::DoFork1() {
 
     (void)setsid();
 
+    auto pid = GetPid();
+
     L("Attach to cgroups");
     // move to target cgroups
     for (auto &cg: Cgroups) {
-        error = cg->Attach(GetPid());
+        error = cg->Attach(pid);
         if (error)
             return error;
+    }
+
+    /* resctrl group is inherited by all tasks forked below */
+    if (!ResctrlGroup.empty()) {
+        error = AttachResctrlGroup(ResctrlGroup, pid);
+        if (error)
+            L_ERR("Failed attach to resctrl: {}", error);
     }
 
     error = SetOomScoreAdj(CT->OomScoreAdj);

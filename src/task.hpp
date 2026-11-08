@@ -45,6 +45,8 @@ struct TTaskEnv {
     std::vector<std::string> Autoconf;
     bool NewMountNs;
     std::list<std::unique_ptr<const TCgroup>> Cgroups;
+    /* empty if container has no membw */
+    std::string ResctrlGroup;
     TCred Cred;
     uid_t LoginUid;
 

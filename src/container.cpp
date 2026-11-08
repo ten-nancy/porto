@@ -22,6 +22,7 @@
 #include "network.hpp"
 #include "portod.hpp"
 #include "property.hpp"
+#include "resctrl.hpp"
 #include "rpc.hpp"
 #include "task.hpp"
 #include "util/cred.hpp"
@@ -62,8 +63,8 @@ std::vector<ExtraProperty> ExtraProperties;
 std::unordered_map<std::string, TSeccompProfile> SeccompProfiles;
 
 std::unordered_set<std::string> SupportedExtraProperties = {
-    "cgroupfs",    "command",      "max_respawns", "userns",      "unshare_on_exec",
-    "resolv_conf", "capabilities", "cpu_weight",   "controllers", "mem_set"};
+    "cgroupfs",     "command",    "max_respawns", "userns",  "unshare_on_exec", "resolv_conf",
+    "capabilities", "cpu_weight", "controllers",  "mem_set", P_MEM_BW};
 
 std::vector<TGauge> MakeStateMetrics() {
     std::vector<TGauge> metrics;
@@ -1704,6 +1705,29 @@ TError TContainer::ApplyCpuLimit() {
     return OK;
 }
 
+TError TContainer::ApplyMemBw() {
+    TBitMap affinity;
+
+    auto error = GetCpuAffinity(affinity);
+    if (error)
+        return error;
+
+    return SetResctrlSchemata(ResctrlGroupName(Name), MemBw * affinity.Weight(), affinity);
+}
+
+TError TContainer::ApplyMemBwSubtree() {
+    for (auto &ct: Subtree()) {
+        if (!ct->HasProp(EProperty::MEM_BW) || !ct->IsRunningOrMeta())
+            continue;
+
+        auto error = ct->ApplyMemBw();
+        if (error)
+            return error;
+        ct->ClearPropDirty(EProperty::MEM_BW);
+    }
+    return OK;
+}
+
 TError TContainer::ApplyExtraProperties() {
     TError error;
     std::unordered_set<std::string> caps;
@@ -1866,7 +1890,18 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
                 return error;
         }
 
-        TestClearPropDirty(EProperty::CPU_SET);
+        ClearPropDirty(EProperty::CPU_SET);
+        error = ApplyMemBwSubtree();
+        if (error)
+            L_ERR("Failed apply membw: {}", error);
+    }
+
+    /* cpu_set is applied above, so we know cpus to spread membw over */
+    if (TestPropDirty(EProperty::MEM_BW)) {
+        error = ApplyMemBw();
+        if (error)
+            L_ERR("Failed apply membw: {}", error);
+        ClearPropDirty(EProperty::MEM_BW);
     }
 
     if (TestPropDirty(EProperty::MEM_SET)) {
@@ -2464,6 +2499,14 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
 
     TaskEnv.Cgroups = CgroupDriver.GetContainerCgroups(*this);
 
+    /* membw is set at most once per branch, use the group of that container */
+    for (auto ct = this; !ct->IsRoot(); ct = ct->Parent.get()) {
+        if (ct->HasProp(EProperty::MEM_BW)) {
+            TaskEnv.ResctrlGroup = ResctrlGroupName(ct->Name);
+            break;
+        }
+    }
+
     TaskEnv.Mnt.Cwd = GetCwd();
 
     TaskEnv.Mnt.Root = Root;
@@ -2763,7 +2806,7 @@ TError TContainer::StartParents() {
     return CL->LockContainer(current);
 }
 
-TError TContainer::PrepareStart() {
+TError TContainer::PrepareStart(bool respawn) {
     TError error;
 
     error = CL->CanControl(OwnerCred);
@@ -2774,7 +2817,8 @@ TError TContainer::PrepareStart() {
         CT = std::const_pointer_cast<TContainer>(shared_from_this());
         LockStateWrite();
 
-        error = ApplyExtraProperties();
+        if (!respawn)
+            error = ApplyExtraProperties();
 
         if (!error) {
             for (auto &knob: ContainerProperties) {
@@ -2966,7 +3010,7 @@ TError TContainer::Start() {
 
     StartError = OK;
 
-    error = PrepareStart();
+    error = PrepareStart(false);
     if (error) {
         error = TError(error, "Cannot prepare start for container {}", Name);
         goto err_prepare;
@@ -3069,6 +3113,12 @@ TError TContainer::PrepareResources() {
         goto undo;
     }
 
+    if (HasProp(EProperty::MEM_BW)) {
+        error = CreateResctrlGroup(ResctrlGroupName(Name));
+        if (error)
+            L_ERR("Can't prepare resctrl group: {}", error);
+    }
+
     if (RequiredVolumes.size()) {
         error = TVolume::CheckRequired(*this);
         if (error)
@@ -3135,6 +3185,12 @@ TError TContainer::FreeResources(bool ignore) {
         error = CgroupDriver.RemoveContainerCgroups(*this, ignore);
         if (error)
             return error;
+    }
+
+    if (HasProp(EProperty::MEM_BW)) {
+        error = RemoveResctrlGroup(ResctrlGroupName(Name));
+        if (error)
+            L_ERR("Cannot remove resctrl group: {}", error);
     }
 
     if (CpuSetSpec->GetAllocation()) {
@@ -3517,7 +3573,7 @@ TError TContainer::Respawn() {
 
     StartError = OK;
 
-    error = PrepareStart();
+    error = PrepareStart(true);
     if (error) {
         error = TError(error, "Cannot prepare respawn for container {}", Name);
         goto err_prepare;
@@ -3959,7 +4015,7 @@ TError TContainer::Load(const TKeyValue &node) {
 
         controllers |= prop->RequireControllers;
 
-        error = prop->Load(value);
+        error = prop->Restore(value);
 
         if (error.Error == EError::NotSupported) {
             L_WRN("Unsupported property: {}, skipped", key);
@@ -4518,6 +4574,9 @@ void TContainer::RebalanceJail() {
             auto error = ApplyCpuSet(*ct, false);
             if (error)
                 L_ERR("Jail cpus failed: {}", error);
+            error = ct->ApplyMemBwSubtree();
+            if (error)
+                L_ERR("Apply membw failed: {}", error);
         }
         ct->UnlockAction();
     }

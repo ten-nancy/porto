@@ -9,6 +9,8 @@
 
 bool HyperThreadingEnabled = false;
 
+static const TPath SysfsCpuPath = "/sys/devices/system/cpu";
+
 /* cpu -> neighbor hyperthreads */
 static std::vector<std::vector<unsigned>> NeighborThreads;
 
@@ -30,6 +32,8 @@ static std::vector<unsigned> NodeRequest;
 static std::vector<unsigned> NodeUsage;
 static unsigned UnboundRequest = 0;
 
+std::map<unsigned, TBitMap> L3Domains;
+
 static inline std::unique_lock<std::mutex> LockJailState() {
     return std::unique_lock<std::mutex>(JailStateLock);
 }
@@ -46,8 +50,72 @@ static inline bool HasNeigh(const TBitMap &affinity, unsigned cpu) {
     return false;
 }
 
+/* cpu L3 caches: id -> cpuset */
+static TError getL3Domains(std::map<unsigned, TBitMap> &domains) {
+    TBitMap online, seen;
+
+    auto error = online.Read(SysfsCpuPath / "online");
+    if (error)
+        return error;
+
+    for (unsigned cpu = 0; cpu < online.Size(); cpu++) {
+        if (!online.Get(cpu) || seen.Get(cpu))
+            continue;
+
+        auto cache = SysfsCpuPath / fmt::format("cpu{}", cpu) / "cache";
+        std::vector<std::string> indices;
+
+        error = cache.ListSubdirs(indices);
+        if (error)
+            return error;
+
+        for (auto &index: indices) {
+            std::string text;
+            unsigned id;
+
+            error = (cache / index / "level").ReadAll(text);
+            if (error)
+                return error;
+
+            if (StringTrim(text) != "3")
+                continue;
+
+            error = (cache / index / "id").ReadAll(text);
+            if (error)
+                return error;
+
+            error = StringToUint(StringTrim(text), id);
+            if (error)
+                return error;
+
+            TBitMap cpus;
+            error = cpus.Read(cache / index / "shared_cpu_list");
+            if (error)
+                return error;
+
+            seen.Set(cpus);
+            domains.emplace(id, cpus);
+            break;
+        }
+    }
+
+    if (domains.empty())
+        return TError("Cannot find L3 domains in {}", SysfsCpuPath);
+
+    return OK;
+}
+
 TError BuildCpuTopology() {
     PORTO_ASSERT(NumaNodes.Weight() == 0);
+
+    {
+        std::map<unsigned, TBitMap> l3Domains;
+        auto error = getL3Domains(l3Domains);
+        if (error)
+            L_ERR("Cannot build L3 domains: {}", error);
+        else
+            L3Domains = l3Domains;
+    }
 
     auto error = HostCpus.Read(TPath("/sys/devices/system/cpu/online"));
     if (error)

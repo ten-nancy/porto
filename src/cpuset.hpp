@@ -41,4 +41,5 @@ std::shared_ptr<TContainer> FindUnbalancedJailContainer(
     const std::vector<std::pair<unsigned, unsigned>> unbalancedCpus);
 
 extern TBitMap NumaNodes;
+extern std::map<unsigned, TBitMap> L3Domains;
 TError CheckNumaNodes(const TBitMap &affinity);

@@ -76,6 +76,7 @@ static void DefaultConfig() {
     daemon->set_request_handling_delay_ms(0);
     daemon->set_docker_images_support(false);
     daemon->set_enable_nbd(true);
+    daemon->set_enable_membw_limit(false);
 
     daemon->set_max_clients(1000);
     daemon->set_max_clients_in_container(500);

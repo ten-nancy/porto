@@ -155,6 +155,8 @@
   "src/portotop.hpp":"infra/porto/porto/src/portotop.hpp",
   "src/property.cpp":"infra/porto/porto/src/property.cpp",
   "src/property.hpp":"infra/porto/porto/src/property.hpp",
+  "src/resctrl.cpp":"infra/porto/porto/src/resctrl.cpp",
+  "src/resctrl.hpp":"infra/porto/porto/src/resctrl.hpp",
   "src/rpc.cpp":"infra/porto/porto/src/rpc.cpp",
   "src/rpc.hpp":"infra/porto/porto/src/rpc.hpp",
   "src/rpc.proto":"infra/porto/porto/src/rpc.proto",
