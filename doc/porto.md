@@ -249,6 +249,10 @@ Porto provides API for label lookup, atomic compare-and-set, atomic increment an
 
     If **cgroupfs**!=*none* then task starts in cgroup namespace
 
+    Nested containers cannot request more access than their parent:
+    *none* allows only *none*, *ro* allows *none* and *ro*, and *rw* allows all three values.
+    This is checked at container start, including the implicit *rw* default for OS containers.
+
 ## State
 
 * **id** - container id, 64-bit decimal

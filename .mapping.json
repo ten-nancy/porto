@@ -275,6 +275,7 @@
   "test/test-api.py":"infra/porto/porto/test/test-api.py",
   "test/test-async-cleanup.py":"infra/porto/porto/test/test-async-cleanup.py",
   "test/test-aufs.py":"infra/porto/porto/test/test-aufs.py",
+  "test/test-cgroupfs-hierarchy.py":"infra/porto/porto/test/test-cgroupfs-hierarchy.py",
   "test/test-cgroupns.py":"infra/porto/porto/test/test-cgroupns.py",
   "test/test-clear.py":"infra/porto/porto/test/test-clear.py",
   "test/test-coredump.py":"infra/porto/porto/test/test-coredump.py",

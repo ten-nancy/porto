@@ -1533,14 +1533,21 @@ public:
     }
 
     TError Start(void) override {
+        if (EnableOsModeCgroupNs && !CT->HasProp(EProperty::CGROUPFS) && CT->OsMode) {
+            auto error = Set("rw");
+            if (error)
+                return error;
+        }
+
         if (CT->CgroupFs == ECgroupFs::Rw) {
             if (!(EnableOsModeCgroupNs && CT->OsMode) && !EnableRwCgroupFs)
                 return TError(EError::Permission,
                               "Cgroup namespaces disabled in portod.conf: rw access to cgroupfs denied");
         }
 
-        if (EnableOsModeCgroupNs && !CT->HasProp(EProperty::CGROUPFS) && CT->OsMode)
-            return Set("rw");
+        if (!CT->Parent->IsRoot() && CT->CgroupFs > CT->Parent->CgroupFs)
+            return TError(EError::Permission, "cgroupfs access cannot exceed that of parent container {}",
+                          CT->Parent->Name);
         return OK;
     }
 

@@ -97,7 +97,8 @@ try:
     CheckCgroupHierarchy(a, True)
     a.Destroy()
 
-    m = conn.Run("m", root_volume={'layers': ["ubuntu-noble"]})
+    m = conn.Run("m", virt_mode='os', command='', cgroupfs='rw',
+                 root_volume={'layers': ["ubuntu-noble"]})
     a = conn.Create("m/a")
     a.SetProperty('virt_mode', 'os')
     a.SetProperty('capabilities[SYS_ADMIN]', 'false')

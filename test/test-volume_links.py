@@ -121,8 +121,19 @@ timeout = time.time() > deadline
 for w in workers:
     w.terminate()
 
+for w in workers:
+    w.join(timeout=10)
+    assert not w.is_alive(), "Worker did not terminate"
+
+# Weak-container cleanup after disconnect may still be pending.
+for i in range(1, CT_COUNT):
+    try:
+        c.Destroy("test-volume_links-ct{}".format(i))
+    except porto.exceptions.ContainerDoesNotExist:
+        pass
+
 main_ct.Destroy()
-share.Unlink()
+share.Destroy()
 root.Unlink()
 c.RemoveStorage(STORAGE_NAME)
 
