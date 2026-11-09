@@ -768,10 +768,6 @@ void PrepareServer() {
     if (error)
         FatalError("Cannot initialize epoll", error);
 
-    error = StartAsyncUmounter();
-    if (error)
-        FatalError("Cannot start async umount worker", error);
-
     TPath tmp_dir(PORTO_WORKDIR);
     if (!tmp_dir.IsDirectoryFollow()) {
         (void)tmp_dir.Unlink();
@@ -1012,7 +1008,6 @@ void CleanupServer() {
 
     StopMetricsServer();
 
-    StopAsyncUmounter();
     if (config().daemon().enable_nbd())
         StopNbd();
 

@@ -14,7 +14,6 @@ extern bool StdLog;
 extern bool Verbose;
 extern bool Debug;
 extern TFile LogFile;
-extern __thread bool DisableLogging;
 
 void OpenLog();
 void OpenLog(const TPath &path);

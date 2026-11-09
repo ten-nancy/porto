@@ -27,10 +27,6 @@ Here is a description of some processes and threads by type:
 
   * **EventWorker** is a pool of workers that is a part of the Server Daemon and handles client requests and kernel events directly.
 
-  * **AsyncUnmounter** is a pool of workers that do umount asynchronously by pinning a mount point with a file descriptor and detaching that mount point.
-
-  * **PinCloser** is a pool of workers and a part of AsyncUnmounter that closes detached mount point pins.
-
 * **API Request Queues** process client requests depending on type and perform all actions with containers, volumes, and other Porto objects.
 
 * **Exeution processes**

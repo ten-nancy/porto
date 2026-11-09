@@ -314,9 +314,6 @@ extern TError PutLoopDev(const int loopNr); /* Legacy */
 void StartStatFsLoop();
 void StopStatFsLoop();
 
-TError StartAsyncUmounter();
-void StopAsyncUmounter();
-
 TError LoadNbd();
 TError StartNbd();
 void StopNbd();
