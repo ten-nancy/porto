@@ -51,7 +51,7 @@ Architecture: amd64
 Depends:
   ${shlibs:Depends}, ${misc:Depends}, pkgprefixporto (= ${binary:Version}), python3, sudo,
   attr, fio, iperf3, stress, nbd-server, procps, squashfs-tools,
-  python3-protobuf, cmake
+  python3-protobuf, cmake, lz4
 Description: Porto test suite
  Porto source tree with built tests and CTest files in /opt/porto-tests,
  used by infra/porto/tests. Not intended for production hosts.
