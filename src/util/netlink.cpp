@@ -1869,11 +1869,38 @@ free_cls:
     return error;
 }
 
-TError TNlBpfFilter::Create(const TNl &nl) {
+TError TNlBpfFilter::FindHandle(const TNl &nl, uint32_t &handle) const {
+    TError error = OK;
+    handle = 0;
+    const uint32_t parent = TC_H_MAKE(TC_H_CLSACT, Egress ? TC_H_MIN_EGRESS : TC_H_MIN_INGRESS);
+    struct nl_cache *cache;
+    int ret = rtnl_cls_alloc_cache(nl.GetSock(), Index, parent, &cache);
+    if (ret < 0)
+        return nl.Error(ret, "Cannot inspect existing BPF filter");
+    for (auto obj = nl_cache_get_first(cache); obj; obj = nl_cache_get_next(obj)) {
+        auto cls = reinterpret_cast<struct rtnl_cls *>(obj);
+        uint32_t candidate = rtnl_tc_get_handle(TC_CAST(cls));
+        uint32_t chain = 0;
+        (void)rtnl_tc_get_chain(TC_CAST(cls), &chain);
+        /* Match Delete(): same device, parent, chain 0, priority and protocol. */
+        if (!candidate || rtnl_tc_get_ifindex(TC_CAST(cls)) != Index || rtnl_tc_get_parent(TC_CAST(cls)) != parent ||
+            chain || rtnl_cls_get_prio(cls) != FilterPrio || rtnl_cls_get_protocol(cls) != ETH_P_ALL)
+            continue;
+        if (handle || FilterType != std::string(rtnl_tc_get_kind(TC_CAST(cls)))) {
+            error = TError("Unexpected filters at BPF filter priority {}", FilterPrio);
+            break;
+        }
+        handle = candidate;
+    }
+    nl_cache_free(cache);
+    return error;
+}
+
+TError TNlBpfFilter::Create(const TNl &nl, bool replace) {
     TError error = OK;
     struct nl_msg *msg;
     struct nlattr *options;
-    struct tcmsg tchdr;
+    struct tcmsg tchdr = {};
     unsigned int flags = 0;
     std::string annotation;
     int ret;
@@ -1884,7 +1911,13 @@ TError TNlBpfFilter::Create(const TNl &nl) {
     tchdr.tcm_parent = TC_H_MAKE(TC_H_CLSACT, Egress ? TC_H_MIN_EGRESS : TC_H_MIN_INGRESS);
     tchdr.tcm_info = TC_H_MAKE(((uint32_t)FilterPrio) << 16, htons(ETH_P_ALL));
 
-    msg = nlmsg_alloc_simple(RTM_NEWTFILTER, NLM_F_EXCL | NLM_F_CREATE);
+    if (replace) {
+        error = FindHandle(nl, tchdr.tcm_handle);
+        if (error)
+            return error;
+    }
+
+    msg = nlmsg_alloc_simple(RTM_NEWTFILTER, NLM_F_CREATE | (replace ? NLM_F_REPLACE : NLM_F_EXCL));
     if (!msg)
         return TError("Unable to add bpf filter: no memory");
 

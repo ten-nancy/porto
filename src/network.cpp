@@ -4317,13 +4317,14 @@ TError TNetwork::SetupNetLimitSoftInterface(int ifindex) {
     filter.DirectAction = true;
     filter.Program = NetLimitSoftProgram.get();
 
-    (void)qdisc.Delete(*Nl);
-    error = qdisc.Create(*Nl);
-    if (error && error.Errno != ENODEV && error.Errno != ENOENT)
-        return TError(EError::Unknown, "Cannot create egress qdisc: {}", error);
+    if (!qdisc.Check(*Nl)) {
+        (void)qdisc.Delete(*Nl);
+        error = qdisc.Create(*Nl);
+        if (error && error.Errno != ENODEV && error.Errno != ENOENT)
+            return TError(EError::Unknown, "Cannot create egress qdisc: {}", error);
+    }
 
-    (void)filter.Delete(*Nl);
-    error = filter.Create(*Nl);
+    error = filter.Create(*Nl, true);
     if (error)
         return TError(EError::Unknown, "Cannot create egress bpf filter: {}", error);
 

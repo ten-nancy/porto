@@ -281,6 +281,9 @@ public:
     TNlBpfFilter(int index)
         : Index(index)
     {}
-    TError Create(const TNl &nl);
+    TError Create(const TNl &nl, bool replace = false);
     TError Delete(const TNl &nl);
+
+private:
+    TError FindHandle(const TNl &nl, uint32_t &handle) const;
 };

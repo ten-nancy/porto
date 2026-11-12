@@ -10,10 +10,10 @@ Build-Depends:
  bash-completion, pandoc
 Build-Depends-Arch:
  libprotobuf-dev, libncurses5-dev,
- libnl-3-dev (>=3.2.27),
- libnl-genl-3-dev (>=3.2.27),
- libnl-route-3-dev (>=3.2.27),
- libnl-idiag-3-dev (>=3.2.27),
+ libnl-3-dev (>=3.5),
+ libnl-genl-3-dev (>=3.5),
+ libnl-route-3-dev (>=3.5),
+ libnl-idiag-3-dev (>=3.5),
  libelf-dev, zlib1g-dev, libzstd-dev,
  libbpf-dev (>= 1.2.2), libssl-dev,
  libc6-dev, linux-libc-dev (>= 5.15),
