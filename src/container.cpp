@@ -567,13 +567,6 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
         AccessLevel = EAccessLevel::Normal;
     SetProp(EProperty::ENABLE_PORTO);
 
-    for (auto p = Parent.get(); p; p = p->Parent.get()) {
-        if (p->UserNs) {
-            UserNsCred = p->TaskCred;
-            break;
-        }
-    }
-
     if (config().container().has_default_coredump_filter()) {
         CoredumpFilter = config().container().default_coredump_filter();
         SetProp(EProperty::COREDUMP_FILTER);
@@ -640,16 +633,10 @@ TError TContainer::Create(const std::string &name, std::shared_ptr<TContainer> &
      * This is safe because new container will have the same restrictions.
      */
     if (ct->IsChildOf(*CL->ClientContainer)) {
-        if (ct->InUserNs() && CL->TaskCred.IsRootUser())
-            ct->TaskCred = ct->UserNsCred;
-        else
-            ct->TaskCred = CL->TaskCred;
+        ct->TaskCred = CL->TaskCred;
         (void)ct->TaskCred.InitGroups(ct->TaskCred.User());
     } else {
-        if (ct->InUserNs() && CL->Cred.IsRootUser())
-            ct->TaskCred = ct->UserNsCred;
-        else
-            ct->TaskCred = CL->Cred;
+        ct->TaskCred = CL->Cred;
     }
 
     ct->SetProp(EProperty::USER);
@@ -2146,7 +2133,7 @@ TError TContainer::ApplyDynamicProperties(bool onRestore) {
         }
     }
 
-    if (TestClearPropsDirty(EProperty::DEVICE_CONF, EProperty::DEVICE_CONF_EXPLICIT, EProperty::ENABLE_FUSE)) {
+    if (TestClearPropsDirty(EProperty::DEVICE_CONF, EProperty::DEVICE_CONF_EXPLICIT)) {
         error = ApplyDeviceConf();
         if (error) {
             if (error != EError::Permission && error != EError::DeviceNotFound)
@@ -2210,7 +2197,7 @@ TDevices TContainer::EffectiveDevices(const TDevices &devices) const {
     auto base = DevicesExplicit && HasProp(EProperty::DEVICE_CONF) ? TDevices(RootContainer->Devices)
                                                                    : Parent->EffectiveDevices();
 
-    return base.Merge(FuseDevices).Merge(devices);
+    return base.Merge(devices);
 }
 
 TDevices TContainer::EffectiveDevices() const {
@@ -2263,9 +2250,6 @@ TError TContainer::ApplyDeviceConf() {
 
     /* We also setup devices during container mnt ns setup in task.cpp */
     if (Task.Pid && !TPath(Root).IsRoot()) {
-        if (InUserNs())
-            devices.PrepareForUserNs(UserNsCred);
-
         auto root = fmt::format("/proc/{}/root", Task.Pid);
         auto error = devices.Makedev(root);
         /* Ignore errors while recreating devices for recently died tasks */
@@ -2594,12 +2578,12 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
         }
     }
 
-    TaskEnv.Mnt.IsolateRun = TaskEnv.Mnt.Root.IsRoot() && OsMode && Isolate && !InUserNs();
+    TaskEnv.Mnt.IsolateRun = TaskEnv.Mnt.Root.IsRoot() && OsMode && Isolate;
 
     // Create new mount namespaces if we have to make any changes
     TaskEnv.NewMountNs = Isolate || TaskEnv.Mnt.IsolateRun || (Level == 1 && !HostMode) ||
                          TaskEnv.Mnt.BindMounts.size() || Hostname.size() || ResolvConf.size() || EtcHosts.size() ||
-                         !TaskEnv.Mnt.Root.IsRoot() || TaskEnv.Mnt.RootRo || !TaskEnv.Mnt.Systemd.empty() || Fuse;
+                         !TaskEnv.Mnt.Root.IsRoot() || TaskEnv.Mnt.RootRo || !TaskEnv.Mnt.Systemd.empty();
 
     if (TaskEnv.NewMountNs && (HostMode || JobMode))
         return TError(EError::InvalidValue, "Cannot change mount-namespace in this virt_mode");
@@ -2687,11 +2671,9 @@ TError TContainer::StartTask() {
     TTaskEnv TaskEnv;
     TError error;
 
-    if (!UserNs) {
-        error = TNetwork::StartNetwork(*this, TaskEnv);
-        if (error)
-            return error;
-    }
+    error = TNetwork::StartNetwork(*this, TaskEnv);
+    if (error)
+        return error;
 
     if (IsRoot())
         return OK;
@@ -2917,18 +2899,6 @@ TError TContainer::PrepareStart(bool respawn) {
 
     if (JobMode && IsMeta())
         return TError(EError::InvalidValue, "Job container without command considered useless");
-
-    if (HasProp(EProperty::USERNS)) {
-        if (UserNs && (HostMode || JobMode))
-            return TError(EError::InvalidValue, "userns=true incompatible with virt_mode");
-        // TODO: perhaps remove Fuse here later
-    } else if (Fuse) {
-        LockStateWrite();
-        UserNs = true;
-        UnshareOnExec = true;
-        SetProp(EProperty::USERNS);
-        UnlockState();
-    }
 
     /* CapLimit >= CapBound */
     if (CapBound & ~CapLimit) {
@@ -3264,7 +3234,7 @@ TError TContainer::Terminate(uint64_t deadline) {
     if (cg->IsEmpty())
         return OK;
 
-    error = cg->KillAll(SIGKILL, Fuse);
+    error = cg->KillAll(SIGKILL);
     if (error)
         return error;
 
@@ -4206,25 +4176,6 @@ void TContainer::SyncState() {
         RealDeathTime = time(nullptr);
         SetProp(EProperty::DEATH_TIME);
     }
-}
-
-TError TContainer::EnableFuse(bool value) {
-    if (Fuse == value)
-        return OK;
-
-    if (value) {
-        TDevices devices;
-        auto error = devices.Parse("/dev/fuse rw", CL->Cred);
-        if (error)
-            return error;
-        FuseDevices = devices;
-    } else
-        FuseDevices = TDevices();
-
-    CT->Fuse = value;
-    CT->SetProp(EProperty::ENABLE_FUSE);
-
-    return OK;
 }
 
 TError TContainer::EnableControllers(uint64_t controllers) {

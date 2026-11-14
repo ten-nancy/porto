@@ -62,7 +62,6 @@ struct TDevices {
     TError Parse(const std::string &str, const TCred &cred);
     std::string Format() const;
 
-    void PrepareForUserNs(const TCred &userNsCred);
     TError Makedev(const TPath &root) const;
     TError Apply(const TCgroup &cg) const;
 

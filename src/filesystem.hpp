@@ -54,9 +54,9 @@ public:
     TNamespaceFd HostNs;
     TNamespaceFd ContainerNs;
 
-    TError SetupRoot(const TContainer &ct);
-    TError MountRun(const TContainer &ct);
-    TError RemountRun(const TContainer &ct);
+    TError SetupRoot();
+    TError MountRun();
+    TError RemountRun();
     TError ProtectProc();
     TError MountTraceFs();
     TError MountSystemd();

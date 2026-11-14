@@ -78,7 +78,7 @@ public:
     // processes
     virtual TError Attach(pid_t pid, bool thread = false) const = 0;
     virtual TError AttachAll(const TCgroup &cg, bool thread = false) const = 0;
-    virtual TError KillAll(int signal, bool abortFuse = false) const = 0;
+    virtual TError KillAll(int signal) const = 0;
 
     virtual TError SetPids(const std::string &knob, const std::vector<pid_t> &pids) const;
     virtual TError GetPids(const std::string &knob, std::vector<pid_t> &pids) const;

@@ -53,13 +53,12 @@ try:
         a.Destroy()
 
 
-    def CheckCgroupfsRw(is_os, userns=False, enable_net_cgroups=False):
+    def CheckCgroupfsRw(is_os, enable_net_cgroups=False):
         if is_os:
             ExpectEq(porto.exceptions.PermissionError,
                      Catch(conn.Run, 'a', cgroupfs='rw', wait=0, root_volume={'layers': ['ubuntu-noble']}))
 
-        # TODO(ovov): user='1044' if userns else '0',
-        a = conn.Run('a', cgroupfs='rw', userns=userns, user='0',
+        a = conn.Run('a', cgroupfs='rw', user='0',
                      virt_mode=('os' if is_os else 'app'), wait=0, root_volume={'layers': ['ubuntu-noble']})
         a.Wait(100)
         ExpectIn(a['state'], ('running', 'meta'))
@@ -116,7 +115,6 @@ try:
     CheckCgroupfsNone()
     CheckCgroupfsRo()
     CheckCgroupfsRw(is_os=True)
-    CheckCgroupfsRw(is_os=True, userns=True)
 
     ConfigurePortod('test-cgroupns', """
     container {
@@ -126,7 +124,6 @@ try:
     CheckCgroupfsNone()
     CheckCgroupfsRo()
     CheckCgroupfsRw(is_os=False)
-    CheckCgroupfsRw(is_os=False, userns=True)
 
     ConfigurePortod('test-cgroupns', """
     container {
@@ -135,7 +132,6 @@ try:
     }""")
 
     CheckCgroupfsRw(is_os=False, enable_net_cgroups=True)
-    CheckCgroupfsRw(is_os=False, userns=True, enable_net_cgroups=True)
 
     if not USE_CGROUP2:
         # check link_memory_writeback_blkio

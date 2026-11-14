@@ -261,7 +261,7 @@ TError TBindMount::Mount(const TCred &cred, const TPath &target_root) const {
     return OK;
 }
 
-TError TMountNamespace::MountRun(const TContainer &ct) {
+TError TMountNamespace::MountRun() {
     TPath run = "run";
     std::vector<std::string> run_paths, subdirs;
     std::vector<struct stat> run_paths_stat;
@@ -342,16 +342,10 @@ TError TMountNamespace::MountRun(const TContainer &ct) {
             return error;
     }
 
-    if (ct.InUserNs()) {
-        error = run.ChownRecursiveRootFiles(ct.UserNsCred);
-        if (error)
-            return error;
-    }
-
     return OK;
 }
 
-TError TMountNamespace::RemountRun(const TContainer &ct) {
+TError TMountNamespace::RemountRun() {
     TPath run("/run"), tmp("/tmp");
     TError error;
 
@@ -364,7 +358,7 @@ TError TMountNamespace::RemountRun(const TContainer &ct) {
     if (error)
         return error;
 
-    error = MountRun(ct);
+    error = MountRun();
     if (error)
         return error;
 
@@ -533,12 +527,6 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
             if (error)
                 return error;
         }
-
-        if (ct.InUserNs()) {
-            error = cgroup.ChownRecursiveRootFiles(ct.UserNsCred);
-            if (error)
-                return error;
-        }
     }
 
     static const struct {
@@ -559,20 +547,6 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         }
     }
 
-    if (ct.InUserNs()) {
-        error = tmpfs.ChownRecursiveRootFiles(ct.UserNsCred);
-        if (error)
-            return error;
-
-        if (!CgroupDriver.UseCgroup2()) {
-            for (auto &s: symlinks) {
-                error = s.path.Lchown(ct.UserNsCred);
-                if (error)
-                    return error;
-            }
-        }
-    }
-
     /* cgroup2 is mounted at /sys/fs/cgroup itself, keep it writable for rw cgroupfs */
     if (CgroupDriver.UseCgroup2() && rwCgroupFs && config().container().enable_rw_net_cgroups())
         return OK;
@@ -580,7 +554,7 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
     return SetMountAttr(TFile(), tmpfs, {MOUNT_ATTR_RDONLY, 0, 0}, false);
 }
 
-TError TMountNamespace::SetupRoot(const TContainer &ct) {
+TError TMountNamespace::SetupRoot() {
     TPath dot(".");
     TError error;
 
@@ -636,7 +610,7 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
             return error;
     }
 
-    error = MountRun(ct);
+    error = MountRun();
     if (error)
         return error;
 
@@ -711,12 +685,6 @@ TError TMountNamespace::SetupRoot(const TContainer &ct) {
     error = MountTraceFs();
     if (error)
         L_WRN("Cannot mount tracefs: {}", error);
-
-    if (ct.InUserNs()) {
-        error = dot.ChownRecursiveRootFiles(ct.UserNsCred);
-        if (error)
-            return error;
-    }
 
     return OK;
 }
@@ -859,12 +827,12 @@ TError TMountNamespace::Setup(const TContainer &ct) {
         }
 
         if (IsolateRun) {
-            error = RemountRun(ct);
+            error = RemountRun();
             if (error)
                 return error;
         }
     } else {
-        error = SetupRoot(ct);
+        error = SetupRoot();
         if (error)
             return error;
     }

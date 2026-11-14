@@ -385,8 +385,8 @@ def run_test_restore_vanished_pids_devices(*args, **kwargs):
 run_test_restore_vanished_pids_devices()
 run_test_restore_vanished_pids_devices(devices="/dev/ram0 rw")
 '''
-# check virt_mode = fuse
-a = c.Run("a", weak=True, root_volume={"layers": ["ubuntu-noble"]}, virt_mode="fuse")
+# check explicit FUSE device access
+a = c.Run("a", weak=True, root_volume={"layers": ["ubuntu-noble"]}, devices="/dev/fuse rw")
 b = c.Run("a/b", weak=True, wait=3, command="ls /dev/fuse")
 ExpectEq(b['exit_code'], '0')
 b.Destroy()

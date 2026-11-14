@@ -49,13 +49,6 @@ private:
 
     TPath AddComponent(const TPath &component) const;
 
-    static void RootFilesChownFilter(const struct stat &st, uid_t &uid, gid_t &gid) {
-        if (st.st_uid != 0)
-            uid = (uid_t)-1;
-        if (st.st_gid != 0)
-            gid = (gid_t)-1;
-    }
-
 public:
     TPath(const std::string &path)
         : Path(path)
@@ -182,14 +175,7 @@ public:
         return Lchown(cred.GetUid(), cred.GetGid());
     }
 
-    typedef void (*TChownFilter)(const struct stat &, uid_t &uid, gid_t &gid);
-    TError ChownRecursive(uid_t uid, gid_t gid, TChownFilter filter = nullptr) const;
-    TError ChownRecursiveRootFiles(uid_t uid, gid_t gid) const {
-        return ChownRecursive(uid, gid, RootFilesChownFilter);
-    }
-    TError ChownRecursiveRootFiles(const TCred &cred) const {
-        return ChownRecursiveRootFiles(cred.GetUid(), cred.GetGid());
-    }
+    TError ChownRecursive(uid_t uid, gid_t gid) const;
 
     TError Chmod(const int mode) const;
     TError ReadLink(TPath &value) const;
@@ -217,9 +203,6 @@ public:
     static std::string UmountFlagsToString(uint64_t flags);
 
     TError FindMount(TMount &mount, bool exact = false) const;
-    static TError ListMountsByFilter(std::vector<TMount> &list, pid_t pid,
-                                     std::function<bool(const TMount &)> filter = [](const TMount &) { return true; });
-    static TError ListFuseMounts(std::vector<TMount> &list, pid_t pid = 0);
     static TError ListAllMounts(std::vector<TMount> &list, pid_t pid = 0);
 
     TError Mount(const TPath &source, const std::string &type, uint64_t flags,

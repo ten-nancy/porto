@@ -336,7 +336,7 @@ TError TPath::Lchown(uid_t uid, gid_t gid) const {
     return OK;
 }
 
-TError TPath::ChownRecursive(uid_t uid, gid_t gid, TChownFilter filter) const {
+TError TPath::ChownRecursive(uid_t uid, gid_t gid) const {
     TPathWalk walk;
     TError error;
 
@@ -349,17 +349,12 @@ TError TPath::ChownRecursive(uid_t uid, gid_t gid, TChownFilter filter) const {
         if (error || !walk.Path)
             return error;
 
-        uid_t chownUid = uid;
-        gid_t chownGid = gid;
-        if (filter && walk.Stat)
-            filter(*walk.Stat, chownUid, chownGid);
-
-        if (chownUid != (uid_t)-1 || chownGid != (gid_t)-1) {
+        if (uid != (uid_t)-1 || gid != (gid_t)-1) {
             if (walk.Stat && S_ISLNK(walk.Stat->st_mode))
-                error = walk.Path.Lchown(chownUid, chownGid);
+                error = walk.Path.Lchown(uid, gid);
             else {
                 int mode = walk.Stat ? walk.Stat->st_mode : 0;
-                error = walk.Path.Chown(chownUid, chownGid);
+                error = walk.Path.Chown(uid, gid);
                 if (!error && mode)
                     error = walk.Path.Chmod(mode);
             }
@@ -1048,7 +1043,7 @@ TError TPath::FindMount(TMount &mount, bool exact) const {
     return OK;
 }
 
-TError TPath::ListMountsByFilter(std::vector<TMount> &list, pid_t pid, std::function<bool(const TMount &)> filter) {
+TError TPath::ListAllMounts(std::vector<TMount> &list, pid_t pid) {
     TError error;
     std::vector<std::string> lines;
 
@@ -1063,19 +1058,10 @@ TError TPath::ListMountsByFilter(std::vector<TMount> &list, pid_t pid, std::func
         if (error)
             return error;
 
-        if (filter(mount))
-            list.push_back(mount);
+        list.push_back(mount);
     }
 
     return OK;
-}
-
-TError TPath::ListFuseMounts(std::vector<TMount> &list, pid_t pid) {
-    return ListMountsByFilter(list, pid, [](const TMount &m) { return StringStartsWith(m.Type, "fuse."); });
-}
-
-TError TPath::ListAllMounts(std::vector<TMount> &list, pid_t pid) {
-    return ListMountsByFilter(list, pid);
 }
 
 std::string TMount::Demangle(const std::string &s) {

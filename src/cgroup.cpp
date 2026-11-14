@@ -263,7 +263,6 @@ TError TCgroup::GetUintMap(const TFile &file, TUintMap &value) {
 
 class TCgroup1: public TCgroup {
     // cgroup1 specified
-    static TError AbortFuse(pid_t pid);
 
 public:
     // constructors and destructor
@@ -280,7 +279,7 @@ public:
     // processes
     TError Attach(pid_t pid, bool thread = false) const override;
     TError AttachAll(const TCgroup &cg, bool thread = false) const override;
-    TError KillAll(int signal, bool abortFuse = false) const override;
+    TError KillAll(int signal) const override;
 
     TError GetTasks(std::vector<pid_t> &pids) const override;
     TError GetCount(uint64_t &count, bool thread = false) const override;
@@ -293,45 +292,6 @@ public:
         return std::unique_ptr<const TCgroup>(new TCgroup1(Subsystem, Name));
     }
 };
-
-// TCgroup1 cgroup1 specified
-
-TError TCgroup1::AbortFuse(pid_t pid) {
-    TError error;
-    std::vector<TMount> mounts;
-    uint64_t deadline = GetCurrentTimeMs() + config().daemon().fuse_termination_timeout_s() * 1000;
-    uint64_t sleep = config().daemon().fuse_termination_sleep_ms();
-
-    if (!TTask::Exists(pid))
-        return OK;
-
-    do {
-        error = TPath::ListFuseMounts(mounts, pid);
-        if (error && error.Errno != ENOENT)
-            return error;
-
-        if (mounts.empty() || !TTask::Exists(pid))
-            break;
-
-        for (const TMount &m: mounts) {
-            if (m.OptionalFields.size() > 0)
-                continue;
-
-            TPath connPath = "/sys/fs/fuse/connections/" + std::to_string(m.Device) + "/abort";
-
-            L_ACT("Terminate via {} due to mount {} {} {} {}", connPath, m.Device, m.Source, m.Target, m.Type);
-
-            error = connPath.WriteAll("1");
-            if (error)
-                return TError(error, "Cannot close fuse connections");
-        }
-
-        mounts.clear();
-
-    } while (!WaitDeadline(deadline, sleep));
-
-    return OK;
-}
 
 // TCgroup1 modifiers
 
@@ -475,7 +435,7 @@ TError TCgroup1::AttachAll(const TCgroup &cg, bool thread) const {
     return OK;
 }
 
-TError TCgroup1::KillAll(int signal, bool abortFuse) const {
+TError TCgroup1::KillAll(int signal) const {
     std::vector<pid_t> tasks, killed;
     TError error, error2;
     bool retry;
@@ -507,12 +467,6 @@ TError TCgroup1::KillAll(int signal, bool abortFuse) const {
             if (pid == MasterPid || pid == ServerPid || pid <= 0) {
                 L_TAINT(fmt::format("Cannot kill portod thread {}", pid));
                 continue;
-            }
-
-            if (iteration > 10 && abortFuse) {
-                error = TCgroup1::AbortFuse(pid);
-                if (error)
-                    L_ERR("Cannot abort fuse for {} of {}: {}", pid, *this, error);
             }
 
             if (std::find(killed.begin(), killed.end(), pid) == killed.end()) {
@@ -592,7 +546,7 @@ public:
     // processes
     TError Attach(pid_t pid, bool thread = false) const override;
     TError AttachAll(const TCgroup &cg, bool thread = false) const override;
-    TError KillAll(int signal, bool abortFuse = false) const override;
+    TError KillAll(int signal) const override;
 
     TError GetProcesses(std::vector<pid_t> &pids) const override;
     TError GetTasks(std::vector<pid_t> &pids) const override;
@@ -776,7 +730,7 @@ TError TCgroup2::AttachAll(const TCgroup &cg, bool thread) const {
     return OK;
 }
 
-TError TCgroup2::KillAll(int signal, bool) const {
+TError TCgroup2::KillAll(int signal) const {
     TError error;
 
     L_CG("KillAll {} {}", signal, *this);

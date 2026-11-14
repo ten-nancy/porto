@@ -643,12 +643,6 @@ void PrepareServer() {
             ExtraProperties.emplace_back(properties);
     }
 
-    if (config().daemon().enable_fuse()) {
-        error = RunCommand({"modprobe", "fuse"});
-        if (error)
-            FatalError("Cannot load fuse module: {}", error);
-    }
-
     InitPortoGroups();
     InitCapabilities();
     InitIpcSysctl();

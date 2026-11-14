@@ -341,7 +341,7 @@
   "test/test-uid_handling.py":"infra/porto/porto/test/test-uid_handling.py",
   "test/test-ulimit.py":"infra/porto/porto/test/test-ulimit.py",
   "test/test-unpriv-cred.py":"infra/porto/porto/test/test-unpriv-cred.py",
-  "test/test-userns.py":"infra/porto/porto/test/test-userns.py",
+  "test/test-unsupported-properties.py":"infra/porto/porto/test/test-unsupported-properties.py",
   "test/test-vcheck.py":"infra/porto/porto/test/test-vcheck.py",
   "test/test-volume-create-race.py":"infra/porto/porto/test/test-volume-create-race.py",
   "test/test-volume-nbd.py":"infra/porto/porto/test/test-volume-nbd.py",

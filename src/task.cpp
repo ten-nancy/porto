@@ -38,8 +38,6 @@ std::string to_string(TTaskEnv::EMsgCode code) {
         return "WaitPid";
     case TTaskEnv::EMsgCode::TaskPid:
         return "TaskPid";
-    case TTaskEnv::EMsgCode::SetupUserMapping:
-        return "SetupUserMapping";
     case TTaskEnv::EMsgCode::WaitAutoconf:
         return "WaitAutoconf";
     default:
@@ -168,27 +166,6 @@ TError TTaskEnv::OpenNamespaces(TContainer &ct) {
     if (error)
         return error;
 
-    error = UserFd.Open(pid, "ns/user");
-    if (error)
-        return error;
-
-    /* https://github.com/torvalds/linux/blob/v4.19/kernel/user_namespace.c#L1263
-     * Don't allow gaining capabilities by reentering
-     * the same user namespace.
-     */
-
-    TNamespaceFd currentUserFd;
-    error = currentUserFd.Open("proc/thread-self/ns/user");
-    if (error)
-        return error;
-
-    if (UserFd.Inode() == currentUserFd.Inode())
-        UserFd.Close();
-    else
-        PORTO_ASSERT(ct.InUserNs());
-
-    currentUserFd.Close();
-
     error = RootFd.Open(pid, "root");
     if (error)
         return error;
@@ -267,11 +244,6 @@ TError TTaskEnv::ChildExec() {
     if (CT->Command == "/sbin/init" && CT->OsMode && !(CT->Controllers & CGROUP_SYSTEMD)) {
         L_VERBOSE("Reserve fd 9 for upstart JOB_PROCESS_SCRIPT_FD");
         dup2(open("/dev/null", O_RDWR | O_CLOEXEC), 9);
-    }
-
-    if (CT->UnshareOnExec) {
-        if (unshare(CLONE_NEWNS))
-            return TError::System("unshare(CLONE_NEWNS)");
     }
 
     TSeccompContext seccompContext;
@@ -372,9 +344,6 @@ TError TTaskEnv::ConfigureChild() {
     }
 
     if (!Mnt.Root.IsRoot()) {
-        if (CT->InUserNs())
-            devices.PrepareForUserNs(CT->UserNsCred);
-
         error = devices.Makedev("/");
         if (error)
             return error;
@@ -401,8 +370,7 @@ TError TTaskEnv::ConfigureChild() {
     /* Closing before directory changing for security.
      * More info: PORTO-925
      */
-    TFile::CloseAllExcept(
-        {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, Sock.Fd, LogFile.Fd, PortoInit.Fd, UserFd.GetFd()});
+    TFile::CloseAllExcept({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, Sock.Fd, LogFile.Fd, PortoInit.Fd});
     error = Mnt.Cwd.Chdir();
     if (error)
         return error;
@@ -461,35 +429,7 @@ TError TTaskEnv::ConfigureChild() {
 
     umask(CT->Umask);
 
-    error = UserFd.SetNs(CLONE_NEWUSER);
-    if (error)
-        return error;
-
-    UserFd.Close();
-
     ReportPid(EMsgCode::TaskPid);
-    if (CT->UserNs) {
-        int unshareFlags = CLONE_NEWUSER | CLONE_NEWNET;
-
-        // TODO: remove it later
-        if (CT->Fuse && CT->NetInherit)
-            unshareFlags &= ~CLONE_NEWNET;
-
-        unshareFlags |= CLONE_NEWCGROUP;
-
-        if (unshare(unshareFlags))
-            return TError::System("unshare(CLONE_NEWUSER | {}{})",
-                                  (unshareFlags & CLONE_NEWNET ? " | CLONE_NEWNET" : ""),
-                                  (unshareFlags & CLONE_NEWCGROUP ? " | CLONE_NEWCGROUP" : ""));
-
-        error = Sock.SendInt(int(EMsgCode::SetupUserMapping));
-        if (error)
-            return error;
-
-        error = Sock.RecvZero();
-        if (error)
-            return error;
-    }
 
     return OK;
 }
@@ -769,20 +709,6 @@ TError TTaskEnv::CommunicateChild(TPidFd &waitPidFd, TPidFd &taskPidFd) {
             if (CT->TaskVPid < 0)
                 return TError("No vpid for task");
 
-            break;
-        }
-        case EMsgCode::SetupUserMapping: {
-            error = CT->TaskCred.SetupMapping(taskProcFd);
-            if (error)
-                return error;
-
-            error = TNetwork::StartNetwork(*CT, *this);
-            if (error)
-                return error;
-
-            error = MasterSock.SendZero();
-            if (error)
-                return error;
             break;
         }
         case EMsgCode::WaitAutoconf: {

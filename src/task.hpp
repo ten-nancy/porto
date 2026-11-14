@@ -20,7 +20,6 @@ struct TTaskEnv {
         Error = 8321,
         WaitPid = 8322,
         TaskPid = 8323,
-        SetupUserMapping = 8324,
         WaitAutoconf = 8325,
     };
 
@@ -37,7 +36,6 @@ struct TTaskEnv {
     TNamespaceFd RootFd;
     TNamespaceFd CwdFd;
     TNamespaceFd CgFd;
-    TNamespaceFd UserFd;
 
     TEnv Env;
     bool TripleFork;

@@ -125,7 +125,7 @@ def test_nesting_fuse(cleanup, tmpdir):
     ExpectDevice(foo, TTY0, "rw")
     ExpectDevice(foo, FUSE, "rw")
 
-    bar = cleanup.enter_context(runc(conn, "foo/bar", root="/bar", enable_fuse="true"))
+    bar = cleanup.enter_context(runc(conn, "foo/bar", root="/bar", devices="/dev/fuse rw", devices_explicit=False))
     ExpectDevice(bar, TTY0, "rw")
     ExpectDevice(bar, FUSE, "rw")
 
@@ -133,7 +133,6 @@ def test_nesting_fuse(cleanup, tmpdir):
     ExpectDevice(baz, TTY0, "rw")
     ExpectDevice(baz, FUSE, "-")
 
-    # TODO(ovov): qux = cleanup.enter_context(runc(conn, "foo/bar/qux", root="/qux", enable_fuse="true"))
     qux = cleanup.enter_context(runc(conn, "foo/bar/qux", root="/qux"))
     ExpectDevice(qux, TTY0, "rw")
     ExpectDevice(qux, FUSE, "rw")

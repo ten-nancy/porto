@@ -174,11 +174,7 @@ public:
     bool OsMode = false;   /* Start as init process */
     bool HostMode = false; /* Preserve host capabilites */
     bool JobMode = false;  /* Process group */
-    bool UserNs = false;
-    TCred UserNsCred;
-    bool UnshareOnExec = false;
     ECgroupFs CgroupFs = ECgroupFs::None;
-    bool Fuse = false;
     TSeccompProfile Seccomp;
     std::string SeccompName;
     TSessionInfo SessionInfo;
@@ -213,7 +209,6 @@ public:
     // We rely on restore to populate this,
     // so we dont need to dump it to KV.
     std::set<TPath> DevicesPath;
-    TDevices FuseDevices;
     bool DevicesExplicit = false;
     TStringMap Sysctl;
 
@@ -344,10 +339,6 @@ public:
 
     bool IsMeta() const {
         return Command.empty() && !HasProp(EProperty::COMMAND_ARGV);
-    }
-
-    bool InUserNs() const {
-        return !UserNsCred.IsUnknown();
     }
 
     TContainer(std::shared_ptr<TContainer> parent, int id, const std::string &name);
@@ -490,7 +481,6 @@ public:
     }
     TError SetControllers(uint64_t controllers);
     TError SetDeviceConf(const TDevices &devices, bool merge);
-    TError EnableFuse(bool value);
     TError EnableControllers(uint64_t controllers);
     TError HasProperty(const std::string &property) const;
     TError GetProperty(const std::string &property, std::string &value) const;

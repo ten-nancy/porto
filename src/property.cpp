@@ -704,26 +704,22 @@ public:
     }
     TError Set(const std::string &value) override {
         TCred cred;
-        if (CT->InUserNs() && value == "root")
-            cred = CT->UserNsCred;
-        else {
-            TError error = cred.Init(value);
-            if (error) {
-                cred.SetGid(CT->TaskCred.GetGid());
-                uid_t newUid;
-                error = UserId(value, newUid);
-                if (error)
-                    return error;
-                cred.SetUid(newUid);
-            } else if (CT->HasProp(EProperty::GROUP))
-                cred.SetGid(CT->TaskCred.GetGid());
-        }
+        TError error = cred.Init(value);
+        if (error) {
+            cred.SetGid(CT->TaskCred.GetGid());
+            uid_t newUid;
+            error = UserId(value, newUid);
+            if (error)
+                return error;
+            cred.SetUid(newUid);
+        } else if (CT->HasProp(EProperty::GROUP))
+            cred.SetGid(CT->TaskCred.GetGid());
         CT->TaskCred = cred;
         CT->SetProp(EProperty::USER);
         return OK;
     }
     TError Start(void) override {
-        if (CT->OsMode && !CT->UserNs && !CT->InUserNs())
+        if (CT->OsMode)
             CT->TaskCred.SetUid(RootUser);
         return OK;
     }
@@ -752,19 +748,15 @@ public:
     }
     TError Set(const std::string &value) override {
         gid_t newGid;
-        if (CT->InUserNs() && value == "root")
-            newGid = CT->UserNsCred.GetGid();
-        else {
-            TError error = GroupId(value, newGid);
-            if (error)
-                return error;
-        }
+        TError error = GroupId(value, newGid);
+        if (error)
+            return error;
         CT->TaskCred.SetGid(newGid);
         CT->SetProp(EProperty::GROUP);
         return OK;
     }
     TError Start(void) override {
-        if (CT->OsMode && !CT->UserNs && !CT->InUserNs())
+        if (CT->OsMode)
             CT->TaskCred.SetGid(RootGroup);
         return OK;
     }
@@ -1348,6 +1340,10 @@ public:
             value != "docker" && value != "fuse")
             return TError(EError::InvalidValue, "Unknown: {}", value);
 
+        // TODO: Restore the legacy virt_mode=fuse alias when enable_fuse is implemented.
+        if (value == "fuse")
+            return TError(EError::NotSupported, "virt_mode=fuse is not supported");
+
         CT->OsMode = false;
         CT->JobMode = false;
         CT->HostMode = false;
@@ -1361,14 +1357,6 @@ public:
         // TODO: it needs to backward compability, remove it later
         else if (value == "docker")
             L_TAINT("virt_mode=docker is deprecated, virt_mode=app has set instead of it");
-        else if (value == "fuse") {
-            L_TAINT("virt_mode=fuse is deprecated. Please use devices property explicitly and enable_fuse property");
-            if (!config().daemon().enable_fuse())
-                return TError(EError::InvalidValue, "virt_mode={} is disabled due to Porto config", value);
-            auto error = CT->EnableFuse(true);
-            if (error)
-                return error;
-        }
 
         if (CT->HostMode || CT->JobMode)
             CT->Isolate = false;
@@ -1393,6 +1381,7 @@ public:
     }
 } static VirtMode;
 
+// TODO: Restore userns implementation behind the retained property and protobuf interface.
 class TUserNs: public TProperty {
 public:
     TUserNs()
@@ -1404,14 +1393,13 @@ public:
     }
 
     TError Get(std::string &value) const override {
-        value = BoolToString(CT->UserNs);
+        value = "false";
         return OK;
     }
 
     TError Set(bool value) {
-        if (value && (CT->HostMode || CT->JobMode))
-            return TError(EError::InvalidValue, "userns=true incompatible with virt_mode");
-        CT->UserNs = value;
+        if (value)
+            return TError(EError::NotSupported, "User namespaces are not supported");
         CT->SetProp(EProperty::USERNS);
         return OK;
     }
@@ -1424,8 +1412,16 @@ public:
         return Set(val);
     }
 
+    TError Restore(const std::string &value) override {
+        auto error = Set(value);
+        // Unsupported properties are skipped on restore; do not discard isolation.
+        if (error.Error == EError::NotSupported)
+            error.Error = EError::InvalidValue;
+        return error;
+    }
+
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_userns(CT->UserNs);
+        spec.set_userns(false);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
@@ -1437,6 +1433,7 @@ public:
     }
 } static UserNs;
 
+// TODO: Restore unshare_on_exec implementation behind the retained property and protobuf interface.
 class TUnshareOnExec: public TProperty {
 public:
     TUnshareOnExec()
@@ -1448,12 +1445,13 @@ public:
     }
 
     TError Get(std::string &value) const override {
-        value = BoolToString(CT->UnshareOnExec);
+        value = "false";
         return OK;
     }
 
     TError Set(bool value) {
-        CT->UnshareOnExec = value;
+        if (value)
+            return TError(EError::NotSupported, "unshare_on_exec is not supported");
         CT->SetProp(EProperty::UNSHARE_ON_EXEC);
         return OK;
     }
@@ -1466,8 +1464,15 @@ public:
         return Set(val);
     }
 
+    TError Restore(const std::string &value) override {
+        auto error = Set(value);
+        if (error.Error == EError::NotSupported)
+            error.Error = EError::InvalidValue;
+        return error;
+    }
+
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_userns(CT->UnshareOnExec);
+        spec.set_unshare_on_exec(false);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
@@ -1479,24 +1484,27 @@ public:
     }
 } static UnshareOnExec;
 
+// TODO: Restore enable_fuse implementation behind the retained property and protobuf interface.
 class TEnableFuse: public TProperty {
 public:
     TEnableFuse()
         : TProperty(P_ENABLE_FUSE, EProperty::ENABLE_FUSE, "Aborts fuse connections and unmounts fuse filesystems")
     {}
 
-    TError Start() override {
-        IsSupported = config().daemon().enable_fuse();
-        return OK;
+    TError Reset() override {
+        return Set(false);
     }
 
     TError Get(std::string &value) const override {
-        value = BoolToString(CT->Fuse);
+        value = "false";
         return OK;
     }
 
     TError Set(bool value) {
-        return CT->EnableFuse(value);
+        if (value)
+            return TError(EError::NotSupported, "enable_fuse is not supported");
+        CT->SetProp(EProperty::ENABLE_FUSE);
+        return OK;
     }
 
     TError Set(const std::string &value) override {
@@ -1507,8 +1515,15 @@ public:
         return Set(val);
     }
 
+    TError Restore(const std::string &value) override {
+        auto error = Set(value);
+        if (error.Error == EError::NotSupported)
+            error.Error = EError::InvalidValue;
+        return error;
+    }
+
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_enable_fuse(CT->Fuse);
+        spec.set_enable_fuse(false);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
