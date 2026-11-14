@@ -28,7 +28,6 @@ extern "C" {
 #include <sys/wait.h>
 }
 
-extern bool SupportCgroupNs;
 extern bool EnableOsModeCgroupNs;
 extern bool EnableRwCgroupFs;
 
@@ -1568,8 +1567,6 @@ public:
     TError Set(const std::string &value) override {
         if (value == "none")
             CT->CgroupFs = ECgroupFs::None;
-        else if (!SupportCgroupNs)
-            return TError(EError::NotSupported, "Cgroup namespaces not supported");
         else if (value == "ro")
             CT->CgroupFs = ECgroupFs::Ro;
         else if (value == "rw")

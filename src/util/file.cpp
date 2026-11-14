@@ -21,7 +21,6 @@ extern "C" {
 #include <sys/statvfs.h>
 #include <sys/syscall.h>
 #include <sys/sysmacros.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 }
@@ -65,10 +64,6 @@ TError TFile::OpenReadWrite(const TPath &path) {
     return Open(path, O_RDWR | O_CLOEXEC | O_NOCTTY);
 }
 
-TError TFile::OpenAppend(const TPath &path) {
-    return Open(path, O_WRONLY | O_CLOEXEC | O_APPEND | O_NOCTTY);
-}
-
 TError TFile::OpenTrunc(const TPath &path) {
     return Open(path, O_WRONLY | O_CLOEXEC | O_TRUNC | O_NOCTTY);
 }
@@ -84,10 +79,6 @@ TError TFile::OpenDirStrict(const TPath &path) {
 TError TFile::OpenPath(const TPath &path) {
     return Open(path, O_PATH | O_CLOEXEC);
 }
-
-#ifndef O_TMPFILE
-#define O_TMPFILE (O_DIRECTORY | 020000000)
-#endif
 
 TError TFile::CreateTemporary(TPath &temp, int flags) {
     Close();
@@ -135,11 +126,6 @@ void TFile::Swap(TFile &other) {
     int tmp = Fd;
     SetFd = other.Fd;
     other.SetFd = tmp;
-}
-
-void TFile::Close(const std::vector<int> &fds) {
-    for (int fd: fds)
-        close(fd);
 }
 
 static void closeAllExceptSlow(const TError &reason, const std::vector<int> &except) {
@@ -329,19 +315,6 @@ TError TFile::WriteAllAt(const TPath &path, const std::string &text) const {
     return other.WriteAll(text);
 }
 
-TError TFile::Chattr(int fd, unsigned add_flags, unsigned del_flags) {
-    unsigned old_flags, new_flags;
-
-    if (ioctl(fd, FS_IOC_GETFLAGS, &old_flags))
-        return TError::System("ioctlFS_IOC_GETFLAGS)");
-
-    new_flags = (old_flags & ~del_flags) | add_flags;
-    if ((new_flags != old_flags) && ioctl(fd, FS_IOC_SETFLAGS, &new_flags))
-        return TError::System("ioctl(FS_IOC_SETFLAGS)");
-
-    return OK;
-}
-
 bool TFile::IsMountPointFallback(const TError &error) const {
     L_WRN("IsMountPoint fallback to mountinfo scan due to: {}", error);
     TMount unused;
@@ -489,24 +462,6 @@ TError TFile::MkdirAt(const TPath &path, int mode) const {
     return OK;
 }
 
-TError TFile::OpenDirAllAt(const TFile &dir, const TPath &path) {
-    TError error;
-
-    error = Dup(dir);
-    if (error)
-        return error;
-
-    for (auto &name: path.Components()) {
-        if (name == "..")
-            return TError(EError::InvalidPath, "Non-normal path {}", path.Path);
-        error = OpenDirStrictAt(*this, name);
-        if (error)
-            return error;
-    }
-
-    return OK;
-}
-
 TError TFile::CreateDirAllAt(const TFile &dir, const TPath &path, int mode, const TCred &cred) {
     TError error;
 
@@ -571,14 +526,6 @@ TError TFile::UnlinkAt(const TPath &path) const {
     return OK;
 }
 
-TError TFile::RmdirAt(const TPath &path) const {
-    if (path.IsAbsolute())
-        return TError(EError::InvalidPath, "Absolute path {}", path.Path);
-    if (unlinkat(Fd, path.c_str(), AT_REMOVEDIR))
-        return TError::System("Cannot rmdirat {} {}", RealPath(), path);
-    return OK;
-}
-
 TError TFile::ReadDirectory(std::vector<std::string> &result) const {
     result.clear();
 
@@ -629,30 +576,6 @@ TError TFile::ChownAt(const TPath &path, uid_t uid, gid_t gid) const {
     if (fchownat(Fd, path.c_str(), uid, gid, AT_SYMLINK_NOFOLLOW))
         return TError::System("Cannot chownat {} {}", RealPath(), path);
     return OK;
-}
-
-TError TFile::ChmodAt(const TPath &path, mode_t mode) const {
-    if (path.IsAbsolute())
-        return TError(EError::InvalidPath, "Absolute path {}", path.Path);
-    if (fchmodat(Fd, path.c_str(), mode, AT_SYMLINK_NOFOLLOW))
-        return TError::System("Cannot chmodat {} {}", RealPath(), path);
-    return OK;
-}
-
-TError TFile::Touch() const {
-    if (futimes(Fd, NULL))
-        return TError::System("futimes");
-    return OK;
-}
-
-TError TFile::GetXAttr(const std::string &name, std::string &value) const {
-    ssize_t size = syscall(SYS_fgetxattr, Fd, name.c_str(), nullptr, 0);
-    if (size >= 0) {
-        value.resize(size);
-        if (syscall(SYS_fgetxattr, Fd, name.c_str(), value.c_str(), size) >= 0)
-            return OK;
-    }
-    return TError::System("getxattr {}", name);
 }
 
 TError TFile::SetXAttr(const std::string &name, const std::string &value) const {

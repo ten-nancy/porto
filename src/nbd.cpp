@@ -35,7 +35,6 @@ struct TConnParams {
     uint64_t size;
     int blocksize;
     uint16_t flags;
-    int conn_timeout;
     int timeout;
     int dead_conn_timeout;
 };

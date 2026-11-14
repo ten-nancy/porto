@@ -68,9 +68,6 @@ struct TDevices {
 
     TError InitDefault();
     TDevices &Merge(const TDevices &devices);
-    bool Empty() const {
-        return Devices.empty();
-    }
 
     std::set<TPath> AllowedPaths() const {
         std::set<TPath> paths;

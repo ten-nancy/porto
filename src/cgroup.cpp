@@ -615,17 +615,8 @@ public:
 
     // controllers
     static inline std::string ConvertControllerToV2(const std::string &type);
-    bool HasEmptyControllers() const;
-
-    TError SetController(const std::string &type, bool add) const;
-    TError AddController(const std::string &type) const;
-    TError DelController(const std::string &type) const;
-
-    TError GetControllers(std::vector<std::string> &controllers) const;
-    TError GetControllers(std::string &controllers) const;
 
     TError SetControllers(const std::vector<std::string> &controllers) const;
-    TError SetControllers(const std::string &controllers) const;
 
     TError InitializeControllers() const;
     TError InitializeSubsystems() const;
@@ -888,49 +879,6 @@ std::string TCgroup2::ConvertControllerToV2(const std::string &type) {
         return type;
 }
 
-bool TCgroup2::HasEmptyControllers() const {
-    TError error;
-    std::string value;
-
-    error = Get(CGROUP_SUBTREE_CONTROL, value);
-    if (error)
-        return false;
-
-    return value.empty();
-}
-
-TError TCgroup2::SetController(const std::string &type, bool add) const {
-    std::string t = ConvertControllerToV2(type);
-    if (t.empty())
-        return OK;
-    return Set(CGROUP_SUBTREE_CONTROL, (add ? "+" : "-") + t);
-}
-
-TError TCgroup2::AddController(const std::string &type) const {
-    return SetController(type, true);
-}
-
-TError TCgroup2::DelController(const std::string &type) const {
-    return SetController(type, false);
-}
-
-TError TCgroup2::GetControllers(std::vector<std::string> &controllers) const {
-    TError error;
-    std::string buf;
-
-    error = GetControllers(buf);
-    if (error)
-        return error;
-
-    controllers = SplitString(buf, ' ');
-
-    return OK;
-}
-
-TError TCgroup2::GetControllers(std::string &controllers) const {
-    return Get(CGROUP_SUBTREE_CONTROL, controllers);
-}
-
 TError TCgroup2::SetControllers(const std::vector<std::string> &controllers) const {
     TError error;
     std::string value;
@@ -946,10 +894,6 @@ TError TCgroup2::SetControllers(const std::vector<std::string> &controllers) con
         return error;
 
     return OK;
-}
-
-TError TCgroup2::SetControllers(const std::string &controllers) const {
-    return SetControllers(SplitString(controllers, ' '));
 }
 
 TError TCgroup2::InitializeControllers() const {
@@ -1129,12 +1073,6 @@ TError TMemorySubsystem::SetSoftLimit(const TCgroup &cg, int64_t limit) const {
     if (!SupportSoftLimit())
         return OK;
     return cg.SetInt64(SOFT_LIMIT, limit);
-}
-
-TError TMemorySubsystem::GetSoftLimit(const TCgroup &cg, int64_t &limit) const {
-    if (!SupportSoftLimit())
-        return OK;
-    return cg.GetInt64(SOFT_LIMIT, limit);
 }
 
 bool TMemorySubsystem::SupportGuarantee() const {
@@ -1569,25 +1507,8 @@ TError TCpuSubsystem::Statistics(const TCgroup &cg, TUintMap &stat) const {
     return cg.GetUintMap(STAT, stat);
 }
 
-inline std::string TCpuSubsystem::ChooseThrottledKnob() const {
-    return IsCgroup2() ? THROTTLED_USEC : THROTTLED_TIME;
-}
-
 bool TCpuSubsystem::SupportThrottled() const {
     return RootCgroup()->Has(STAT);
-}
-
-TError TCpuSubsystem::GetThrottled(const TCgroup &cg, uint64_t &value) const {
-    TError error;
-    TUintMap stat;
-
-    error = cg.GetUintMap(STAT, stat);
-    if (error)
-        return error;
-
-    value = stat[ChooseThrottledKnob()];
-
-    return OK;
 }
 
 bool TCpuSubsystem::SupportUnconstrainedWait() const {

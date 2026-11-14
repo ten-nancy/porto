@@ -111,29 +111,19 @@ static void DefaultConfig() {
     container->set_stdout_limit_max(1 << 30);       /* 1Gb */
     container->set_std_stream_read_limit(16 << 20); /* 16Mb */
 
-    container->set_kill_timeout_ms(1000);
     container->set_start_timeout_ms(300 * 1000);
     // wait 30 seconds for container process to exit after SIGKILL
     container->set_stop_timeout_ms(30 * 1000);
     container->set_max_total(3000);
-    container->set_empty_wait_timeout_ms(5000);
     container->set_rt_priority(0);
     container->set_rt_nice(-20);
     container->set_high_nice(-10);
     container->set_enable_tracefs(true);
     container->set_devpts_max(256);
     container->set_dev_size(32 << 20);
-    container->set_enable_hugetlb(true);
-    container->set_enable_blkio(true);
-    container->set_ptrace_on_start(false);
-
-    if (CompareVersions(cfg.linux_version(), "4.19") >= 0)
-        container->set_enable_cgroup2(true);
 
     container->set_use_os_mode_cgroupns(false);
     container->set_enable_rw_cgroupfs(false);
-
-    container->set_enable_docker_mode(false);  // deprecated
 
     container->set_min_memory_limit(1ull << 20); /* 1Mb */
 
@@ -146,8 +136,6 @@ static void DefaultConfig() {
 
     container->set_dead_memory_soft_limit(1 << 20); /* 1Mb */
     container->set_pressurize_on_death(false);
-
-    container->set_memory_high_limit_proportion(0);
 
     container->set_default_ulimit("core: 0 unlimited; nofile: 8K 1M");
     container->set_default_thread_limit(10000);
@@ -169,9 +157,6 @@ static void DefaultConfig() {
     volumes->set_enable_quota(true);
     volumes->set_keep_project_quota_id(true);
     volumes->set_insecure_user_paths("");
-
-    if (CompareVersions(cfg.linux_version(), "4.4") >= 0)
-        volumes->set_direct_io_loop(true);
 
     volumes->set_max_total(3000);
     volumes->set_place_load_limit("default: 2; /ssd: 4");
@@ -210,8 +195,6 @@ static void DefaultConfig() {
     network->set_managed_ip6tnl(false);
     network->set_managed_vlan(false);
     network->set_enforce_unmanaged_defaults(false);
-
-    network->set_cache_statistics_ms(1000);
 
     network->set_l3_migration_hack(true); /* FIXME kill it */
 
@@ -297,22 +280,8 @@ void ReadConfigs(bool silent) {
 }
 
 TError ValidateConfig() {
-#if TCA_FQ_CODEL_MAX <= 8
-    if (config().network().has_fq_codel_memory_limit() && config().network().fq_codel_memory_limit() > 0)
-        return TError(EError::InvalidValue, "fq_codel memory limit not supported");
-#endif
-
-#if TCA_FQ_MAX <= 14
-    if (config().network().has_fq_horizon() || config().network().has_fq_horizon_drop())
-        return TError(EError::InvalidValue, "fq horizon options not supported");
-#endif
-
     if (config().container().cpu_limit_scale() < 0)
         return TError(EError::InvalidValue, "cpu_limit_scale is negative");
-
-    if (config().container().memory_high_limit_proportion() < 0 ||
-        config().container().memory_high_limit_proportion() > 1)
-        return TError(EError::InvalidValue, "memory_high_limit_proportion is outside [0, 1]");
 
     if (config().network().enable_host_net_classes() && !config().network().enable_netcls_classid())
         return TError(EError::InvalidValue, "enable_host_net_classes unable to work without enable_netcls_classid");

@@ -66,8 +66,6 @@ std::list<std::string> IpcSysctls = {
     "kernel.sem",
 };
 
-extern bool SupportCgroupNs;
-
 void InitIpcSysctl() {
     for (const auto &key: IpcSysctls) {
         bool set = false;
@@ -166,11 +164,9 @@ TError TTaskEnv::OpenNamespaces(TContainer &ct) {
     if (error)
         return error;
 
-    if (SupportCgroupNs) {
-        error = CgFd.Open(pid, "ns/cgroup");
-        if (error)
-            return error;
-    }
+    error = CgFd.Open(pid, "ns/cgroup");
+    if (error)
+        return error;
 
     error = UserFd.Open(pid, "ns/user");
     if (error)
@@ -479,8 +475,7 @@ TError TTaskEnv::ConfigureChild() {
         if (CT->Fuse && CT->NetInherit)
             unshareFlags &= ~CLONE_NEWNET;
 
-        if (SupportCgroupNs)
-            unshareFlags |= CLONE_NEWCGROUP;
+        unshareFlags |= CLONE_NEWCGROUP;
 
         if (unshare(unshareFlags))
             return TError::System("unshare(CLONE_NEWUSER | {}{})",
@@ -660,11 +655,9 @@ TError TTaskEnv::DoFork1() {
     if (error)
         return error;
 
-    if (SupportCgroupNs) {
-        error = CgFd.SetNs(CLONE_NEWCGROUP);
-        if (error)
-            return error;
-    }
+    error = CgFd.SetNs(CLONE_NEWCGROUP);
+    if (error)
+        return error;
 
     error = RootFd.Chroot();
     if (error)
@@ -694,7 +687,7 @@ TError TTaskEnv::DoFork1() {
     if (CT->Isolate)
         clargs.flags |= CLONE_NEWIPC | CLONE_NEWPID;
 
-    if (SupportCgroupNs && CT->CgroupFs != ECgroupFs::None)
+    if (CT->CgroupFs != ECgroupFs::None)
         clargs.flags |= CLONE_NEWCGROUP;
 
     if (NewMountNs)

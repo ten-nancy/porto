@@ -22,6 +22,5 @@ struct TTask {
     TError KillPg(int signal) const;
 };
 
-void LocalTime(const time_t *time, struct tm &tm);
 void TaintPostFork(std::string message);
 TError TranslatePid(pid_t pid, pid_t pidns, pid_t &result);

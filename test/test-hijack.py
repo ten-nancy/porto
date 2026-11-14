@@ -14,13 +14,4 @@ def Hijack(iterations=1):
         b.Destroy()
     a.Destroy()
 
-ConfigurePortod('test-hijack', """
-container {
-    ptrace_on_start: true
-}
-"""
-)
-
 Hijack()
-
-ConfigurePortod('test-hijack', "")

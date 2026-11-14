@@ -90,10 +90,6 @@ TConsoleScreen::~TConsoleScreen() {
 void TConsoleScreen::SetTimeout(int ms) {
     timeout(ms);
 }
-template <class T>
-void TConsoleScreen::PrintAt(T arg, int x, int y, int width, bool leftaligned, int attr) {
-    PrintAt(std::to_string(arg), x, y, width, leftaligned, attr);
-}
 void TConsoleScreen::PrintAt(std::string str0, int x0, int y0, int w0, bool leftaligned, int attr) {
     if (x0 + w0 < 0 || x0 >= Width())
         return;
@@ -726,15 +722,7 @@ int TPortoContainer::GetMaxLevel() {
             level = c->GetMaxLevel();
     return level;
 }
-std::string TPortoContainer::ContainerAt(int n, int max_level) {
-    auto ret = shared_from_this();
-    int i = 0;
-    ForEach([&](std::shared_ptr<TPortoContainer> &row) {
-        if (i++ == n)
-            ret = row;
-    }, max_level);
-    return ret->GetName();
-}
+
 int TPortoContainer::ChildrenCount() {
     return Children.size();
 }

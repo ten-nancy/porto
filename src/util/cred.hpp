@@ -60,8 +60,6 @@ public:
           Gid(NoGroup)
     {}
 
-    static TCred Current();
-
     void Enter() const;
     void Leave() const;
 
@@ -99,9 +97,6 @@ public:
 
     bool IsRootUser() const {
         return Uid == RootUser;
-    }
-    bool IsRootGroup() const {
-        return Gid == RootGroup;
     }
 
     bool IsUnknown() const {
@@ -190,8 +185,6 @@ public:
     TError ApplyLimit() const;
     TError ApplyAmbient() const;
     TError ApplyEffective() const;
-    TError Get(pid_t pid, int type);
-    void Dump();
 
     bool HasSetUidGid() const;
 

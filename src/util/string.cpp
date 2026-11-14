@@ -747,7 +747,3 @@ TError TBitMap::Read(const TPath &path) {
         return error;
     return Parse(text);
 }
-
-TError TBitMap::Write(const TPath &path) const {
-    return path.WriteAll(Format());
-}

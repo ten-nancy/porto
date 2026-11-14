@@ -32,8 +32,6 @@ TClient SystemClient("<system>");
 TClient WatchdogClient("<watchdog>");
 __thread TClient *CL = nullptr;
 
-extern bool SupportCgroupNs;
-
 TClient::TClient(int fd)
     : TEpollSource(fd)
 {
@@ -120,8 +118,7 @@ TError TClient::IdentifyClient() {
     Comm = GetTaskName(Pid);
     AccessLevel = EAccessLevel::None;
 
-    // strict if cgroup namespaces are disabled
-    error = TContainer::FindTaskContainer(Pid, ct, !SupportCgroupNs);
+    error = TContainer::FindTaskContainer(Pid, ct, /* strict */ false);
     if (error && error.Error == EError::HelperError) {
         /* Restrict "recursive" invocations to read-only */
         AccessLevel = EAccessLevel::ReadOnly;

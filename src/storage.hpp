@@ -20,7 +20,6 @@ public:
     std::string Name;
 
     TPath Path;
-    std::string Meta;
     std::string FirstName;
 
     TCred Owner;
@@ -57,7 +56,6 @@ public:
 
     TError CreateMeta(uint64_t space_limit, uint64_t inode_limit);
     TError ResizeMeta(uint64_t space_limit, uint64_t inode_limit);
-    TError StatMeta(TStatFS &stat);
 
     static void Init();
     static void StartAsyncRemover();

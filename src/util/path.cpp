@@ -27,10 +27,6 @@ extern "C" {
 #include <unistd.h>
 }
 
-#ifndef FALLOC_FL_COLLAPSE_RANGE
-#define FALLOC_FL_COLLAPSE_RANGE 0x08
-#endif
-
 // FIXME replace with streaming someday
 constexpr size_t MOUNT_INFO_LIMIT = 64 << 20;
 constexpr off_t ROTATE_OFFSET_LIMIT = 16384;  // 16Kb
@@ -286,15 +282,6 @@ TError TPath::Chdir() const {
         return TError::System("unshare(CLONE_FS)");
     if (chdir(Path.c_str()) < 0)
         return TError(EError::InvalidPath, errno, "Cannot chdir {}", Path);
-    return OK;
-}
-
-TError TPath::Chroot() const {
-    L_ACT("chroot {}", Path);
-
-    if (chroot(Path.c_str()) < 0)
-        return TError::System("chroot(" + Path + ")");
-
     return OK;
 }
 
@@ -714,29 +701,6 @@ TError TPath::ListSubdirs(std::vector<std::string> &result) const {
     return OK;
 }
 
-int64_t TPath::SinceModificationMs() const {
-    struct stat st;
-
-    if (lstat(Path.c_str(), &st))
-        return -1;
-
-    struct timespec now;
-    clock_gettime(CLOCK_REALTIME, &now);
-
-    return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000 - (int64_t)st.st_mtim.tv_sec * 1000 -
-           st.st_mtim.tv_nsec / 1000000;
-}
-
-TError TPath::GetXAttr(const std::string &name, std::string &value) const {
-    ssize_t size = syscall(SYS_lgetxattr, Path.c_str(), name.c_str(), nullptr, 0);
-    if (size >= 0) {
-        value.resize(size);
-        if (syscall(SYS_lgetxattr, Path.c_str(), name.c_str(), value.c_str(), size) >= 0)
-            return OK;
-    }
-    return TError::System("getxattr(" + Path + ", " + name + ")");
-}
-
 TError TPath::SetXAttr(const std::string &name, const std::string &value) const {
     if (syscall(SYS_setxattr, Path.c_str(), name.c_str(), value.c_str(), value.length(), 0))
         return TError::System("setxattr {} {}", Path, name);
@@ -808,19 +772,6 @@ TError TPath::RotateLog(off_t max_disk_usage, off_t &loss) const {
             return error;
     }
 
-    return OK;
-}
-
-TError TPath::Chattr(unsigned add_flags, unsigned del_flags) const {
-    TError error;
-    TFile file;
-
-    error = file.Open(*this, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY | O_NONBLOCK);
-    if (error)
-        return error;
-    error = TFile::Chattr(file.Fd, add_flags, del_flags);
-    if (error)
-        return TError(error, "Cannot chattr {}", Path);
     return OK;
 }
 
@@ -989,24 +940,6 @@ TError TPath::WriteAll(const std::string &text) const {
     return OK;
 }
 
-TError TPath::WriteAtomic(const std::string &text) const {
-    TError error;
-    TFile file;
-
-    TPath temp = Path + ".XXXXXX";
-    error = file.CreateTemporary(temp);
-    if (!error) {
-        error = file.WriteAll(text);
-        if (!error)
-            error = file.Chmod(0644);
-        if (!error)
-            error = temp.Rename(*this);
-        if (error)
-            (void)temp.Unlink();
-    }
-    return error;
-}
-
 TError TPath::CreateRegular() const {
     TError error;
 
@@ -1060,19 +993,6 @@ TError TPath::ReadLines(std::vector<std::string> &lines, size_t max) const {
     if (error)
         return error;
     return file.ReadLines(lines, max);
-}
-
-TError TPath::WriteLines(const std::vector<std::string> &lines) const {
-    std::stringstream ss;
-
-    for (const std::string &line: lines)
-        ss << line << '\n';
-
-    TError error = WriteAll(ss.str());
-    if (error)
-        return error;
-
-    return OK;
 }
 
 TError TPath::ReadInt(int &value) const {

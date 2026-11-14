@@ -554,13 +554,9 @@ int PortodMaster() {
     L_SYS("Started {} {} {} {}", PORTO_VERSION, PORTO_REVISION, GetPid(), thisBin);
     L_SYS("Previous version: {} {}", PreviousVersion, prevBin);
 
-#ifndef PR_SET_CHILD_SUBREAPER
-#define PR_SET_CHILD_SUBREAPER 36
-#endif
-
     if (prctl(PR_SET_CHILD_SUBREAPER, 1) < 0) {
         TError error(EError::Unknown, errno, "prctl(PR_SET_CHILD_SUBREAPER)");
-        L_ERR("Cannot set myself as a subreaper, make sure kernel version is at least 3.4: {}", error);
+        L_ERR("Cannot set myself as a subreaper: {}", error);
         return EXIT_FAILURE;
     }
 

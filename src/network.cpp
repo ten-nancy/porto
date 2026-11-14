@@ -178,7 +178,65 @@ static std::list<std::pair<std::string, std::string>> NetSysctls = {
     {"net.ipv6.route.gc_min_interval_ms", "500"},
 };
 
-static std::list<std::string> NamespacedNetSysctls;
+static constexpr const char *NamespacedNetSysctls[] = {
+    "net.ipv4.tcp_l3mdev_accept",
+    "net.ipv4.fib_multipath_use_neigh",
+    "net.ipv4.tcp_max_tw_buckets",
+    "net.ipv4.udp_l3mdev_accept",
+    "net.ipv4.ip_unprivileged_port_start",
+    "net.ipv4.tcp_max_syn_backlog",
+    "net.ipv4.fib_multipath_hash_policy",
+    "net.ipv4.udp_early_demux",
+    "net.ipv4.tcp_early_demux",
+    "net.ipv4.tcp_sack",
+    "net.ipv4.tcp_window_scaling",
+    "net.ipv4.tcp_timestamps",
+    "net.ipv6.flowlabel_reflect",
+    "net.ipv4.tcp_abort_on_overflow",
+    "net.ipv4.tcp_adv_win_scale",
+    "net.ipv4.tcp_app_win",
+    "net.ipv4.tcp_autocorking",
+    "net.ipv4.tcp_challenge_ack_limit",
+    "net.ipv4.tcp_dsack",
+    "net.ipv4.tcp_early_retrans",
+    "net.ipv4.tcp_fack",
+    "net.ipv4.tcp_fastopen",
+    "net.ipv4.tcp_fastopen_key",
+    "net.ipv4.tcp_fastopen_blackhole_timeout_sec",
+    "net.ipv4.tcp_frto",
+    "net.ipv4.tcp_invalid_ratelimit",
+    "net.ipv4.tcp_limit_output_bytes",
+    "net.ipv4.tcp_max_reordering",
+    "net.ipv4.tcp_min_rtt_wlen",
+    "net.ipv4.tcp_min_tso_segs",
+    "net.ipv4.tcp_moderate_rcvbuf",
+    "net.ipv4.tcp_no_metrics_save",
+    "net.ipv4.tcp_pacing_ca_ratio",
+    "net.ipv4.tcp_pacing_ss_ratio",
+    "net.ipv4.tcp_recovery",
+    "net.ipv4.tcp_retrans_collapse",
+    "net.ipv4.tcp_rfc1337",
+    "net.ipv4.tcp_rmem",
+    "net.ipv4.tcp_slow_start_after_idle",
+    "net.ipv4.tcp_stdurg",
+    "net.ipv4.tcp_thin_linear_timeouts",
+    "net.ipv4.tcp_tso_win_divisor",
+    "net.ipv4.tcp_wmem",
+    "net.ipv4.tcp_workaround_signed_windows",
+    "net.ipv6.max_dst_opts_number",
+    "net.ipv6.max_dst_opts_length",
+    "net.ipv6.max_hbh_opts_number",
+    "net.ipv6.max_hbh_length",
+    "net.ipv4.udp_wmem_min",
+    "net.ipv6.fib_multipath_hash_policy",
+    "net.ipv4.udp_rmem_min",
+    "net.ipv4.tcp_comp_sack_delay_ns",
+    "net.ipv4.tcp_comp_sack_nr",
+    "net.ipv6.seg6_flowlabel",
+    "net.ipv4.ip_forward_update_priority",
+    "net.ipv6.icmp.echo_ignore_all",
+    "net.ipv6.icmp.ratemask",
+};
 
 // 49 is maximum buckets for yasm
 static const std::vector<unsigned> L3StatBuckets = {
@@ -188,18 +246,6 @@ static const std::vector<unsigned> L3StatBuckets = {
 };
 
 struct L3DeviceStat {
-    // copy constructor needed for std::map in old compilers without move semantic
-    L3DeviceStat(const L3DeviceStat &other)
-        : UpdateTs(other.UpdateTs),
-          RxPrev(other.RxPrev),
-          TxPrev(other.TxPrev),
-          RxMax(other.RxMax.load()),
-          TxMax(other.TxMax.load()),
-          Found(other.Found),
-          RxHgram(other.RxHgram),
-          TxHgram(other.TxHgram)
-    {}
-
     L3DeviceStat()
         : UpdateTs(GetCurrentTimeMs()),
           RxMax(0),
@@ -256,88 +302,6 @@ static std::mutex NetLimitProgramsMutex;
 
 static inline std::unique_lock<std::mutex> LockNetLimitPrograms() {
     return std::unique_lock<std::mutex>(NetLimitProgramsMutex);
-}
-
-void InitNamespacedNetSysctls() {
-    if (CompareVersions(config().linux_version(), "4.5") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_l3mdev_accept");
-    }
-    if (CompareVersions(config().linux_version(), "4.7") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.fib_multipath_use_neigh");
-    }
-    if (CompareVersions(config().linux_version(), "4.11") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_max_tw_buckets");
-        NamespacedNetSysctls.push_back("net.ipv4.udp_l3mdev_accept");
-        NamespacedNetSysctls.push_back("net.ipv4.ip_unprivileged_port_start");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_max_syn_backlog");
-    }
-    if (CompareVersions(config().linux_version(), "4.12") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.fib_multipath_hash_policy");
-        NamespacedNetSysctls.push_back("net.ipv4.udp_early_demux");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_early_demux");
-    }
-    if (CompareVersions(config().linux_version(), "4.13") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_sack");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_window_scaling");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_timestamps");
-    }
-    if (CompareVersions(config().linux_version(), "4.14") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv6.flowlabel_reflect");
-    }
-    if (CompareVersions(config().linux_version(), "4.15") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_abort_on_overflow");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_adv_win_scale");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_app_win");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_autocorking");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_challenge_ack_limit");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_dsack");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_early_retrans");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_fack");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_fastopen");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_fastopen_key");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_fastopen_blackhole_timeout_sec");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_frto");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_invalid_ratelimit");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_limit_output_bytes");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_max_reordering");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_min_rtt_wlen");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_min_tso_segs");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_moderate_rcvbuf");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_no_metrics_save");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_pacing_ca_ratio");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_pacing_ss_ratio");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_recovery");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_retrans_collapse");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_rfc1337");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_rmem");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_slow_start_after_idle");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_stdurg");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_thin_linear_timeouts");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_tso_win_divisor");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_wmem");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_workaround_signed_windows");
-        NamespacedNetSysctls.push_back("net.ipv6.max_dst_opts_number");
-        NamespacedNetSysctls.push_back("net.ipv6.max_dst_opts_length");
-        NamespacedNetSysctls.push_back("net.ipv6.max_hbh_opts_number");
-        NamespacedNetSysctls.push_back("net.ipv6.max_hbh_length");
-    }
-    if (CompareVersions(config().linux_version(), "4.17") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.udp_wmem_min");
-        NamespacedNetSysctls.push_back("net.ipv6.fib_multipath_hash_policy");
-        NamespacedNetSysctls.push_back("net.ipv4.udp_rmem_min");
-    }
-    if (CompareVersions(config().linux_version(), "4.18") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_comp_sack_delay_ns");
-        NamespacedNetSysctls.push_back("net.ipv4.tcp_comp_sack_nr");
-        NamespacedNetSysctls.push_back("net.ipv6.seg6_flowlabel");
-    }
-    if (CompareVersions(config().linux_version(), "4.19") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv4.ip_forward_update_priority");
-        NamespacedNetSysctls.push_back("net.ipv6.icmp.echo_ignore_all");
-    }
-    if (CompareVersions(config().linux_version(), "5.1") >= 0) {
-        NamespacedNetSysctls.push_back("net.ipv6.icmp.ratemask");
-    }
 }
 
 TError CheckPath(const std::string &name, int callerPid) {
@@ -565,8 +529,6 @@ void TNetwork::InitializeConfig() {
     NetProxyNeighbourPeriod = config().network().proxy_ndp_watchdog_ms();
 
     NetBpfProgCheckPeriod = config().network().bpf_progs_update_interval_ms();
-
-    InitNamespacedNetSysctls();
 
     /* Load default net sysctl from host config */
     for (const auto &p: NetSysctls) {

@@ -15,7 +15,6 @@ class ICmd {
 protected:
     Porto::Connection *Api;
     std::string Name, Usage, Desc, Help;
-    sig_atomic_t Interrupted = 0;
 
 public:
     int NeedArgs;
@@ -24,9 +23,7 @@ public:
          const std::string &help = "");
     virtual ~ICmd() {}
     const std::string &GetName() const;
-    const std::string &GetUsage() const;
     const std::string &GetDescription() const;
-    const std::string &GetHelp() const;
 
     void PrintError(const std::string &prefix);
     void PrintError(const std::string &prefix, const TError &error);

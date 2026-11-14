@@ -117,7 +117,6 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
     TError ApplyMemBwSubtree();
     TError ApplyExtraProperties();
 
-    void CollectOoms();
     bool CollectOomsV1();
     void CollectOomsV2();
 
@@ -458,8 +457,6 @@ public:
     std::list<std::shared_ptr<TContainer>> Subtree();
     std::list<std::shared_ptr<TContainer>> Childs();
 
-    std::shared_ptr<TContainer> GetParent() const;
-
     bool HasPidFor(const TContainer &ct) const;
     TError GetPidFor(pid_t pidns, pid_t &pid) const;
 
@@ -549,9 +546,6 @@ public:
 
     static void Event(const TEvent &event);
     static void RebalanceJail();
-
-private:
-    TError SetupNetLimitSoft(uint64_t bps);
 };
 
 extern MeasuredMutex ContainersMutex;

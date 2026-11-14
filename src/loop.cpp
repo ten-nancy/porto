@@ -44,47 +44,7 @@ static TError ClaimLoop(const std::function<TError(int)> &claim, TFile &dev, int
     return TError(EError::ResourceNotAvailable, "cannot allocate loop device");
 }
 
-static TError SetLoopBlockSize(TFile &dev, unsigned long blksize) {
-    constexpr int retries = 32;
-    for (int i = 0; i < retries; ++i) {
-        if (!ioctl(dev.Fd, LOOP_SET_BLOCK_SIZE, (unsigned long)blksize))
-            return OK;
-        auto error = TError::System("ioctl(LOOP_SET_BLOCK_SIZE, {})", blksize);
-        if (error.Errno != EAGAIN)
-            return error;
-    }
-    return TError(EError::ResourceNotAvailable, "cannot set loop device block size");
-}
-
-// TODO: remove after we get rid of 5.4
-static TError ConfigureLoopDevLegacy(const struct loop_config &cfg, TFile &dev, int &nr) {
-    auto error = ClaimLoop([&cfg](int devFd) {
-        if (ioctl(devFd, LOOP_SET_FD, cfg.fd) < 0) {
-            if (errno != EBUSY)
-                return TError::System("ioctl(LOOP_SET_FD)");
-            return TError(EError::ResourceNotAvailable, "ioctl(LOOP_SET_FD)");
-        }
-        return OK;
-    }, dev, nr);
-    if (error)
-        return error;
-
-    error = SetLoopBlockSize(dev, cfg.block_size);
-    if (error)
-        L_WRN("Cannot set loop block size: {}", error);
-
-    if (ioctl(dev.Fd, LOOP_SET_STATUS64, &cfg.info) < 0) {
-        error = TError::System("ioctl(LOOP_SET_STATUS64)");
-        (void)ioctl(dev.Fd, LOOP_CLR_FD, 0);
-        return error;
-    }
-    return OK;
-}
-
 static TError ConfigureLoopDev(const struct loop_config &cfg, TFile &dev, int &nr) {
-    if (CompareVersions(config().linux_version(), "5.15") < 0)
-        return ConfigureLoopDevLegacy(cfg, dev, nr);
-
     return ClaimLoop([&cfg](int devFd) {
         if (ioctl(devFd, LOOP_CONFIGURE, &cfg) < 0) {
             if (errno != EBUSY)

@@ -13,7 +13,6 @@
 #include "util/string.hpp"
 
 extern "C" {
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
@@ -78,53 +77,6 @@ pid_t GetTid() {
 
 int PidFDOpen(pid_t pid, unsigned int flags) {
     return syscall(SYS_pidfd_open, pid, flags);
-}
-
-TError GetTaskChildrens(pid_t pid, std::vector<pid_t> &childrens) {
-    struct dirent *de;
-    FILE *file;
-    DIR *dir;
-    int child_pid, parent_pid;
-
-    childrens.clear();
-
-    dir = opendir(("/proc/" + std::to_string(pid) + "/task").c_str());
-    if (!dir)
-        goto full_scan;
-
-    while ((de = readdir(dir))) {
-        file = fopen(("/proc/" + std::to_string(pid) + "/task/" + std::string(de->d_name) + "/children").c_str(), "r");
-        if (!file) {
-            if (atoi(de->d_name) != pid)
-                continue;
-            closedir(dir);
-            goto full_scan;
-        }
-
-        while (fscanf(file, "%d", &child_pid) == 1)
-            childrens.push_back(child_pid);
-        fclose(file);
-    }
-    closedir(dir);
-
-    return OK;
-
-full_scan:
-    dir = opendir("/proc");
-    if (!dir)
-        return TError::System("Cannot open /proc");
-
-    while ((de = readdir(dir))) {
-        file = fopen(("/proc/" + std::string(de->d_name) + "/stat").c_str(), "r");
-        if (!file)
-            continue;
-
-        if (fscanf(file, "%d (%*[^)]) %*c %d", &child_pid, &parent_pid) == 2 && parent_pid == pid)
-            childrens.push_back(child_pid);
-        fclose(file);
-    }
-    closedir(dir);
-    return OK;
 }
 
 void PrintProc(const std::string &knob, pid_t pid, bool debug) {
@@ -597,21 +549,6 @@ static void LocalTime(time_t time, struct tm &tm) {
     }
 }
 
-void LocalTime(const time_t *time, struct tm &tm) {
-    if (!PostFork) {
-        localtime_r(time, &tm);
-    } else {
-        tm = ForkLocalTime;
-        time_t diff = tm.tm_sec + *time - ForkTime;
-        tm.tm_sec = diff % 60;
-        diff = tm.tm_min + diff / 60;
-        tm.tm_min = diff % 60;
-        diff = tm.tm_hour + diff / 60;
-        tm.tm_hour = diff % 24;
-        tm.tm_mday += diff / 24;
-    }
-}
-
 std::string FormatTime(time_t t, const char *fmt) {
     std::stringstream ss;
     struct tm tm;
@@ -726,16 +663,6 @@ TError TPidFile::ReadPidFd(TPidFd &pidFd) {
     if (error)
         return error;
     return pidFd.Open(Pid);
-}
-
-bool TPidFile::Running() {
-    if (Pid && (!kill(Pid, 0) || errno != ESRCH)) {
-        std::string name = GetTaskName(Pid);
-        if (name == Name || name == AltName)
-            return true;
-    }
-    Pid = 0;
-    return false;
 }
 
 TError TPidFile::Save(pid_t pid) {

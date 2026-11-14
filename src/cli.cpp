@@ -159,14 +159,8 @@ ICmd::ICmd(Porto::Connection *api, const string &name, int args, const string &u
 const string &ICmd::GetName() const {
     return Name;
 }
-const string &ICmd::GetUsage() const {
-    return Usage;
-}
 const string &ICmd::GetDescription() const {
     return Desc;
-}
-const string &ICmd::GetHelp() const {
-    return Help;
 }
 
 void ICmd::PrintError(const string &prefix) {

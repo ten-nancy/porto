@@ -107,7 +107,6 @@ public:
     TError Parse(const std::string &text);
     std::string Format() const;
     TError Read(const TPath &path);
-    TError Write(const TPath &path) const;
 
     unsigned Size() const {
         return bits.size();
@@ -118,20 +117,6 @@ public:
         for (auto bit: bits)
             weight += bit;
         return weight;
-    }
-
-    int FirstBitIndex(unsigned from = 0) {
-        for (unsigned i = from; i < bits.size(); i++) {
-            if (bits[i])
-                return i;
-        }
-
-        for (unsigned i = 0; i < from; i++) {
-            if (bits[i])
-                return i;
-        }
-
-        return -1;
     }
 
     bool Get(unsigned index) const {
@@ -157,13 +142,6 @@ public:
     bool IsSubsetOf(const TBitMap &map) const {
         for (unsigned i = 0; i < Size(); i++)
             if (Get(i) && !map.Get(i))
-                return false;
-        return true;
-    }
-
-    bool IsEqual(const TBitMap &map) const {
-        for (unsigned i = 0; i < std::max(Size(), map.Size()); i++)
-            if (Get(i) != map.Get(i))
                 return false;
         return true;
     }

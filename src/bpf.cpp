@@ -1,23 +1,10 @@
 #include "bpf.hpp"
 
+#include <bpf.h>
 #include <fcntl.h>
+#include <libbpf.h>
 #include <linux/version.h>
 #include <unistd.h>
-
-// FIXME: required linux-headers from 5.8
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-enum bpf_stats_type {
-    /* enabled run_time_ns and run_cnt */
-    BPF_STATS_RUN_TIME = 0,
-};
-// FIXME: libbpf is broken when building with C++
-// https://github.com/libbpf/libbpf/issues/820
-
-enum bpf_link_type {};
-#endif
-
-#include <bpf.h>
-#include <libbpf.h>
 
 TError TBpfMap::Open(uint32_t id)
 {
@@ -30,21 +17,6 @@ TError TBpfMap::Open(uint32_t id)
             return TError(EError::NotFound, "can't get map by id {}", id);
         return TError::System("can't get map by id {}", id);
     }
-
-    return Prepare();
-}
-
-TError TBpfMap::Open(const TPath &path)
-{
-    if (File.Fd >= 0)
-        return TError("map already opened");
-
-    if (!path.Exists())
-        return TError(EError::NotFound, "path {} does not exists", path.ToString());
-
-    File.SetFd = bpf_obj_get(path.c_str());
-    if (File.Fd < 0)
-        return TError::System("failed to get map by path {}", path);
 
     return Prepare();
 }
@@ -72,11 +44,8 @@ TError TBpfMap::Prepare()
 
     Id = info.id;
     Name = info.name;
-    Type = info.type;
     KeySize = info.key_size;
     ValueSize = info.value_size;
-    MaxEntries = info.max_entries;
-    Flags = info.map_flags;
 
     return OK;
 }
@@ -167,21 +136,6 @@ TError TBpfProgram::Open(const std::string &prog_name, const std::vector<uint8_t
     return Prepare();
 }
 
-TError TBpfProgram::Open(uint32_t id)
-{
-    if (File.Fd >= 0)
-        return TError("program already opened");
-
-    File.SetFd = bpf_prog_get_fd_by_id(id);
-    if (File.Fd < 0) {
-        if (errno == ENOENT)
-            return TError(EError::NotFound, "can't get prog by id {}", id);
-        return TError::System("can't get prog by id {}", id);
-    }
-
-    return Prepare();
-}
-
 TError TBpfProgram::Open(const TPath &path)
 {
     if (File.Fd >= 0)
@@ -209,7 +163,6 @@ TError TBpfProgram::Prepare()
     }
 
     Id = info.id;
-    Type = info.type;
     Name = info.name;
     static_assert(std::tuple_size<decltype(TBpfProgram::Tag)>::value == BPF_TAG_SIZE, "bpf tag size mismatch");
     memcpy(Tag.data(), info.tag, Tag.size());

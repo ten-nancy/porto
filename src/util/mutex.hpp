@@ -10,7 +10,6 @@ class LockTimer {
     static __thread uint64_t LockStart;
 
     uint64_t StartTime = 0;
-    uint64_t EndTime = 0;
     const std::string &Name;
 
 public:
@@ -50,8 +49,5 @@ public:
     TFileMutex(const TPath &path, int flags = 0);
     ~TFileMutex();
 
-    static std::unique_ptr<TFileMutex> MakePathLock(const TPath &path, int flags);
     static std::unique_ptr<TFileMutex> MakeDirLock(const TPath &path);
-    static std::unique_ptr<TFileMutex> MakeRegLock(const TPath &path);
-    static std::unique_ptr<TFileMutex> MakeSymLock(const TPath &path);
 };

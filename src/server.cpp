@@ -58,7 +58,6 @@ bool ShutdownPortod = false;
 bool PortoNlSocketReused = false;
 std::atomic_bool NeedStopHelpers(false);
 
-bool SupportCgroupNs = false;
 bool EnableOsModeCgroupNs = false;
 bool EnableRwCgroupFs = false;
 uint32_t RequestHandlingDelayMs = 0;
@@ -441,31 +440,6 @@ exit:
     TStorage::StopAsyncRemover();
 }
 
-static TError NetLimitSoftInitializeUlimit(TUlimit &ulimit) {
-    TError error;
-
-    if (config().network().network_limit_soft_bpf_elf_path().empty())
-        return OK;
-
-    if (CompareVersions(config().linux_version(), "5.11") >= 0)
-        return OK;
-
-    // we need to bump MEMLOCK to infinity for older kernels for bpf to work
-
-    L_SYS("Bumping RLIMIT_MEMLOCK to RLIM_INFINITY to make bpf machinery work on kernel versions below 5.11");
-    ulimit.Set(RLIMIT_MEMLOCK, RLIM_INFINITY, RLIM_INFINITY);
-
-    error = ulimit.Apply();
-    if (error)
-        return error;
-
-    error = ulimit.Load();
-    if (error)
-        return error;
-
-    return OK;
-}
-
 static TError TuneLimits() {
     TUlimit ulimit;
     TError error;
@@ -496,10 +470,6 @@ static TError TuneLimits() {
         return error;
 
     error = ulimit.Load();
-    if (error)
-        return error;
-
-    error = NetLimitSoftInitializeUlimit(ulimit);
     if (error)
         return error;
 
@@ -649,11 +619,8 @@ void PrepareServer() {
         SeccompProfiles[seccompProfile.name()] = std::move(p);
     }
 
-    SupportCgroupNs = CompareVersions(config().linux_version(), "4.6") >= 0;
-    if (SupportCgroupNs) {
-        EnableRwCgroupFs = config().container().enable_rw_cgroupfs();
-        EnableOsModeCgroupNs = EnableRwCgroupFs || config().container().use_os_mode_cgroupns();
-    }
+    EnableRwCgroupFs = config().container().enable_rw_cgroupfs();
+    EnableOsModeCgroupNs = EnableRwCgroupFs || config().container().use_os_mode_cgroupns();
     RequestHandlingDelayMs = config().daemon().request_handling_delay_ms();
 
     for (const auto &extraProp: config().container().extra_properties()) {

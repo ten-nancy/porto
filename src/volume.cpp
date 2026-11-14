@@ -889,7 +889,7 @@ public:
         std::vector<std::string> options = {fmt::format("lowerdir={}", lower), fmt::format("upperdir={}", upperFd.Fd),
                                             fmt::format("workdir={}", workFd.Fd)};
 
-        if (volume.Ephemeral() && CompareVersions(config().linux_version(), "5.15") >= 0)
+        if (volume.Ephemeral())
             options.push_back("volatile");
 
         error = TPath("/proc/thread-self/fd").Chdir();

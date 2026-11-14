@@ -163,21 +163,6 @@ std::string GroupName(gid_t gid) {
     return std::string(grp.gr_name);
 }
 
-TCred TCred::Current() {
-    TCred cred(geteuid(), getegid());
-
-    TaintPostFork(CRED_POSTFORK_TAINT_MESSAGE);
-
-    cred.Groups.resize(getgroups(0, nullptr));
-    if (getgroups(cred.Groups.size(), cred.Groups.data()) < 0) {
-        L_ERR("Cannot get supplementary groups for {}", cred.Uid);
-        cred.Groups.resize(1);
-        cred.Groups[0] = cred.Gid;
-    }
-
-    return cred;
-}
-
 void TCred::Enter() const {
     int ret;
 
@@ -362,34 +347,6 @@ void InitPortoGroups() {
         FatalError("Cannot find group porto", error);
 }
 
-#ifndef CAP_BLOCK_SUSPEND
-#define CAP_BLOCK_SUSPEND 36
-#endif
-
-#ifndef CAP_AUDIT_READ
-#define CAP_AUDIT_READ 37
-#endif
-
-#ifndef CAP_PERFMON
-#define CAP_PERFMON 38
-#endif
-
-#ifndef CAP_BPF
-#define CAP_BPF 39
-#endif
-
-#ifndef CAP_CHECKPOINT_RESTORE
-#define CAP_CHECKPOINT_RESTORE 40
-#endif
-
-#ifndef PR_CAP_AMBIENT
-#define PR_CAP_AMBIENT           47
-#define PR_CAP_AMBIENT_IS_SET    1
-#define PR_CAP_AMBIENT_RAISE     2
-#define PR_CAP_AMBIENT_LOWER     3
-#define PR_CAP_AMBIENT_CLEAR_ALL 4
-#endif
-
 static const TFlagsNames CapNames = {
     {BIT(CAP_CHOWN), "CHOWN"},
     {BIT(CAP_DAC_OVERRIDE), "DAC_OVERRIDE"},
@@ -477,40 +434,6 @@ void TCapabilities::Dump(rpc::TCapabilities &cap) const {
     cap.set_hex(fmt::format("{:016x}", Permitted));
 }
 
-TError TCapabilities::Get(pid_t pid, int type) {
-    struct __user_cap_header_struct header = {
-        .version = _LINUX_CAPABILITY_VERSION_3,
-        .pid = pid,
-    };
-    struct __user_cap_data_struct data[2];
-
-    if (syscall(SYS_capget, &header, data) < 0)
-        return TError::System("capget " + Format());
-
-    switch (type) {
-    case 0:
-        Permitted = data[0].effective | (uint64_t)data[1].effective << 32;
-        break;
-    case 1:
-        Permitted = data[0].permitted | (uint64_t)data[1].permitted << 32;
-        break;
-    case 2:
-        Permitted = data[0].inheritable | (uint64_t)data[1].inheritable << 32;
-        break;
-    }
-
-    return OK;
-}
-
-void TCapabilities::Dump() {
-    Get(0, 0);
-    L("Effective: {}", Format());
-    Get(0, 1);
-    L("Permitted: {}", Format());
-    Get(0, 2);
-    L("Inheritable: {}", Format());
-}
-
 TError TCapabilities::Apply(int mask) const {
     struct __user_cap_header_struct header = {
         .version = _LINUX_CAPABILITY_VERSION_3,
@@ -596,10 +519,7 @@ TCapabilities NetNsCapabilities;
 void InitCapabilities() {
     if (TPath("/proc/sys/kernel/cap_last_cap").ReadInt(LastCapability)) {
         L_WRN("Can't read /proc/sys/kernel/cap_last_cap");
-        if (CompareVersions(config().linux_version(), "5.15") >= 0)
-            LastCapability = CAP_BPF;
-        else
-            LastCapability = CAP_AUDIT_READ;
+        LastCapability = CAP_BPF;
     }
 
     HasAmbientCapabilities = prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) == 0;

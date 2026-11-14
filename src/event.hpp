@@ -44,8 +44,6 @@ public:
     {}
 
     bool operator<(const TEvent &rhs) const;
-
-    std::string GetMsg() const;
 };
 
 class TEventQueue {

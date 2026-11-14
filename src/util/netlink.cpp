@@ -22,43 +22,25 @@ extern "C" {
 #include <linux/pkt_sched.h>
 #include <netinet/ether.h>
 #include <netlink/idiag/idiagnl.h>
+#include <netlink/route/addr.h>
 #include <netlink/route/class.h>
 #include <netlink/route/classifier.h>
 #include <netlink/route/cls/cgroup.h>
-#include <netlink/route/cls/u32.h>
-#include <netlink/route/qdisc.h>
-#include <netlink/route/qdisc/fifo.h>
-#include <netlink/route/qdisc/fq_codel.h>
-#include <netlink/route/qdisc/htb.h>
-#include <netlink/route/qdisc/prio.h>
-#include <netlink/route/qdisc/sfq.h>
-#include <unistd.h>
-#define class cls
-#include <netlink/route/qdisc/hfsc.h>
-#undef class
-
-#include <netlink/route/addr.h>
 #include <netlink/route/link.h>
+#include <netlink/route/link/ip6tnl.h>
 #include <netlink/route/link/macvlan.h>
 #include <netlink/route/link/veth.h>
 #include <netlink/route/neighbour.h>
+#include <netlink/route/qdisc.h>
+#include <netlink/route/qdisc/fifo.h>
+#include <netlink/route/qdisc/fq_codel.h>
+#include <netlink/route/qdisc/hfsc.h>
+#include <netlink/route/qdisc/htb.h>
+#include <netlink/route/qdisc/prio.h>
+#include <netlink/route/qdisc/sfq.h>
 #include <netlink/route/route.h>
 #include <netlink/route/rtnl.h>
-
-/* FIXME: kludge for libnl3-3.2.27, remove this and
-   above one after upgrade to > 3.2.29 or libnl3 drop */
-#define _cplusplus __cplusplus
-#include <netlink/route/link/ip6tnl.h>
-#undef _cplusplus
-}
-
-#ifndef TC_LINKLAYER_MASK
-#define TC_LINKLAYER_ETHERNET 1
-#define linklayer             __reserved
-#endif
-
-uint32_t TcHandle(uint16_t maj, uint16_t min) {
-    return TC_HANDLE(maj, min);
+#include <unistd.h>
 }
 
 TError TNl::Error(int nl_err, const std::string &prefix) {
@@ -235,10 +217,6 @@ free_msg:
     return error;
 }
 
-int TNl::GetFd() {
-    return nl_socket_get_fd(Sock);
-}
-
 TError TNLinkSockDiag::Error(int nl_err, const std::string &prefix) {
     return TNl::Error(nl_err, prefix);
 }
@@ -316,43 +294,20 @@ static struct nla_policy ext_policy_v2[INET_DIAG_MAX + 1] = {
     {0, sizeof(struct tcp_info_ext_v2), 0},  // INET_DIAG_INFO
 };
 
-static struct nla_policy ext_policy_v1[INET_DIAG_MAX + 1] = {
-    {0, 0, 0},                               // INET_DIAG_NONE
-    {0, 0, 0},                               // INET_DIAG_MEMINFO
-    {0, sizeof(struct tcp_info_ext_v1), 0},  // INET_DIAG_INFO
-};
-
 int TNLinkSockDiag::ValidMsgCb(struct nl_msg *msg, void *arg) {
     struct nlmsghdr *hdr = nlmsg_hdr(msg);
     struct inet_diag_msg *raw_msg;
     struct nlattr *tb[INET_DIAG_MAX + 1];
-    struct tcp_info_ext_v2 shadow;
-    struct tcp_info_ext_v2 *info = &shadow;
 
     TTcpInfoMap &TcpInfoMap = *((TTcpInfoMapPtr *)arg)->get();
-    if (nlmsg_parse(hdr, sizeof(struct inet_diag_msg), tb, INET_DIAG_MAX, ext_policy_v2) < 0) {
-        if (nlmsg_parse(hdr, sizeof(struct inet_diag_msg), tb, INET_DIAG_MAX, ext_policy_v1) < 0)
-            return 0;
+    if (nlmsg_parse(hdr, sizeof(struct inet_diag_msg), tb, INET_DIAG_MAX, ext_policy_v2) < 0)
+        return 0;
+    if (!tb[INET_DIAG_INFO])
+        return NL_OK;
 
-        // FIXME: copying only used fields now
-        struct tcp_info_ext_v1 *infov1 = (struct tcp_info_ext_v1 *)nla_data(tb[INET_DIAG_INFO]);
-        memset(&shadow, 0, sizeof(shadow));
-        shadow.tcpi_segs_out = infov1->tcpi_segs_out;
-        shadow.tcpi_segs_in = infov1->tcpi_segs_in;
-        shadow.tcpi_bytes_received = infov1->tcpi_bytes_received;
-        shadow.tcpi_bytes_acked = infov1->tcpi_bytes_acked;
-
-        /* substitute v2 field with similiar semantics from v1 */
-        shadow.tcpi_bytes_sent = infov1->tcpi_bytes_acked;
-    } else {
-        info = (struct tcp_info_ext_v2 *)nla_data(tb[INET_DIAG_INFO]);
-    }
-
+    auto info = (struct tcp_info_ext_v2 *)nla_data(tb[INET_DIAG_INFO]);
     raw_msg = (struct inet_diag_msg *)nlmsg_data(hdr);
-
-    if (tb[INET_DIAG_INFO]) {
-        TcpInfoMap[raw_msg->idiag_inode] = *info;
-    }
+    TcpInfoMap[raw_msg->idiag_inode] = *info;
 
     return NL_OK;
 }
@@ -405,20 +360,8 @@ std::string TNlLink::GetName() const {
     return std::string(rtnl_link_get_name(Link) ?: "???");
 }
 
-std::string TNlLink::GetType() const {
-    return std::string(rtnl_link_get_type(Link) ?: "");
-}
-
 std::string TNlLink::GetDesc() const {
     return std::to_string(GetIndex()) + ":" + GetName();
-}
-
-bool TNlLink::IsLoopback() const {
-    return rtnl_link_get_flags(Link) & IFF_LOOPBACK;
-}
-
-bool TNlLink::IsRunning() const {
-    return rtnl_link_get_flags(Link) & IFF_RUNNING;
 }
 
 TError TNlLink::Error(int nl_err, const std::string &desc) const {
@@ -620,12 +563,10 @@ TError TNlLink::WaitAddress(int timeout_s) {
     return TError("Network autoconf timeout");
 }
 
-#ifdef IFLA_IPVLAN_MAX
 static const std::map<std::string, int> ipvlanMode = {
     {"l2", IPVLAN_MODE_L2},
     {"l3", IPVLAN_MODE_L3},
 };
-#endif
 
 static const std::map<std::string, int> macvlanType = {
     {"private", MACVLAN_MODE_PRIVATE},
@@ -727,7 +668,6 @@ TError TNlLink::AddXVlan(const std::string &vlantype, const std::string &master,
             error = TError(EError::Unknown, std::string("Unable to put IFLA_MACVLAN_MODE: ") + nl_geterror(ret));
             goto free_msg;
         }
-#ifdef IFLA_IPVLAN_MAX
     } else if (vlantype == "ipvlan") {
         uint16_t mode = type;
         ret = nla_put(msg, IFLA_IPVLAN_MODE, sizeof(uint16_t), &mode);
@@ -735,7 +675,6 @@ TError TNlLink::AddXVlan(const std::string &vlantype, const std::string &master,
             error = TError(EError::Unknown, std::string("Unable to put IFLA_IPVLAN_MODE: ") + nl_geterror(ret));
             goto free_msg;
         }
-#endif
     }
     nla_nest_end(msg, infodata);
     nla_nest_end(msg, linkinfo);
@@ -754,11 +693,7 @@ free_msg:
 }
 
 TError TNlLink::AddIpVlan(const std::string &master, const std::string &mode, int mtu) {
-#ifdef IFLA_IPVLAN_MAX
     return AddXVlan("ipvlan", master, ipvlanMode.at(mode), "", mtu);
-#else
-    return TError(EError::NotSupported, "Porto is not compiled with IP VLAN support");
-#endif
 }
 
 TError TNlLink::AddMacVlan(const std::string &master, const std::string &type, const std::string &hw, int mtu) {
@@ -920,11 +855,7 @@ TError TNlLink::SetMacAddr(const std::string &mac) {
 }
 
 bool TNlLink::ValidIpVlanMode(const std::string &mode) {
-#ifdef IFLA_IPVLAN_MAX
     return ipvlanMode.find(mode) != ipvlanMode.end();
-#else
-    return false;
-#endif
 }
 
 bool TNlLink::ValidMacVlanType(const std::string &type) {
@@ -935,24 +866,6 @@ bool TNlLink::ValidMacAddr(const std::string &hw) {
     struct ether_addr ea;
     return ether_aton_r(hw.c_str(), &ea) != nullptr;
 }
-
-/*void TNl::DumpCache(struct nl_cache *cache) const {
-
-    if (!Verbose)
-        return;
-
-    static std::function<void(struct nl_dump_params *, char *)> handler;
-
-    struct nl_dump_params dp = {};
-    dp.dp_cb = [](struct nl_dump_params *params, char *buf) { handler(params, buf); };
-    dp.dp_type = NL_DUMP_DETAILS;
-
-    auto &str = L_NL();
-    handler = [&](struct nl_dump_params *params, char *buf) { str << buf; };
-
-    str << "netlink cache: ";
-    nl_cache_dump(cache, &dp);
-}*/
 
 TError TNlClass::Load(const TNl &nl) {
     struct nl_cache *cache;
@@ -1068,7 +981,6 @@ TError TNlQdisc::CreateCodel(const TNl &nl, bool fq_codel) {
                 goto free_msg;
         }
 
-#if TCA_FQ_CODEL_MAX > 8
         uint32_t memoryLimit =
             MemoryLimit
                 ? MemoryLimit
@@ -1079,7 +991,6 @@ TError TNlQdisc::CreateCodel(const TNl &nl, bool fq_codel) {
             if (ret < 0)
                 goto free_msg;
         }
-#endif
 
         if (config().network().has_fq_codel_flows()) {
             ret = nla_put_u32(msg, TCA_FQ_CODEL_FLOWS, config().network().fq_codel_flows());
@@ -1168,14 +1079,12 @@ TError TNlQdisc::CreateFq(const TNl &nl) {
             goto free_msg;
     }
 
-#if TCA_FQ_MAX >= 12
     if (config().network().has_codel_ce_threshold()) {
         ret = nla_put_u32(msg, TCA_FQ_CE_THRESHOLD, config().network().codel_ce_threshold());
         if (ret < 0)
             goto free_msg;
     }
 
-#if TCA_FQ_MAX >= 15
     if (config().network().has_fq_horizon()) {
         ret = nla_put_u32(msg, TCA_FQ_HORIZON, config().network().fq_horizon());
         if (ret < 0)
@@ -1187,8 +1096,6 @@ TError TNlQdisc::CreateFq(const TNl &nl) {
         if (ret < 0)
             goto free_msg;
     }
-#endif
-#endif
 
     nla_nest_end(msg, u32);
 
@@ -1599,164 +1506,6 @@ out:
     return error;
 }
 
-TError TNlPoliceFilter::Create(const TNl &nl) {
-    uint32_t table[256];
-    uint32_t result = TC_ACT_OK;
-    TError error = OK;
-    struct nlattr *u32, *u32_police;
-    struct tc_u32_sel sel;
-    struct tc_police parm;
-    struct nl_msg *msg;
-    struct tcmsg tchdr;
-    int ret;
-
-    memset(table, 0, sizeof(*table));
-
-    tchdr.tcm_family = AF_UNSPEC;
-    tchdr.tcm_ifindex = Index;
-    tchdr.tcm_handle = 0;
-    tchdr.tcm_parent = Parent;
-
-    /* FIXME: may be we should avoid drop ARP and ICMP(4/6) */
-
-    tchdr.tcm_info = TC_H_MAKE(FilterPrio << 16, htons(ETH_P_ALL));
-
-    msg = nlmsg_alloc_simple(RTM_NEWTFILTER, NLM_F_EXCL | NLM_F_CREATE);
-    if (!msg)
-        return TError("Unable to add u32 filter: no memory");
-
-    ret = nlmsg_append(msg, &tchdr, sizeof(tchdr), NLMSG_ALIGNTO);
-    if (ret < 0) {
-        error = TError(EError::Unknown, std::string("Unable to add u32: ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    ret = nla_put(msg, TCA_KIND, strlen(FilterType) + 1, FilterType);
-    if (ret < 0) {
-        error = TError(EError::Unknown, std::string("Unable to add u32: ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    u32 = nla_nest_start(msg, TCA_OPTIONS);
-
-    memset(&sel, 0, sizeof(sel));
-    sel.flags = TC_U32_TERMINAL;
-    ret = nla_put(msg, TCA_U32_SEL, sizeof(sel), &sel);
-    if (ret < 0) {
-        error = TError(EError::Unknown, std::string("Unable to add u32 sel: ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    u32_police = nla_nest_start(msg, TCA_U32_POLICE);
-
-    if (!u32_police) {
-        error = TError(EError::Unknown, std::string("cannot create nested attrs: ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    memset(&parm, 0, sizeof(parm));
-    parm.action = TC_ACT_SHOT;
-
-    parm.rate.mpu = 0;
-    parm.rate.overhead = 0;
-    parm.rate.cell_align = -1;
-    parm.rate.cell_log = 1;
-    parm.rate.linklayer = TC_LINKLAYER_ETHERNET;
-    parm.rate.rate = Rate;
-
-    if (PeakRate) {
-        parm.peakrate.mpu = 0;
-        parm.peakrate.overhead = 0;
-        parm.peakrate.cell_align = -1;
-        parm.peakrate.cell_log = 1;
-        parm.peakrate.linklayer = TC_LINKLAYER_ETHERNET;
-        parm.peakrate.rate = PeakRate;
-    }
-
-    parm.burst = (1000000000 >> 6) * (double)Burst / Rate; /* psched ticks */
-
-    parm.mtu = Mtu;
-
-    ret = nla_put(msg, TCA_POLICE_TBF, sizeof(parm), &parm);
-    if (ret < 0) {
-        error = TError(EError::Unknown,
-                       std::string("Unable to add policer: nla_put(TCA_POLICE_AVRATE): ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    ret = nla_put(msg, TCA_POLICE_RATE, sizeof(table), table);
-    if (ret < 0) {
-        error =
-            TError(EError::Unknown, std::string("Unable to add policer: nl_put(TCA_POLICE_RATE): ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    if (PeakRate) {
-        ret = nla_put(msg, TCA_POLICE_PEAKRATE, sizeof(table), table);
-        if (ret < 0) {
-            error = TError(EError::Unknown,
-                           std::string("Unable to add policer: nl_put(TCA_POLICE_RATE): ") + nl_geterror(ret));
-            goto free_msg;
-        }
-    }
-
-    ret = nla_put(msg, TCA_POLICE_RESULT, sizeof(result), &result);
-
-    nla_nest_end(msg, u32_police);
-    nla_nest_end(msg, u32);
-
-    L_NL("police {}: add u32 parent 0x{:x}", Index, Parent);
-
-    ret = nl_send_sync(nl.GetSock(), msg);
-    if (ret)
-        error = TError(EError::Unknown, std::string("Unable to add filter: nl_send_sync(): ") + nl_geterror(ret));
-
-    return error;
-
-free_msg:
-    nlmsg_free(msg);
-
-    return error;
-}
-
-TError TNlPoliceFilter::Delete(const TNl &nl) {
-    TError error = OK;
-    struct tcmsg tchdr;
-    struct nl_msg *msg;
-    int ret;
-
-    tchdr.tcm_family = AF_UNSPEC;
-    tchdr.tcm_ifindex = Index;
-    tchdr.tcm_handle = 0;
-    tchdr.tcm_parent = Parent;
-    tchdr.tcm_info = TC_H_MAKE(FilterPrio << 16, htons(ETH_P_IPV6));
-
-    msg = nlmsg_alloc_simple(RTM_DELTFILTER, 0);
-    if (!msg)
-        return TError("Unable to del policer: no memory");
-
-    ret = nlmsg_append(msg, &tchdr, sizeof(tchdr), NLMSG_ALIGNTO);
-    if (ret < 0) {
-        error = TError(EError::Unknown, std::string("Unable to del policer: ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    ret = nla_put(msg, TCA_OPTIONS, 0, NULL);
-    if (ret < 0) {
-        error = TError(EError::Unknown, std::string("Unable to del policer: ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    ret = nl_send_sync(nl.GetSock(), msg);
-    if (ret)
-        error = TError(EError::Unknown, std::string("Unable to del policer: ") + nl_geterror(ret));
-    return error;
-
-free_msg:
-    nlmsg_free(msg);
-    return error;
-}
-
 TError TNlCgFilter::Create(const TNl &nl) {
     TError error = OK;
     struct nl_msg *msg;
@@ -1817,8 +1566,6 @@ bool TNlCgFilter::Exists(const TNl &nl) {
         L_ERR("Can't allocate filter cache: {}", nl_geterror(ret));
         return false;
     }
-
-    //    nl.DumpCache(clsCache);
 
     struct CgFilterIter {
         uint32_t parent;
@@ -1975,54 +1722,6 @@ TError TNlBpfFilter::Create(const TNl &nl, bool replace) {
         error = TError(EError::Unknown, std::string("Unable to add bpf filter: nl_send_sync(): ") + nl_geterror(ret));
 
     return error;
-
-free_msg:
-    nlmsg_free(msg);
-
-    return error;
-}
-
-TError TNlBpfFilter::Delete(const TNl &nl) {
-    TError error = OK;
-    struct nl_msg *msg;
-    struct tcmsg tchdr;
-    int ret;
-
-    tchdr.tcm_family = AF_UNSPEC;
-    tchdr.tcm_ifindex = Index;
-    tchdr.tcm_handle = 0;
-    tchdr.tcm_parent = TC_H_MAKE(TC_H_CLSACT, Egress ? TC_H_MIN_EGRESS : TC_H_MIN_INGRESS);
-    tchdr.tcm_info = TC_H_MAKE(FilterPrio << 16, htons(ETH_P_ALL));
-
-    msg = nlmsg_alloc_simple(RTM_DELTFILTER, 0);
-    if (!msg)
-        return TError("Unable to del bpf filter: no memory");
-
-    ret = nlmsg_append(msg, &tchdr, sizeof(tchdr), NLMSG_ALIGNTO);
-    if (ret < 0) {
-        error = TError(EError::Unknown, std::string("Unable to del bpf filter: nlmsg_append(): ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    ret = nla_put(msg, TCA_KIND, strlen(FilterType) + 1, FilterType);
-    if (ret < 0) {
-        error =
-            TError(EError::Unknown, std::string("Unable to del bpf filter: nla_put(TCA_KIND): ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    ret = nla_put(msg, TCA_OPTIONS, 0, NULL);
-    if (ret < 0) {
-        error =
-            TError(EError::Unknown, std::string("Unable to del bpf filter: nla_put(TCA_OPTIONS): ") + nl_geterror(ret));
-        goto free_msg;
-    }
-
-    ret = nl_send_sync(nl.GetSock(), msg);
-    if (ret)
-        error = TError(EError::Unknown, std::string("Unable to del bpf filter: nl_send_sync(): ") + nl_geterror(ret));
-
-    return OK;
 
 free_msg:
     nlmsg_free(msg);

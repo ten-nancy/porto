@@ -15,10 +15,6 @@ extern "C" {
 #include <sys/vfs.h>
 }
 
-#ifndef TRACEFS_MAGIC
-#define TRACEFS_MAGIC 0x74726163
-#endif
-
 static std::vector<TPath> SystemPaths = {
     "/bin",    "/boot", "/dev",  "/etc",  "/lib", "/lib32", "/lib64",
     "/libx32", "/proc", "/root", "/sbin", "/sys", "/usr",   "/var",

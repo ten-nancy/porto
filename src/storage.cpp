@@ -183,9 +183,10 @@ void TStorage::Open(EStorageType type, const TPath &place, const std::string &na
     FirstName = name;
     Place = place;
 
+    std::string meta;
     auto sep = name.find('/');
     if (sep != std::string::npos) {
-        Meta = name.substr(0, sep);
+        meta = name.substr(0, sep);
         FirstName = name.substr(sep + 1);
     }
 
@@ -198,7 +199,7 @@ void TStorage::Open(EStorageType type, const TPath &place, const std::string &na
             Path = Place / PORTO_LAYERS / Name;
         else
             Path =
-                Place / PORTO_STORAGE / fmt::format("{}{}/{}{}", META_PREFIX, Meta, META_LAYER, name.substr(sep + 1));
+                Place / PORTO_STORAGE / fmt::format("{}{}/{}{}", META_PREFIX, meta, META_LAYER, name.substr(sep + 1));
         break;
     case EStorageType::DockerLayer:
         Path = TDockerImage::TLayer(Name).LayerPath(Place) / "content";
@@ -207,7 +208,7 @@ void TStorage::Open(EStorageType type, const TPath &place, const std::string &na
         if (sep == std::string::npos)
             Path = Place / PORTO_STORAGE / Name;
         else
-            Path = place / PORTO_STORAGE / fmt::format("{}{}/{}", META_PREFIX, Meta, name.substr(sep + 1));
+            Path = place / PORTO_STORAGE / fmt::format("{}{}/{}", META_PREFIX, meta, name.substr(sep + 1));
         break;
     case EStorageType::Meta:
         Path = place / PORTO_STORAGE / fmt::format("{}{}", META_PREFIX, Name);

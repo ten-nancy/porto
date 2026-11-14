@@ -69,16 +69,6 @@ TError TMountFd::Clone(const TFile &dir, const TPath &path, bool recursive) {
     return OK;
 }
 
-TError TMountFd::Open(const TFile &dir, const TPath &path) {
-    Close();
-
-    SetFd = syscall(SYS_open_tree, DirFd(dir), path.c_str(), OPEN_TREE_CLOEXEC | EmptyPath(path, AT_EMPTY_PATH));
-    if (Fd < 0)
-        return TError::System("open_tree {} {}", dir.RealPath(), path);
-
-    return OK;
-}
-
 TError SetMountAttr(const TFile &dir, const TPath &path, const TMountAttr &attr, bool recursive) {
     struct mount_attr mnt_attr = {};
     mnt_attr.attr_set = attr.Set;

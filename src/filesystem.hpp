@@ -36,7 +36,6 @@ struct TBindMount {
 
 struct TMountNamespace {
 public:
-    std::string Container; /* for logging and errors */
     TCred BindCred;
     TPath Cwd;
     TPath Root; /* path in ParentNs.Mnt */
@@ -58,7 +57,6 @@ public:
     TError SetupRoot(const TContainer &ct);
     TError MountRun(const TContainer &ct);
     TError RemountRun(const TContainer &ct);
-    TError MountBinds();
     TError ProtectProc();
     TError MountTraceFs();
     TError MountSystemd();

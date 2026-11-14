@@ -18,7 +18,6 @@ extern "C" {
 class TPath;
 
 std::string FormatTime(time_t t, const char *fmt = "%F %T");
-void LocalTime(const time_t *time, struct tm &tm);
 
 void TaintPostFork(std::string message);
 
@@ -26,7 +25,6 @@ pid_t GetPid();
 pid_t GetPPid();
 pid_t GetTid();
 int PidFDOpen(pid_t pid, unsigned int flags);
-TError GetTaskChildrens(pid_t pid, std::vector<pid_t> &childrens);
 void PrintProc(const std::string &knob, pid_t pid, bool debug = true);
 inline void PrintStack(pid_t pid, bool debug = true) {
     PrintProc("stack", pid, debug);
@@ -85,7 +83,6 @@ public:
     TError KillWait(int signo, int timeoutMs) const;
     TError OpenProcFd(TFile &procFd) const;
     pid_t GetPid() const;
-    pid_t GetNsPid() const;
     operator bool() const {
         return bool(PidFd);
     }
@@ -137,7 +134,6 @@ public:
     {}
     TError Read();
     TError ReadPidFd(TPidFd &pidFd);
-    bool Running();
     TError Save(pid_t pid);
     TError Remove();
 };

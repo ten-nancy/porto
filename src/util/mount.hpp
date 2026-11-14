@@ -33,8 +33,6 @@ public:
     TError Create(const std::string &type, uint64_t attr, const std::vector<std::string> &opts);
     /* Detached copy of mount tree at path, like bind mount */
     TError Clone(const TFile &dir, const TPath &path, bool recursive);
-    /* Attached mount at path */
-    TError Open(const TFile &dir, const TPath &path);
 
     /* Change MOUNT_ATTR_* */
     TError SetAttr(uint64_t set, uint64_t clr, bool recursive) const {

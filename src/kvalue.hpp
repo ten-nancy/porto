@@ -35,10 +35,6 @@ public:
         Data[key] = val;
     }
 
-    void Del(const std::string &key) {
-        Data.erase(key);
-    }
-
     TError Load();
     TError Save();
 

@@ -387,10 +387,6 @@ struct TDeviceRule {
         }
         return OK;
     }
-
-    std::string Format() const {
-        return fmt::format("{} {} {}", Mode, Node, Action);
-    }
 };
 
 TError TDevices::Apply(const TCgroup &cg) const {

@@ -1,6 +1,8 @@
 #include "netlimitsoft.hpp"
 
+#include <bpf.h>
 #include <errno.h>
+#include <libbpf.h>
 #include <linux/version.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,21 +10,6 @@
 #include <unistd.h>
 
 #include "util/log.hpp"
-
-// FIXME: required linux-headers from 5.8
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-enum bpf_stats_type {
-    /* enabled run_time_ns and run_cnt */
-    BPF_STATS_RUN_TIME = 0,
-};
-// FIXME: libbpf is broken when building with C++
-// https://github.com/libbpf/libbpf/issues/820
-
-enum bpf_link_type {};
-#endif
-
-#include <bpf.h>
-#include <libbpf.h>
 
 class TNetLimitSoft::TImpl {
 public:

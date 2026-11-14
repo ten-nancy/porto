@@ -71,29 +71,6 @@ public:
     }
 };
 
-std::string TEvent::GetMsg() const {
-    switch (Type) {
-    case EEventType::ChildExit:
-        return "exit status " + std::to_string(Exit.Status) + " for child pid " + std::to_string(Exit.Pid);
-    case EEventType::Exit:
-        return "exit status " + std::to_string(Exit.Status) + " for pid " + std::to_string(Exit.Pid);
-    case EEventType::RotateLogs:
-        return "rotate logs";
-    case EEventType::Respawn:
-        return "respawn";
-    case EEventType::OOM:
-        return "OOM";
-    case EEventType::WaitTimeout:
-        return "wait timeout";
-    case EEventType::DestroyAgedContainer:
-        return "destroy aged container";
-    case EEventType::DestroyWeakContainer:
-        return "destroy weak container";
-    default:
-        return "unknown event";
-    }
-}
-
 bool TEvent::operator<(const TEvent &rhs) const {
     return DueMs >= rhs.DueMs;
 }

@@ -48,16 +48,12 @@ public:
     using TMutableBufferView = std::pair<void *, const uint32_t>;
 
     std::string Name;
-    uint32_t Type;
     uint32_t KeySize;
     uint32_t ValueSize;
-    uint32_t MaxEntries;
-    uint32_t Flags;
 
     TBpfMap() = default;
 
     TError Open(uint32_t id);
-    TError Open(const TPath &path);
 
     TError GetInfo(struct bpf_map_info &info);
 
@@ -98,9 +94,7 @@ class TBpfProgram: public TBpfObject {
 public:
     std::string Name;
     std::array<uint8_t, 8> Tag;
-    uint32_t Type;
 
-    TError Open(uint32_t id);
     TError Open(const TPath &path);
     TError Open(const std::string &prog_name, const std::vector<uint8_t> &prog_code);
 

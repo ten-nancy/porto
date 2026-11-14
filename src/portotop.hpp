@@ -38,8 +38,6 @@ public:
     int Width();
     int Height();
     void SetTimeout(int ms);
-    template <class T>
-    void PrintAt(T arg, int x, int y, int width, bool leftaligned = false, int attr = 0);
     void PrintAt(std::string str0, int x0, int y0, int w0, bool leftaligned = false, int attr = 0);
     void Refresh();
     void Erase();
@@ -72,7 +70,6 @@ public:
     void SortTree(TColumn &column);
     int GetMaxLevel();
     int ChildrenCount();
-    std::string ContainerAt(int n, int max_level);
     uint64_t Tag = PortoTreeTags::None;
     std::list<std::shared_ptr<TPortoContainer>> Children;
 

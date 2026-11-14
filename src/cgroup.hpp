@@ -232,7 +232,6 @@ public:
     // soft limit
     bool SupportSoftLimit() const;
     TError SetSoftLimit(const TCgroup &cg, int64_t limit) const;
-    TError GetSoftLimit(const TCgroup &cg, int64_t &limit) const;
 
     // guarantee via low limit
     bool SupportGuarantee() const;
@@ -308,7 +307,6 @@ public:
 };
 
 class TCpuSubsystem: public TSubsystem {
-    inline std::string ChooseThrottledKnob() const;
     static inline uint64_t PreparePeriod(uint64_t period);
     static inline uint64_t PrepareQuota(uint64_t quota, uint64_t period);
 
@@ -341,8 +339,6 @@ public:
     static constexpr const char *PRESSURE = "cpu.pressure";
 
     // stat knobs
-    static constexpr const char *THROTTLED_TIME = "throttled_time";      // cg1 mainstream
-    static constexpr const char *THROTTLED_USEC = "throttled_usec";      // cg2 mainstream
     static constexpr const char *BURST_LOAD = "burst_load";              // cg1 private
     static constexpr const char *BURST_USAGE = "burst_usage";            // cg1 private
     static constexpr const char *H_THROTTLED_TIME = "h_throttled_time";  // cg1 private
@@ -368,13 +364,10 @@ public:
 
     // stats
     bool SupportThrottled() const;
-    TError GetThrottled(const TCgroup &cg, uint64_t &value) const;
     bool SupportUnconstrainedWait() const;
     TError GetUnconstrainedWait(const TCgroup &cg, uint64_t &value) const;
     bool SupportBurstUsage() const;
     TError GetBurstUsage(const TCgroup &cg, uint64_t &value) const;
-
-    TError GetCpuLimit(const TCgroup &cg, uint64_t &quota, uint64_t &period);
 
     // knob setters
     TError SetLimit(const TCgroup &cg, uint64_t quota, uint64_t period);
@@ -487,9 +480,6 @@ public:
     TBlkioSubsystem()
         : TSubsystem(CGROUP_BLKIO, "blkio")
     {}
-    bool IsDisabled() const override {
-        return !config().container().enable_blkio();
-    }
     bool IsOptional() const override {
         return true;
     }
@@ -529,15 +519,11 @@ public:
     // cgroup v1 mainstream knobs
     static constexpr const char *HUGE_USAGE = "hugetlb.2MB.usage_in_bytes";
     static constexpr const char *HUGE_LIMIT = "hugetlb.2MB.limit_in_bytes";
-    static constexpr const char *GIGA_USAGE = "hugetlb.1GB.usage_in_bytes";
     static constexpr const char *GIGA_LIMIT = "hugetlb.1GB.limit_in_bytes";
 
     THugetlbSubsystem()
         : TSubsystem(CGROUP_HUGETLB, "hugetlb")
     {}
-    bool IsDisabled() const override {
-        return !config().container().enable_hugetlb();
-    }
     bool IsOptional() const override {
         return true;
     }
@@ -615,9 +601,6 @@ public:
     TCgroup2Subsystem()
         : TSubsystem(CGROUP2, "unified")
     {}
-    bool IsDisabled() const override {
-        return !config().container().enable_cgroup2();
-    }
     bool IsOptional() const override {
         return true;
     }
@@ -659,8 +642,6 @@ public:
     std::vector<TSubsystem *> Subsystems;
     std::vector<TSubsystem *> Hierarchies;
     std::vector<TSubsystem *> Cgroup2Subsystems;
-
-    uint64_t DefaultControllers;
 
     bool UseCgroup2() const;
     bool IsInitialized() const;

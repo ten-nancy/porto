@@ -53,9 +53,7 @@ public:
     TError GetRange(std::vector<TNlAddr> &addrs, uint64_t max) const;
 };
 
-uint32_t TcHandle(uint16_t maj, uint16_t min);
-
-class TNl: public std::enable_shared_from_this<TNl>, public TNonCopyable {
+class TNl: public TNonCopyable {
     struct nl_sock *Sock = nullptr;
 
 public:
@@ -71,11 +69,8 @@ public:
         return Sock;
     }
 
-    int GetFd();
-
     static TError Error(int nl_err, const std::string &desc);
     void Dump(const std::string &prefix, void *obj) const;
-    void DumpCache(struct nl_cache *cache) const;
 
     TError ProxyNeighbour(int ifindex, const TNlAddr &addr, bool add);
     TError PermanentNeighbour(int ifindex, const TNlAddr &addr, const TNlAddr &lladdr, bool add);
@@ -132,10 +127,7 @@ public:
     int GetGroup() const;
     TNlAddr GetAddr() const;
     std::string GetName() const;
-    std::string GetType() const;
     std::string GetDesc() const;
-    bool IsLoopback() const;
-    bool IsRunning() const;
     TError Error(int nl_err, const std::string &desc) const;
     void Dump(const std::string &prefix, void *obj = nullptr) const;
 
@@ -165,9 +157,6 @@ public:
     struct nl_sock *GetSock() const {
         return Nl->GetSock();
     }
-    std::shared_ptr<TNl> GetNl() {
-        return Nl;
-    };
 };
 
 struct TQdiscStat {
@@ -215,7 +204,6 @@ public:
     uint64_t RateBurst = 0;
     uint64_t CeilBurst = 0;
     uint64_t Quantum = 0;
-    uint64_t MTU = 0;
     int Prio = 3;
 
     TNlClass() {}
@@ -249,26 +237,6 @@ public:
     TError Delete(const TNl &nl);
 };
 
-class TNlPoliceFilter {
-public:
-    const char *FilterType = "u32";
-    int Index = 0;
-    int FilterPrio = 10;
-    uint32_t Parent = -1;
-    uint32_t Rate = 0;
-    uint32_t PeakRate = 0;
-    uint32_t Mtu = 65536;
-    uint32_t Burst = 65536;
-    uint32_t Action = TC_ACT_SHOT;
-
-    TNlPoliceFilter(int index, uint32_t parent)
-        : Index(index),
-          Parent(parent)
-    {}
-    TError Create(const TNl &nl);
-    TError Delete(const TNl &nl);
-};
-
 class TNlBpfFilter {
 public:
     const char *FilterType = "bpf";
@@ -282,7 +250,6 @@ public:
         : Index(index)
     {}
     TError Create(const TNl &nl, bool replace = false);
-    TError Delete(const TNl &nl);
 
 private:
     TError FindHandle(const TNl &nl, uint32_t &handle) const;

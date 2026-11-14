@@ -15,8 +15,6 @@ message TConfig {
 
         optional uint32 bpf_progs_update_interval_ms = 75;
 
-        optional uint32 cache_statistics_ms = 35;
-
         optional bool enable_host_net_classes = 59;
 
         /* L3 network */
@@ -233,12 +231,10 @@ message TConfig {
         optional uint32 respawn_delay_ms = 4;
         optional uint64 stdout_limit = 5;
         optional uint32 private_max = 6 [deprecated=true];
-        optional uint32 kill_timeout_ms = 8;
         optional uint32 stop_timeout_ms = 9;
         optional bool use_hierarchy = 10 [deprecated=true];
         optional uint32 max_total = 11;
         optional uint32 batch_io_weight = 12 [deprecated=true];
-        optional uint32 empty_wait_timeout_ms = 13;
         optional string chroot_porto_dir = 14 [deprecated=true];
         optional bool scoped_unlock = 15 [deprecated=true];
         optional uint32 start_timeout_ms = 16;
@@ -250,7 +246,6 @@ message TConfig {
         optional uint32 devpts_max = 22;
         optional uint64 dev_size = 23;
         optional bool all_controllers = 24 [deprecated=true];
-        optional bool enable_hugetlb = 26;
         optional int32 rt_priority = 27;
         optional int32 rt_nice = 29;
         optional int32 high_nice = 30;
@@ -266,13 +261,9 @@ message TConfig {
         optional string extra_devices = 41;
         optional int64 dead_memory_soft_limit = 43;
         optional bool pressurize_on_death = 44;
-        optional bool enable_blkio = 45;
-        optional bool ptrace_on_start = 54 [deprecated=true];
         optional uint64 std_stream_read_limit = 55;
-        optional bool enable_cgroup2 = 56;
         optional bool use_os_mode_cgroupns = 57; //[deprecated=true] use cgroupfs container option
         optional bool enable_rw_cgroupfs = 59;
-        optional bool enable_docker_mode = 58 [deprecated=true];
 
         message TSysctl {
             required string key = 1;
@@ -291,8 +282,6 @@ message TConfig {
         optional uint64 memlock_minimal = 49;
         optional uint64 memlock_margin = 50;
         optional uint64 memory_limit_margin = 51;
-
-        optional double memory_high_limit_proportion = 65 [deprecated = true];
 
         message TContainerExtraEnv {
             required string name = 1;
@@ -339,7 +328,6 @@ message TConfig {
         optional string default_place = 8 [deprecated=true];
         optional uint64 max_total = 9;
         optional string place_load_limit = 10;
-        optional bool direct_io_loop = 11;
         optional string default_lvm_group = 12 [deprecated=true];
         optional string squashfs_compression = 13;
         optional bool parallel_compression = 15;

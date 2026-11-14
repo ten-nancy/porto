@@ -36,10 +36,6 @@ struct TStatFS {
 
 struct TMount;
 
-#ifndef MS_LAZYTIME
-#define MS_LAZYTIME (1 << 25)
-#endif
-
 /* inverted flags with lower priority */
 #define MS_ALLOW_WRITE (1ull << 60)
 #define MS_ALLOW_EXEC  (1ull << 61)
@@ -73,10 +69,6 @@ public:
 
     bool IsAbsolute() const {
         return Path[0] == '/';
-    }
-
-    bool IsSimple() const {
-        return Path.find('/') == std::string::npos;
     }
 
     bool IsRoot() const {
@@ -174,13 +166,11 @@ public:
     dev_t GetBlockDev() const;
     static TError GetDevName(dev_t dev, std::string &name);
 
-    int64_t SinceModificationMs() const;
     std::string ToString() const;
     bool Exists() const;
     bool PathExists() const; /* or dangling symlink */
 
     TError Chdir() const;
-    TError Chroot() const;
 
     TError Chown(uid_t uid, gid_t gid) const;
     TError Chown(const TCred &cred) const {
@@ -194,10 +184,6 @@ public:
 
     typedef void (*TChownFilter)(const struct stat &, uid_t &uid, gid_t &gid);
     TError ChownRecursive(uid_t uid, gid_t gid, TChownFilter filter = nullptr) const;
-    TError ChownRecursive(const TCred &cred, TChownFilter filter = nullptr) const {
-        return ChownRecursive(cred.GetUid(), cred.GetGid(), filter);
-    }
-
     TError ChownRecursiveRootFiles(uid_t uid, gid_t gid) const {
         return ChownRecursive(uid, gid, RootFilesChownFilter);
     }
@@ -223,11 +209,9 @@ public:
     TError ListSubdirs(std::vector<std::string> &result) const;
     TError ClearDirectory() const;
     TError StatFS(TStatFS &result) const;
-    TError GetXAttr(const std::string &name, std::string &value) const;
     TError SetXAttr(const std::string &name, const std::string &value) const;
     TError Truncate(off_t size) const;
     TError RotateLog(off_t max_disk_usage, off_t &loss) const;
-    TError Chattr(unsigned add_flags, unsigned del_flags) const;
     TError Touch() const;
 
     static std::string UmountFlagsToString(uint64_t flags);
@@ -253,8 +237,6 @@ public:
     TError ReadUint64(uint64_t &value) const;
 
     TError WriteAll(const std::string &text) const;
-    TError WriteLines(const std::vector<std::string> &lines) const;
-    TError WriteAtomic(const std::string &text) const;
     TError WritePrivate(const std::string &text) const;
 
     TError CreateRegular() const;

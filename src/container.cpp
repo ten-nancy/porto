@@ -1197,10 +1197,6 @@ std::list<std::shared_ptr<TContainer>> TContainer::Childs() {
     return childs;
 }
 
-std::shared_ptr<TContainer> TContainer::GetParent() const {
-    return Parent;
-}
-
 bool TContainer::HasPidFor(const TContainer &ct) const {
     auto ns = &ct;
 

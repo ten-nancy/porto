@@ -294,14 +294,3 @@ void TUlimit::Merge(const TUlimit &ulimit, bool overwrite) {
     for (const auto &res: ulimit.Resources)
         Set(res.Type, res.Soft, res.Hard, overwrite);
 }
-
-TError TUlimit::Get(int type, uint64_t &soft, uint64_t &hard) {
-    for (const auto &res: Resources) {
-        if (res.Type == type) {
-            soft = res.Soft;
-            hard = res.Hard;
-            return OK;
-        }
-    }
-    return TError(EError::NotFound, "Requested limit {} is not set in TUlimit object", GetName(type));
-}

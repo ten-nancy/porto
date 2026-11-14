@@ -23,11 +23,6 @@ void TVmStat::Reset() {
         Stat[it.second] = 0;
 }
 
-void TVmStat::Add(const TVmStat &other) {
-    for (auto &it: other.Stat)
-        Stat[it.first] += it.second;
-}
-
 void TVmStat::Dump(rpc::TVmStat &s) {
 #define DUMP_STAT_FIELD(f) s.set_##f(Stat[#f])
     DUMP_STAT_FIELD(count);
