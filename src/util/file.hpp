@@ -61,13 +61,15 @@ public:
     TError ReadLines(std::vector<std::string> &lines, size_t max = 1048576) const;
     TError ReadEnds(std::string &text, size_t max) const;
     TError Truncate(off_t size) const;
+    TError RotateLog(off_t max_disk_usage, off_t &loss) const;
     TError WriteAll(const std::string &text) const;
     TError WriteAllAt(const TPath &path, const std::string &text) const;
     TError GetMountId(int &mountId) const;
     bool IsMountPoint() const;
     TError Dup(const TFile &other);
+    TError OpenHow(int dirFd, const TPath &path, const struct open_how &how);
+    TError OpenInRoot(const TFile &root, const TPath &path, int flags);
     TError OpenAt(const TFile &dir, const TPath &path, int flags, int mode = 0);
-    TError OpenAtNoSymlink(const TFile &dir, const TPath &path, int flags);
     TError OpenDirAt(const TFile &dir, const TPath &path);
     TError OpenDirStrictAt(const TFile &dir, const TPath &path);
     TError OpenAtMount(const TFile &mount, const TFile &file, int flags);

@@ -454,7 +454,7 @@ static TError TuneLimits() {
                 (config().daemon().ro_threads() + config().daemon().rw_threads() + config().daemon().io_threads() +
                  config().daemon().vl_threads()) *
                     20 +
-                config().daemon().max_clients() + NR_SUPERUSER_CLIENTS + 10000;
+                2 * config().daemon().max_clients() + NR_SUPERUSER_CLIENTS + 10000;
 
     L_SYS("Estimated portod file descriptor limit: {}", maxFd);
 

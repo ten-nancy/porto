@@ -15,6 +15,7 @@ extern "C" {
 #include <linux/fs.h>
 #include <linux/limits.h>
 #include <linux/magic.h>
+#include <linux/openat2.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
@@ -184,6 +185,34 @@ void TFile::CloseAllExcept(const std::vector<int> &except) {
         if (std::find(except.begin(), except.end(), fd) == except.end())
             close(fd);
     }
+}
+
+TError TFile::RotateLog(off_t max_disk_usage, off_t &loss) const {
+    struct stat st;
+    auto error = Stat(st);
+    if (error)
+        return error;
+    loss = 0;
+    if (!S_ISREG(st.st_mode) || st.st_size <= max_disk_usage || st.st_size <= st.st_blksize)
+        return OK;
+
+    // Keep half the limit, rounded up to a filesystem block.
+    loss = st.st_size - max_disk_usage / 2;
+    loss -= loss % st.st_blksize;
+    char buffer[16384];
+    const auto count = pread(Fd, buffer, sizeof(buffer), loss);
+    const auto newline = count > 0 ? static_cast<char *>(memchr(buffer, '\n', count)) : nullptr;
+    (void)Lseek(0, SEEK_SET);
+
+    if (fallocate(Fd, FALLOC_FL_COLLAPSE_RANGE, 0, loss)) {
+        L_WRN("Cannot collapse log fd {}: {}", Fd, strerror(errno));
+        loss = st.st_size;
+        error = Truncate(0);
+        if (error)
+            return error;
+    }
+    // Space padding hides a partial first record from JSON log readers.
+    return newline ? WriteAll(std::string(newline - buffer + 1, ' ')) : OK;
 }
 
 TError TFile::Lseek(off_t off, int whence) const {
@@ -402,35 +431,28 @@ TError TFile::Dup(const TFile &other) {
     return OK;
 }
 
+TError TFile::OpenHow(int dirFd, const TPath &path, const struct open_how &how) {
+    int fd = syscall(SYS_openat2, dirFd, path.c_str(), &how, sizeof(how));
+    if (fd < 0)
+        return TError::System("Cannot openat2 {} {}", dirFd, path);
+    Set(fd);
+    return OK;
+}
+
+TError TFile::OpenInRoot(const TFile &root, const TPath &path, int flags) {
+    struct open_how how = {};
+    how.flags = flags;
+    how.resolve = RESOLVE_IN_ROOT | RESOLVE_NO_MAGICLINKS;
+    return OpenHow(root.Fd, path, how);
+}
+
 TError TFile::OpenAt(const TFile &dir, const TPath &path, int flags, int mode) {
     if (path.IsAbsolute())
         return TError(EError::InvalidPath, "Absolute path {}", path.Path);
     int fd = openat(dir.Fd, path.c_str(), flags, mode);
     if (fd < 0)
         return TError::System("Cannot openat {} {}", dir.RealPath(), path);
-    Close();
-    SetFd = fd;
-    return OK;
-}
-
-TError TFile::OpenAtNoSymlink(const TFile &dir, const TPath &path, int flags) {
-    // TODO(ovov): replace this with openat2 when we get rid of 5.4:
-    // https://man7.org/linux/man-pages/man2/openat2.2.html
-    auto error = Dup(dir);
-    if (error)
-        return error;
-
-    auto components = path.Components();
-    for (size_t i = 0; i < components.size(); ++i) {
-        if (components[i] == "..")
-            return TError(EError::InvalidPath, "Non-normal path {}", path);
-
-        auto flags1 = i == components.size() - 1 ? flags : O_RDONLY | O_CLOEXEC | O_NOCTTY;
-        error = OpenAt(*this, components[i], flags1 | O_NOFOLLOW);
-        if (error)
-            return error;
-    }
-
+    Set(fd);
     return OK;
 }
 

@@ -20,6 +20,7 @@
 extern "C" {
 #include <fcntl.h>
 #include <grp.h>
+#include <linux/openat2.h>
 #include <linux/sched.h>
 #include <net/if.h>
 #include <string.h>
@@ -115,8 +116,6 @@ TError TTaskEnv::ReportError(const TError &error) {
 }
 
 void TTaskEnv::Abort(const TError &error) {
-    TError error2;
-
     L("abort due to {}", error);
 
     (void)ReportError(error);
@@ -367,13 +366,19 @@ TError TTaskEnv::ConfigureChild() {
     if (error)
         return error;
 
-    /* Closing before directory changing for security.
-     * More info: PORTO-925
-     */
-    TFile::CloseAllExcept({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, Sock.Fd, LogFile.Fd, PortoInit.Fd});
-    error = Mnt.Cwd.Chdir();
-    if (error)
-        return error;
+    {
+        // Resolve cwd without procfs magic links before installing stdio and closing inherited FDs.
+        struct open_how how = {};
+        how.flags = O_PATH | O_DIRECTORY | O_CLOEXEC;
+        how.resolve = RESOLVE_NO_MAGICLINKS;
+        TFile dir;
+        auto error = dir.OpenHow(AT_FDCWD, Mnt.Cwd, how);
+        if (error)
+            return TError(EError::InvalidPath, error.Errno, error.Text);
+        error = dir.Chdir();
+        if (error)
+            return error;
+    }
 
     if (QuadroFork) {
         pid_t pid = fork();
@@ -414,19 +419,13 @@ TError TTaskEnv::ConfigureChild() {
             return error;
     }
 
-    L("open default streams in child");
-    error = CT->Stdin.OpenInside(*CT);
-    if (error)
-        return error;
+    for (auto &stream: Streams) {
+        error = stream.Install();
+        if (error)
+            return error;
+    }
 
-    error = CT->Stdout.OpenInside(*CT);
-    if (error)
-        return error;
-
-    error = CT->Stderr.OpenInside(*CT);
-    if (error)
-        return error;
-
+    TFile::CloseAllExcept({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, Sock.Fd, LogFile.Fd, PortoInit.Fd});
     umask(CT->Umask);
 
     ReportPid(EMsgCode::TaskPid);
@@ -516,6 +515,11 @@ TError TTaskEnv::DoFork1() {
             return error;
     }
 
+    // Open host streams under the target device policy, before entering namespaces.
+    error = CT->OpenStreams(Streams);
+    if (error)
+        return error;
+
     /* resctrl group is inherited by all tasks forked below */
     if (!ResctrlGroup.empty()) {
         error = AttachResctrlGroup(ResctrlGroup, pid);
@@ -558,20 +562,6 @@ TError TTaskEnv::DoFork1() {
 
     if (SetIoPrio(0, CT->IoPrio))
         return TError::System("ioprio");
-
-    L("open default streams");
-    /* Default streams and redirections are outside */
-    error = CT->Stdin.OpenOutside(*CT, *Client);
-    if (error)
-        return error;
-
-    error = CT->Stdout.OpenOutside(*CT, *Client);
-    if (error)
-        return error;
-
-    error = CT->Stderr.OpenOutside(*CT, *Client);
-    if (error)
-        return error;
 
     L("Enter namespaces");
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <list>
 #include <memory>
@@ -97,6 +98,7 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
     void ShutdownOom();
     TError PrepareCgroups(bool onRestore = false);
     TError PrepareTask(TTaskEnv &TaskEnv);
+    TError OpenHostStream(int stream, TFile &file) const;
 
     TError PrepareResources();
     TError FreeResources(bool ignore = true);
@@ -165,7 +167,9 @@ public:
     std::string CoreCommand;
     TTuple CommandArgv;
     TPath Cwd;
-    TStdStream Stdin, Stdout, Stderr;
+    std::array<TStreamSpec, 3> Streams;
+    uint64_t StdoutLimit;
+    std::array<uint64_t, 2> StreamOffsets{};
     std::string Root;
     bool RootRo;
     mode_t Umask;
@@ -330,10 +334,15 @@ public:
 
     uint32_t CoredumpFilter;
 
+    TError OpenStreams(TStreams &streams);
+    TError OpenStreamLog(int stream, TFile &file, int flags) const;
+    TError ReadStream(int stream, std::string &text, const std::string &range) const;
+    void RotateLogs();
     TPath GetCwd() const;
     int GetExitCode() const;
 
     TPath WorkDir() const;
+    TError OpenWorkDir(TFile &dir) const;
     TError CreateWorkDir() const;
     void RemoveWorkDir() const;
 

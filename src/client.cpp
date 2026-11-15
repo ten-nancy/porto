@@ -110,9 +110,9 @@ TError TClient::IdentifyClient() {
     TaskCred.SetGid(cr.gid);
     Pid = cr.pid;
 
-    error = GetProcStartTime(Pid, StartTime);
+    error = ProcFd.OpenDir(fmt::format("/proc/{}", Pid));
     if (error)
-        return TError(EError::Unknown, "Can not get client process start time: {}", error);
+        return error;
 
     Cred = TaskCred;
     Comm = GetTaskName(Pid);
@@ -206,7 +206,11 @@ TError TClient::GetClientSession(TSessionInfo &session_info) const {
         std::string gideon_path("\0gideon", 7);
         THttpClient::TRequest req;
         req.ContentType = "application/json";
-        req.Body = fmt::format("{{\"pid\": {:d}, \"start_time\": {:d}}}", CL->Pid, CL->StartTime);
+        uint64_t startTime;
+        error = GetProcStartTime(ProcFd, startTime);
+        if (error)
+            return error;
+        req.Body = fmt::format("{{\"pid\": {:d}, \"start_time\": {:d}}}", Pid, startTime);
         error = THttpClient::UnixSingleRequest(gideon_path, "/session/info", response, headers, &req);
         if (error) {
             return TError(error, "failed to request gideon session info for query: \"{}\" : {}", req.Body, error);
@@ -395,7 +399,7 @@ bool TClient::IsSuperUser(void) const {
 }
 
 bool TClient::IsPortod(void) const {
-    return StringEndsWith(TPath(StringFormat("/proc/%u/exe", Pid)).RealPath().ToString(), "portod");
+    return StringEndsWith((ProcFd.ProcPath() / "exe").RealPath().ToString(), "portod");
 }
 
 bool TClient::CanSetUidGid() const {

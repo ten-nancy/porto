@@ -20,7 +20,7 @@ TError GetProcNetStats(pid_t pid, TUintMap &stats, const std::string &basename);
 
 TError GetProc(pid_t pid, const std::string &knob, std::string &value);
 
-TError GetProcStartTime(pid_t pid, uint64_t &time);
+TError GetProcStartTime(const TFile &procFd, uint64_t &time);
 
 TError GetProcField(const TFile &procFd, const TPath &path, const std::string &field, std::string &value);
 TError GetProcField(const TPath &path, const std::string &field, std::string &value);

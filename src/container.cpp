@@ -1,5 +1,7 @@
 #include "container.hpp"
 
+#include <linux/openat2.h>
+
 #include <algorithm>
 #include <climits>
 #include <condition_variable>
@@ -401,9 +403,8 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
       FirstName(!parent            ? ""
                 : parent->IsRoot() ? name
                                    : name.substr(parent->Name.length() + 1)),
-      Stdin(0),
-      Stdout(1),
-      Stderr(2),
+      Streams{{TStreamSpec(TStreamSpec::ESource::Null, "/dev/null"), TStreamSpec(TStreamSpec::ESource::Host, "stdout"),
+               TStreamSpec(TStreamSpec::ESource::Host, "stderr")}},
       ClientsCount(0),
       ContainerRequests(0),
       OomEvents(0),
@@ -421,11 +422,7 @@ TContainer::TContainer(std::shared_ptr<TContainer> parent, int id, const std::st
     CreationTime = GetCurrentTimeMs();
     SetProp(EProperty::CREATION_TIME);
 
-    Stdin.SetOutside("/dev/null");
-    Stdout.SetOutside("stdout");
-    Stderr.SetOutside("stderr");
-    Stdout.Limit = config().container().stdout_limit();
-    Stderr.Limit = config().container().stdout_limit();
+    StdoutLimit = config().container().stdout_limit();
     Root = "/";
     RootPath = Parent ? Parent->RootPath : TPath("/");
     RootRo = false;
@@ -939,39 +936,40 @@ TPath TContainer::WorkDir() const {
     return TPath(PORTO_WORKDIR) / Name;
 }
 
+TError TContainer::OpenWorkDir(TFile &dir) const {
+    auto error = dir.OpenPath(PORTO_WORKDIR);
+    if (error)
+        return error;
+
+    // Parent workdirs may be private to other users. Pin the child directory
+    // as root without following symlinks, then open its files relative to it.
+    struct open_how how = {};
+    how.flags = O_PATH | O_DIRECTORY | O_CLOEXEC;
+    how.resolve = RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS;
+    return dir.OpenHow(dir.Fd, WorkDir().RelativePath(PORTO_WORKDIR), how);
+}
+
 TError TContainer::CreateWorkDir() const {
     if (IsRoot())
         return OK;
 
     TFile dir;
-    TError error;
-
-    error = dir.OpenDir(PORTO_WORKDIR);
+    auto error = Parent->OpenWorkDir(dir);
     if (error)
         return error;
 
-    if (Level > 1) {
-        for (auto &name: TPath(Parent->Name).Components()) {
-            error = dir.OpenDirStrictAt(dir, name);
-            if (error)
-                return error;
-        }
-    }
-
-    TPath name = FirstName;
-
-    if (dir.ExistsAt(name)) {
+    if (dir.ExistsAt(FirstName)) {
         L_ACT("Remove stale working dir");
-        error = dir.RemoveAt(name);
+        error = dir.RemoveAt(FirstName);
         if (error)
             L_ERR("Cannot remove working dir: {}", error);
     }
 
-    error = dir.MkdirAt(name, 0775);
+    error = dir.MkdirAt(FirstName, 0775);
     if (!error) {
-        error = dir.ChownAt(name, TaskCred);
+        error = dir.ChownAt(FirstName, TaskCred);
         if (error)
-            (void)dir.RemoveAt(name);
+            (void)dir.RemoveAt(FirstName);
     }
 
     if (error) {
@@ -989,16 +987,7 @@ void TContainer::RemoveWorkDir() const {
         return;
 
     TFile dir;
-    TError error;
-
-    error = dir.OpenDir(PORTO_WORKDIR);
-    if (!error && Level > 1) {
-        for (auto &name: TPath(Parent->Name).Components()) {
-            error = dir.OpenDirStrictAt(dir, name);
-            if (error)
-                break;
-        }
-    }
+    auto error = Parent->OpenWorkDir(dir);
     if (!error)
         error = dir.RemoveAt(FirstName);
     if (error)
@@ -1560,7 +1549,10 @@ TError TContainer::ApplyResolvConf() const {
     if (error)
         return error;
 
-    error = file.OpenAtNoSymlink(root, "etc/resolv.conf", O_WRONLY | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY);
+    struct open_how how = {};
+    how.flags = O_WRONLY | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY;
+    how.resolve = RESOLVE_IN_ROOT | RESOLVE_NO_SYMLINKS;
+    error = file.OpenHow(root.Fd, "etc/resolv.conf", how);
     if (error) {
         if (error.Errno == ELOOP)
             return TError(EError::InvalidValue, "Path /etc/resolv.conf contains symbolic link");
@@ -2475,7 +2467,6 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
     TError error;
 
     TaskEnv.CT = shared_from_this();
-    TaskEnv.Client = CL;
 
     TaskEnv.Cgroups = CgroupDriver.GetContainerCgroups(*this);
 
@@ -2667,6 +2658,183 @@ TUlimit TContainer::GetUlimit() const {
     return res;
 }
 
+static TError OpenRedirect(const TStreamSpec &spec, int stream, TFile &file) {
+    int fd;
+    auto error = StringToInt(spec.Value.substr(8), fd);
+    if (error || fd < 0)
+        return TError(EError::InvalidValue, "Invalid stream redirect {}", spec.Value);
+    TFile pin;
+    error = pin.OpenAt(CL->ProcFd, fmt::format("fd/{}", fd), O_PATH | O_CLOEXEC);
+    if (error)
+        return TError(EError::InvalidValue, error.Errno, error.Text);
+
+    struct stat st;
+    error = pin.Stat(st);
+    if (error)
+        return error;
+
+    auto access = stream ? TFile::W : TFile::R;
+    if (!TFile::Access(st, CL->TaskCred, access) && !TFile::Access(st, CL->Cred, access))
+        return TError(EError::Permission, "Not enough permissions for redirect: {}", spec.Value);
+
+    if (spec.Inode != st.st_ino || spec.Device != st.st_dev)
+        return TError(EError::Permission, "Stream descriptor changed: {}", spec.Value);
+
+    const TStreamSource source(pin);
+    return stream ? source.OpenOutput(file) : source.OpenInput(file);
+}
+
+TError TContainer::OpenHostStream(int stream, TFile &file) const {
+    const auto &spec = Streams[stream];
+    if (spec.Source == TStreamSpec::ESource::Redirect)
+        return OpenRedirect(spec, stream, file);
+    if (spec.Source == TStreamSpec::ESource::Null) {
+        const TStreamSource source("/dev/null");
+        return stream ? source.OpenOutput(file) : source.OpenInput(file);
+    }
+
+    TFile dir;
+    auto error = OpenWorkDir(dir);
+    if (error)
+        return error;
+    return TStreamSource(dir, spec.Value).OpenOwnedOutput(TaskCred, file);
+}
+
+TError TContainer::OpenStreams(TStreams &streams) {
+    for (int stream = 0; stream < 3; ++stream) {
+        const auto &spec = Streams[stream];
+        if (spec.Source == TStreamSpec::ESource::Container) {
+            streams.emplace_back(stream, spec.Value);
+            continue;
+        }
+
+        TFile file;
+        auto error = OpenHostStream(stream, file);
+        if (error)
+            return error;
+
+        streams.emplace_back(stream, std::move(file));
+    }
+    return OK;
+}
+
+TError TContainer::OpenStreamLog(int stream, TFile &file, int flags) const {
+    const auto &spec = Streams[stream];
+    if (spec.Source == TStreamSpec::ESource::Null || spec.Source == TStreamSpec::ESource::Redirect)
+        return TError(EError::InvalidData, "Stream data unavailable");
+
+    TFile root, pin;
+    TPath path = spec.Value;
+    TError error;
+    if (spec.Source == TStreamSpec::ESource::Host) {
+        error = OpenWorkDir(root);
+    } else {
+        // Pin privileged roots without following replaceable host symlinks.
+        struct open_how how = {};
+        how.flags = O_PATH | O_DIRECTORY | O_CLOEXEC;
+        how.resolve = RESOLVE_NO_SYMLINKS;
+        error = root.OpenHow(AT_FDCWD, RootPath, how);
+        path = path.AbsolutePath(GetCwd());
+    }
+    if (!error) {
+        TaskCred.Enter();
+        error = pin.OpenInRoot(root, path, O_PATH | O_NOFOLLOW | O_CLOEXEC);
+        TaskCred.Leave();
+    }
+    if (error.Errno == ENOENT)
+        return TError(EError::InvalidData, "Stream data unavailable");
+    if (error)
+        return error;
+
+    // Reject devices and FIFOs without opening them for I/O.
+    if (!pin.IsRegular())
+        return TError(EError::InvalidData, "Stream data unavailable");
+
+    TaskCred.Enter();
+    error = file.Open(pin.ProcPath(), flags | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
+    TaskCred.Leave();
+    return error;
+}
+
+void TContainer::RotateLogs() {
+    for (int stream: {STDOUT_FILENO, STDERR_FILENO}) {
+        TFile file;
+        auto error = OpenStreamLog(stream, file, O_WRONLY);
+        if (error.Error == EError::InvalidData)
+            continue;
+        if (error) {
+            Statistics->LogRotateErrors++;
+            L_WRN("Cannot open log {}: {}", Streams[stream].Value, error);
+            continue;
+        }
+        {
+            TFile file1;
+            error = file1.Open(file.ProcPath(), O_NOCTTY | O_NONBLOCK | O_CLOEXEC | O_RDWR);
+            if (error) {
+                Statistics->LogRotateErrors++;
+                L_WRN("Cannot reopen log {}: {}", Streams[stream].Value, error);
+                continue;
+            }
+            file.Swap(file1);
+        }
+
+        off_t loss = 0;
+        error = file.RotateLog(StdoutLimit, loss);
+        if (error) {
+            Statistics->LogRotateErrors++;
+            L_WRN("Cannot rotate log {}: {}", Streams[stream].Value, error);
+            continue;
+        }
+        StreamOffsets[stream - 1] += loss;
+        Statistics->LogRotateBytes += loss;
+    }
+}
+
+TError TContainer::ReadStream(int stream, std::string &text, const std::string &range) const {
+    auto bounds = SplitString(range, ':', 2);
+    bounds.resize(2);
+    uint64_t offset = StreamOffsets[stream - 1], limit = StdoutLimit;
+    TError error;
+
+    if (!bounds[0].empty()) {
+        error = StringToUint64(bounds[0], offset);
+        if (error)
+            return error;
+    }
+    if (!bounds[1].empty()) {
+        error = StringToUint64(bounds[1], limit);
+        if (error)
+            return error;
+    }
+    if (offset < StreamOffsets[stream - 1])
+        return TError(EError::InvalidData, "Requested offset lower than current {}", StreamOffsets[stream - 1]);
+
+    TFile file;
+    error = OpenStreamLog(stream, file, O_RDONLY);
+    if (error)
+        return error;
+
+    struct stat st;
+    error = file.Stat(st);
+    if (error)
+        return error;
+
+    offset = std::min(offset - StreamOffsets[stream - 1], uint64_t(st.st_size));
+    limit = std::min({limit, uint64_t(st.st_size) - offset, StdoutLimit, config().container().std_stream_read_limit()});
+    if (!limit)
+        return OK;
+
+    if (range.empty() || range.front() == ':')
+        offset = st.st_size - limit;
+    text.resize(limit);
+
+    const auto size = pread(file.Fd, &text[0], text.size(), offset);
+    if (size < 0)
+        return TError::System("pread stream");
+    text.resize(size);
+    return OK;
+}
+
 TError TContainer::StartTask() {
     TTaskEnv TaskEnv;
     TError error;
@@ -2724,9 +2892,11 @@ TError TContainer::StartTask() {
         CollectMemoryEvents();
         if (OomKills || OomEvents)
             error = TError(EError::ResourceNotAvailable, "OOM at container {} start: {}", Name, error);
+        return error;
     }
 
-    return error;
+    StreamOffsets = {};
+    return OK;
 }
 
 TError TContainer::StartParents() {
@@ -3166,9 +3336,6 @@ TError TContainer::FreeResources(bool ignore) {
 
     RemoveWorkDir();
 
-    Stdout.Remove(*this);
-    Stderr.Remove(*this);
-
     return OK;
 }
 
@@ -3383,8 +3550,7 @@ void TContainer::Reap(bool oomKilled) {
 
     UnlockState();
 
-    Stdout.Rotate(*this);
-    Stderr.Rotate(*this);
+    RotateLogs();
 
     SetState(EContainerState::Dead);
 
@@ -4396,10 +4562,9 @@ void TContainer::Event(const TEvent &event) {
                 TEvent ev(EEventType::DestroyAgedContainer, ct);
                 EventQueue->Add(0, ev);
             }
-            if (ct->State == EContainerState::Running) {
-                ct->Stdout.Rotate(*ct);
-                ct->Stderr.Rotate(*ct);
-            }
+
+            if (ct->State == EContainerState::Running)
+                ct->RotateLogs();
         }
 
         struct stat st;

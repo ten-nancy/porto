@@ -1361,6 +1361,13 @@ public:
         if (CT->HostMode || CT->JobMode)
             CT->Isolate = false;
 
+        if (!CT->HasProp(EProperty::STDOUT))
+            CT->Streams[1] = CT->OsMode ? TStreamSpec(TStreamSpec::ESource::Null, "/dev/null")
+                                        : TStreamSpec(TStreamSpec::ESource::Host, "stdout");
+        if (!CT->HasProp(EProperty::STDERR))
+            CT->Streams[2] = CT->OsMode ? TStreamSpec(TStreamSpec::ESource::Null, "/dev/null")
+                                        : TStreamSpec(TStreamSpec::ESource::Host, "stderr");
+
         CT->SetProp(EProperty::VIRT_MODE);
         CT->SanitizeCapabilitiesAll();
         return OK;
@@ -1608,71 +1615,46 @@ public:
     }
 } static CgroupFs;
 
+template <int Stream>
 class TStdStreamProperty: public TProperty {
 public:
-    TStdStreamProperty(const std::string &name, EProperty prop, const std::string &desc)
+    TStdStreamProperty(const char *name, EProperty prop, const char *desc)
         : TProperty(name, prop, desc)
     {}
 
-    TError SaveStream(std::string &value, const TStdStream &stream) {
-        value = fmt::format("{};{};{}", stream.PathStat.st_ino, stream.PathStat.st_dev, stream.Path.ToString());
+    TError Get(std::string &value) const override {
+        value = CT->Streams[Stream].Value;
         return OK;
     }
 
-    TError LoadStream(const std::string &value, TStdStream &stream) {
-        auto values = SplitString(value, ';', 3);
+    TError Set(const std::string &value) override {
+        auto error = TStreamSpec::Parse(CL->ProcFd, value, CT->Streams[Stream]);
+        if (!error)
+            CT->SetProp(Prop);
+        return error;
+    }
 
-        if (values.size() == 1)
-            stream.SetInside(values[0], *CL, true);
-        else if (values.size() == 3) {
-            stream.SetInside(values[2], *CL, true);
-            uint64_t inode, dev;
-            auto error = StringToUint64(values[0], inode);
-            if (error)
-                return error;
-
-            error = StringToUint64(values[1], dev);
-            if (error)
-                return error;
-
-            stream.PathStat.st_ino = inode;
-            stream.PathStat.st_dev = dev;
-        }
-
-        CT->SetProp(Prop);
+    TError Save(std::string &value) override {
+        value = CT->Streams[Stream].Save();
         return OK;
+    }
+
+    TError Restore(const std::string &value) override {
+        auto error = TStreamSpec::Restore(value, CT->Streams[Stream]);
+        if (!error)
+            CT->SetProp(Prop);
+        return error;
     }
 };
 
-class TStdinPath: public TStdStreamProperty {
+class TStdinPath final: public TStdStreamProperty<0> {
 public:
     TStdinPath()
         : TStdStreamProperty(P_STDIN_PATH, EProperty::STDIN, "Container standard input path")
     {}
 
-    TError Save(std::string &value) override {
-        return TStdStreamProperty::SaveStream(value, CT->Stdin);
-    }
-
-    TError Restore(const std::string &value) override {
-        return TStdStreamProperty::LoadStream(value, CT->Stdin);
-    }
-
-    TError Get(std::string &value) const override {
-        value = CT->Stdin.Path.ToString();
-        return OK;
-    }
-
-    TError Set(const std::string &value) override {
-        auto error = CT->Stdin.SetInside(value, *CL);
-        if (error)
-            return error;
-        CT->SetProp(EProperty::STDIN);
-        return OK;
-    }
-
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_stdin_path(CT->Stdin.Path.ToString());
+        spec.set_stdin_path(CT->Streams[0].Value);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
@@ -1684,41 +1666,14 @@ public:
     }
 } static StdinPath;
 
-class TStdoutPath: public TStdStreamProperty {
+class TStdoutPath final: public TStdStreamProperty<1> {
 public:
     TStdoutPath()
         : TStdStreamProperty(P_STDOUT_PATH, EProperty::STDOUT, "Container standard output path")
     {}
 
-    TError Save(std::string &value) override {
-        return TStdStreamProperty::SaveStream(value, CT->Stdout);
-    }
-
-    TError Restore(const std::string &value) override {
-        return TStdStreamProperty::LoadStream(value, CT->Stdout);
-    }
-
-    TError Get(std::string &value) const override {
-        value = CT->Stdout.Path.ToString();
-        return OK;
-    }
-
-    TError Set(const std::string &value) override {
-        auto error = CT->Stdout.SetInside(value, *CL);
-        if (error)
-            return error;
-        CT->SetProp(EProperty::STDOUT);
-        return OK;
-    }
-
-    TError Start(void) override {
-        if (CT->OsMode && !CT->HasProp(EProperty::STDOUT))
-            CT->Stdout.SetOutside("/dev/null");
-        return OK;
-    }
-
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_stdout_path(CT->Stdout.Path.ToString());
+        spec.set_stdout_path(CT->Streams[1].Value);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
@@ -1730,41 +1685,14 @@ public:
     }
 } static StdoutPath;
 
-class TStderrPath: public TStdStreamProperty {
+class TStderrPath final: public TStdStreamProperty<2> {
 public:
     TStderrPath()
         : TStdStreamProperty(P_STDERR_PATH, EProperty::STDERR, "Container standard error path")
     {}
 
-    TError Save(std::string &value) override {
-        return TStdStreamProperty::SaveStream(value, CT->Stderr);
-    }
-
-    TError Restore(const std::string &value) override {
-        return TStdStreamProperty::LoadStream(value, CT->Stderr);
-    }
-
-    TError Get(std::string &value) const override {
-        value = CT->Stderr.Path.ToString();
-        return OK;
-    }
-
-    TError Set(const std::string &value) override {
-        auto error = CT->Stderr.SetInside(value, *CL);
-        if (error)
-            return error;
-        CT->SetProp(EProperty::STDERR);
-        return OK;
-    }
-
-    TError Start(void) override {
-        if (CT->OsMode && !CT->HasProp(EProperty::STDERR))
-            CT->Stderr.SetOutside("/dev/null");
-        return OK;
-    }
-
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_stderr_path(CT->Stderr.Path.ToString());
+        spec.set_stderr_path(CT->Streams[2].Value);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
@@ -1784,7 +1712,7 @@ public:
         IsDynamic = true;
     }
     TError Get(std::string &value) const override {
-        value = std::to_string(CT->Stdout.Limit);
+        value = std::to_string(CT->StdoutLimit);
         return OK;
     }
 
@@ -1793,8 +1721,7 @@ public:
         if (limit > limit_max && !CL->IsSuperUser())
             return TError(EError::Permission, "Maximum limit is: " + std::to_string(limit_max));
 
-        CT->Stdout.Limit = limit;
-        CT->Stderr.Limit = limit;
+        CT->StdoutLimit = limit;
         CT->SetProp(EProperty::STDOUT_LIMIT);
         return OK;
     }
@@ -1809,7 +1736,7 @@ public:
     }
 
     void Dump(rpc::TContainerSpec &spec) const override {
-        spec.set_stdout_limit(CT->Stdout.Limit);
+        spec.set_stdout_limit(CT->StdoutLimit);
     }
 
     bool Has(const rpc::TContainerSpec &spec) const override {
@@ -1821,7 +1748,7 @@ public:
     }
 } static StdoutLimit;
 
-class TStdoutOffset: public TProperty {
+class TStdoutOffset final: public TProperty {
 public:
     TStdoutOffset()
         : TProperty(P_STDOUT_OFFSET, EProperty::NONE, "Offset of stored stdout")
@@ -1829,17 +1756,18 @@ public:
         IsReadOnly = true;
         IsRuntimeOnly = true;
     }
+
     TError Get(std::string &value) const override {
-        value = std::to_string(CT->Stdout.Offset);
+        value = std::to_string(CT->StreamOffsets[0]);
         return OK;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-        spec.set_stdout_offset(CT->Stdout.Offset);
+        spec.set_stdout_offset(CT->StreamOffsets[0]);
     }
 } static StdoutOffset;
 
-class TStderrOffset: public TProperty {
+class TStderrOffset final: public TProperty {
 public:
     TStderrOffset()
         : TProperty(P_STDERR_OFFSET, EProperty::NONE, "Offset of stored stderr")
@@ -1847,58 +1775,58 @@ public:
         IsReadOnly = true;
         IsRuntimeOnly = true;
     }
+
     TError Get(std::string &value) const override {
-        value = std::to_string(CT->Stderr.Offset);
+        value = std::to_string(CT->StreamOffsets[1]);
         return OK;
     }
 
     void Dump(rpc::TContainerStatus &spec) const override {
-        spec.set_stderr_offset(CT->Stderr.Offset);
+        spec.set_stderr_offset(CT->StreamOffsets[1]);
     }
 } static StderrOffset;
 
-class TStdout: public TProperty {
+template <int Stream>
+class TStdStreamData: public TProperty {
 public:
-    TStdout()
-        : TProperty(P_STDOUT, EProperty::NONE, "Read stdout [[offset][:length]]")
+    TStdStreamData(const char *name, const char *desc)
+        : TProperty(name, EProperty::NONE, desc)
     {
         IsReadOnly = true;
         IsRuntimeOnly = true;
     }
+
     TError Get(std::string &value) const override {
-        return CT->Stdout.Read(*CT, value);
+        return CT->ReadStream(Stream, value, ":");
     }
+
     TError GetIndexed(const std::string &index, std::string &value) override {
-        return CT->Stdout.Read(*CT, value, index);
+        return CT->ReadStream(Stream, value, index);
     }
+};
+
+class TStdout final: public TStdStreamData<1> {
+public:
+    TStdout()
+        : TStdStreamData(P_STDOUT, "Read stdout [[offset][:length]]")
+    {}
 
     void DumpIndexed(const std::string &index, rpc::TContainerStatus &spec) override {
         std::string value;
-        auto error = GetIndexed(index, value);
-        if (!error)
+        if (!GetIndexed(index, value))
             spec.set_stdout(value);
     }
 } static Stdout;
 
-class TStderr: public TProperty {
+class TStderr final: public TStdStreamData<2> {
 public:
     TStderr()
-        : TProperty(P_STDERR, EProperty::NONE, "Read stderr [[offset][:length]])")
-    {
-        IsReadOnly = true;
-        IsRuntimeOnly = true;
-    }
-    TError Get(std::string &value) const override {
-        return CT->Stderr.Read(*CT, value);
-    }
-    TError GetIndexed(const std::string &index, std::string &value) override {
-        return CT->Stderr.Read(*CT, value, index);
-    }
+        : TStdStreamData(P_STDERR, "Read stderr [[offset][:length]]")
+    {}
 
     void DumpIndexed(const std::string &index, rpc::TContainerStatus &spec) override {
         std::string value;
-        auto error = GetIndexed(index, value);
-        if (!error)
+        if (!GetIndexed(index, value))
             spec.set_stderr(value);
     }
 } static Stderr;

@@ -2599,10 +2599,39 @@ static void TestMd5(Porto::Connection &) {
     ExpectEq(tmp, hash);
 }
 
+static void TestOpenInRoot(Porto::Connection &) {
+    char directory[] = "/tmp/porto-root-XXXXXX";
+    Expect(mkdtemp(directory));
+    const TPath path(directory);
+    TFile root, file, pin;
+    ExpectOk(root.OpenDir(path));
+    ExpectOk(file.Create(path / "value", O_RDWR | O_CREAT | O_CLOEXEC, 0600));
+    ExpectOk(file.WriteAll("pinned"));
+    ExpectOk(root.SymlinkAt("absolute", "/value"));
+
+    ExpectOk(pin.OpenInRoot(root, "/absolute", O_PATH | O_CLOEXEC));
+    ExpectEq(pin.RealPath(), path / "value");
+    ExpectOk(pin.OpenInRoot(root, "../../value", O_PATH | O_CLOEXEC));
+    ExpectEq(pin.RealPath(), path / "value");
+    ExpectOk(file.Open(pin.ProcPath(), O_RDONLY | O_CLOEXEC));
+    std::string text;
+    ExpectOk(file.Read(text));
+    ExpectEq(text, "pinned");
+    ExpectOk(root.SymlinkAt("outside", "/etc/passwd"));
+    ExpectEq(pin.OpenInRoot(root, "outside", O_PATH | O_CLOEXEC).Errno, ENOENT);
+    ExpectEq(pin.RealPath(), path / "value");
+
+    ExpectOk(root.OpenDir("/proc/self/root"));
+    ExpectEq(file.OpenInRoot(root, pin.ProcPath(), O_PATH | O_CLOEXEC).Errno, ELOOP);
+    ExpectOk(path.RemoveAll());
+}
+
 static void TestProcUtils(Porto::Connection &) {
     uint64_t currentTime = GetCurrentTimeMs() / 1000;
     uint64_t startTime;
-    ExpectOk(GetProcStartTime(GetPid(), startTime));
+    TFile proc;
+    ExpectOk(proc.OpenDir("/proc/self"));
+    ExpectOk(GetProcStartTime(proc, startTime));
 
     // Convert ticks to seconds
     startTime /= sysconf(_SC_CLK_TCK);
@@ -5227,6 +5256,7 @@ int SelfTest(std::vector<std::string> args) {
         { "format", TestFormat },
         { "md5sum", TestMd5 },
         { "proc", TestProcUtils },
+        { "open_in_root", TestOpenInRoot },
         { "histogramm", TestHistogramm },
         { "async_wait", TestAsyncWait },
         { "root", TestRoot },

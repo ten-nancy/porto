@@ -131,10 +131,14 @@ TError GetProc(pid_t pid, const std::string &knob, std::string &value) {
     return TPath(fmt::format("/proc/{}/{}", pid, knob)).ReadAll(value, 64 << 10);
 }
 
-TError GetProcStartTime(pid_t pid, uint64_t &time) {
-    std::string stat;
+TError GetProcStartTime(const TFile &procFd, uint64_t &time) {
+    TFile file;
+    auto error = file.OpenAt(procFd, "stat", O_CLOEXEC | O_RDONLY | O_NOCTTY);
+    if (error)
+        return error;
 
-    auto error = GetProc(pid, "stat", stat);
+    std::string stat;
+    error = file.ReadAll(stat, 64 << 10);
     if (error)
         return error;
 

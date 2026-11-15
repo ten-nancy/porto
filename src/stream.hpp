@@ -1,44 +1,71 @@
 #pragma once
 
-#include <string>
-#include <util/path.hpp>
+#include <vector>
 
-class TContainer;
-class TClient;
+#include "util/cred.hpp"
+#include "util/file.hpp"
 
-class TStdStream {
-public:
-    int Stream; /* 0 - stdin, 1 - stdout, 2 - stderr */
-    TPath Path;
-    bool Outside = false;
-    uint64_t Limit = 0;
-    uint64_t Offset = 0;
-    struct stat PathStat;
+struct TStreamSpec {
+    enum class ESource { Null, Host, Container, Redirect };
 
-    TStdStream(int stream)
-        : Stream(stream)
-    {
-        memset(&PathStat, 0, sizeof(PathStat));
-    }
+    ESource Source = ESource::Null;
+    std::string Value;
+    uint64_t Inode = 0;
+    uint64_t Device = 0;
 
-    void SetOutside(const std::string &path) {
-        Path = path;
-        Outside = true;
-    }
+    TStreamSpec() = default;
+    TStreamSpec(ESource source, const std::string &value)
+        : Source(source),
+          Value(value)
+    {}
 
-    TError SetInside(const std::string &path, const TClient &client, bool restore = false);
-    static bool IsNull(const std::string &path);
-    bool IsNull(void) const;
-    static bool IsRedirect(const std::string &path);
-    bool IsRedirect(void) const;
-    TPath ResolveOutside(const TContainer &container) const;
+    TStreamSpec(ESource source, const std::string &value, uint64_t ino, uint64_t dev)
+        : Source(source),
+          Value(value),
+          Inode(ino),
+          Device(dev)
+    {}
 
-    TError Open(const TPath &path, const TCred &cred);
-    TError OpenOutside(const TContainer &container, const TClient &client);
-    TError OpenInside(const TContainer &container);
-
-    TError Remove(const TContainer &container);
-
-    TError Rotate(const TContainer &container);
-    TError Read(const TContainer &container, std::string &text, const std::string &range = "") const;
+    static TError Parse(const TFile &procFd, const std::string &value, TStreamSpec &spec);
+    static TError Restore(const std::string &value, TStreamSpec &spec);
+    std::string Save() const;
 };
+
+// A source is used only during acquisition. Its directory FD is borrowed.
+class TStreamSource {
+    const int DirFd;
+    const TPath Path;
+    const uint64_t Resolve;
+
+    TError Open(int flags, TFile &file) const;
+
+public:
+    explicit TStreamSource(const TPath &path);
+    TStreamSource(const TFile &dir, const TPath &path);
+    explicit TStreamSource(const TFile &pin);
+
+    TError OpenInput(TFile &file) const;
+    TError OpenOutput(TFile &file) const;
+    TError OpenOrCreateOutput(TFile &file) const;
+    TError OpenOwnedOutput(const TCred &cred, TFile &file) const;
+};
+
+class TStream {
+    int Target;
+    TPath Path;
+    TFile File;
+
+public:
+    TStream(int target, const TPath &path)
+        : Target(target),
+          Path(path)
+    {}
+    TStream(int target, TFile &&file)
+        : Target(target),
+          File(std::move(file))
+    {}
+
+    TError Install();
+};
+
+using TStreams = std::vector<TStream>;

@@ -1,18 +1,19 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
 #include "cgroup.hpp"
 #include "env.hpp"
 #include "filesystem.hpp"
+#include "stream.hpp"
 #include "util/cred.hpp"
 #include "util/namespace.hpp"
 #include "util/path.hpp"
 #include "util/unix.hpp"
 
 class TContainer;
-class TClient;
 class TPidFd;
 
 struct TTaskEnv {
@@ -24,7 +25,6 @@ struct TTaskEnv {
     };
 
     std::shared_ptr<TContainer> CT;
-    TClient *Client;
     TFile PortoInit;
     TMountNamespace Mnt;
 
@@ -47,6 +47,7 @@ struct TTaskEnv {
     std::string ResctrlGroup;
     TCred Cred;
     uid_t LoginUid;
+    TStreams Streams;
 
     TUnixSocket Sock, MasterSock;
 

@@ -29,7 +29,6 @@ extern "C" {
 
 // FIXME replace with streaming someday
 constexpr size_t MOUNT_INFO_LIMIT = 64 << 20;
-constexpr off_t ROTATE_OFFSET_LIMIT = 16384;  // 16Kb
 
 static TError umountAll(const char *path, int flags) {
     flags |= UMOUNT_NOFOLLOW;
@@ -705,68 +704,6 @@ TError TPath::SetXAttr(const std::string &name, const std::string &value) const 
 TError TPath::Truncate(off_t size) const {
     if (truncate(c_str(), size))
         return TError::System("truncate(" + Path + ")");
-    return OK;
-}
-
-TError TPath::RotateLog(off_t max_disk_usage, off_t &loss) const {
-    struct stat st;
-    off_t hole_len;
-    size_t pos = 0;
-    TError error;
-    TFile file;
-    std::string buf;
-
-    error = file.Open(*this, O_RDWR | O_CLOEXEC | O_NOCTTY);
-    if (error)
-        return error;
-
-    error = file.Stat(st);
-    if (error)
-        return error;
-
-    if (!S_ISREG(st.st_mode) || (st.st_size <= max_disk_usage) || (st.st_size <= st.st_blksize)) {
-        loss = 0;
-        return OK;
-    }
-
-    /* Keep half of allowed size and block size alignment */
-    hole_len = st.st_size - max_disk_usage / 2;
-    hole_len -= hole_len % st.st_blksize;
-    loss = hole_len;
-
-    /* Try to find endline and extend hole */
-    error = file.Lseek(hole_len, SEEK_SET);
-    if (!error) {
-        buf.reserve(std::min(max_disk_usage / 2, ROTATE_OFFSET_LIMIT));
-        error = file.Read(buf);
-        if (!error) {
-            pos = buf.find_first_of('\n');
-            if (pos != std::string::npos)
-                pos++;
-        }
-
-        file.Lseek(0, SEEK_SET);
-    }
-
-    /* Hole collapse */
-    if (fallocate(file.Fd, FALLOC_FL_COLLAPSE_RANGE, 0, hole_len)) {
-        /* Truncate to zero */
-        L_WRN("Cannot collapse hole: {} {}", Path, strerror(errno));
-        loss = st.st_size;
-        error = file.Truncate(0);
-        if (error)
-            return error;
-    }
-
-    /* Space is ignored by json parser, for example, "k8s.io/kubernetes/pkg/kubelet/kuberuntime/logs" */
-    if (pos > 0 && pos != std::string::npos) {
-        buf.resize(pos);
-        buf.assign(pos, ' ');
-        error = file.WriteAll(buf);
-        if (error)
-            return error;
-    }
-
     return OK;
 }
 
