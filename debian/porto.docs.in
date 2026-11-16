@@ -1,4 +1,5 @@
 doc/porto.md
 src/rpc.proto
+src/error.proto
 src/config.proto
 src/seccomp.proto

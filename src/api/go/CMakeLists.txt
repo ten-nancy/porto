@@ -7,16 +7,19 @@ cmake_minimum_required(VERSION 3.18)
 # it's a part of proto-go plugin (https://github.com/golang/protobuf)
 # see https://protobuf.dev/reference/go/faq/
 add_custom_command(
-	OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/rpc
-	DEPENDS ${src_SOURCE_DIR}/rpc.proto
+	OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/rpc/rpc.pb.go
+	       ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/rpc/error.pb.go
+	DEPENDS ${src_SOURCE_DIR}/rpc.proto ${src_SOURCE_DIR}/error.proto ${src_SOURCE_DIR}/seccomp.proto
 	COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --go_out=${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg --go_opt=Mseccomp.proto=github.com/ten-nancy/porto/src/api/go/porto/pkg/seccomp
- --proto_path=${src_SOURCE_DIR} ${src_SOURCE_DIR}/rpc.proto
+ --proto_path=${src_SOURCE_DIR} ${src_SOURCE_DIR}/rpc.proto ${src_SOURCE_DIR}/error.proto
 	VERBATIM)
 
 add_custom_command(
-	OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/seccomp
+	OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/seccomp/seccomp.pb.go
 	DEPENDS ${src_SOURCE_DIR}/seccomp.proto
 	COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --go_out=${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg --proto_path=${src_SOURCE_DIR} ${src_SOURCE_DIR}/seccomp.proto
 	VERBATIM)
 
-add_custom_target(go_rpc_proto ALL DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/rpc ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/seccomp)
+add_custom_target(go_rpc_proto ALL DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/rpc/rpc.pb.go
+                                         ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/rpc/error.pb.go
+                                         ${CMAKE_CURRENT_SOURCE_DIR}/porto/pkg/seccomp/seccomp.pb.go)

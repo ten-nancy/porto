@@ -6,7 +6,7 @@ add_definitions(-DCPPHTTPLIB_CONNECTION_TIMEOUT_SECOND=5)
 add_definitions(-DCPPHTTPLIB_USE_POLL)
 add_definitions(-DCPPHTTPLIB_OPENSSL_SUPPORT)
 
-PROTOBUF_GENERATE_CPP(RPC_PROTO_SRCS RPC_PROTO_HDRS rpc.proto seccomp.proto)
+PROTOBUF_GENERATE_CPP(RPC_PROTO_SRCS RPC_PROTO_HDRS rpc.proto error.proto seccomp.proto)
 add_library(rpc_proto STATIC ${RPC_PROTO_SRCS})
 set_source_files_properties(${RPC_PROTO_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-unused-variable")
 

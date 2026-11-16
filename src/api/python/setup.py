@@ -18,7 +18,7 @@ def readme():
 
 if __name__ == '__main__':
 
-    for x in ['rpc', 'seccomp']:
+    for x in ['rpc', 'error', 'seccomp']:
         try:
             import subprocess
             subprocess.check_call(['protoc', '--python_out=porto', '--proto_path=../..', '{}.proto'.format(x)])
@@ -29,7 +29,10 @@ if __name__ == '__main__':
             sys.stderr.write("Compiled {}.proto not found\n".format(x))
             sys.exit(-1)
 
-    subprocess.check_call(['sed', '-i', 's/^import seccomp_pb2/from . import seccomp_pb2/', 'porto/rpc_pb2.py'])
+    subprocess.check_call(['sed', '-i',
+                           '-e', 's/^import error_pb2/from . import error_pb2/',
+                           '-e', 's/^from error_pb2 import/from .error_pb2 import/',
+                           '-e', 's/^import seccomp_pb2/from . import seccomp_pb2/', 'porto/rpc_pb2.py'])
 
     setup(name='portopy',
           version=version(),
@@ -40,6 +43,6 @@ if __name__ == '__main__':
           maintainer_email='porto@yandex-team.ru',
           license='GNU LGPL v3 License',
           packages=['porto'],
-          package_data={'porto': ['rpc.proto', 'seccomp.proto']},
+          package_data={'porto': ['rpc.proto', 'error.proto', 'seccomp.proto']},
           install_requires=['protobuf'],
           zip_safe=False)
