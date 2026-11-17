@@ -2013,6 +2013,7 @@ __attribute__((noinline)) static TError GetSystemProperties(const rpc::TGetSyste
     rsp->set_porto_version(PORTO_VERSION);
     rsp->set_porto_revision(PORTO_REVISION);
     rsp->set_kernel_version(config().linux_version());
+    rsp->set_cgroup_version(CgroupDriver.UseCgroup2() ? 2 : 1);
     rsp->set_errors(Statistics->Errors);
     rsp->set_warnings(Statistics->Warns);
     rsp->set_fatals(Statistics->Fatals);

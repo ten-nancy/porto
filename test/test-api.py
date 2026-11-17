@@ -25,6 +25,8 @@ c.Dlist()
 c.Vlist()
 c.Version()
 
+ExpectEq(c.Call("GetSystem")["cgroup_version"], 2 if GetUseCgroup2() else 1)
+
 c.ContainerProperties()
 c.VolumeProperties()
 
