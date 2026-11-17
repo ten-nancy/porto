@@ -426,52 +426,6 @@ public:
         return fmt::format("jail {}{}", Size, Node < 0 ? "" : fmt::format("; node {}", Node));
     }
 
-    static std::shared_ptr<TCpuSetSpec> Parse(const TTuple &jailCfg, const TTuple &nodeCfg) {
-        int node = -1;
-        if (nodeCfg.size()) {
-            if (nodeCfg.size() != 2)
-                return nullptr;
-            if (nodeCfg[0] != "node")
-                return nullptr;
-
-            unsigned val;
-            auto error = StringToUint(nodeCfg[1], val);
-            if (error)
-                return nullptr;
-
-            if (!NumaNodes.Get(val))
-                return nullptr;
-
-            node = (int)val;
-        }
-
-        if (jailCfg.size() != 2 || jailCfg[0] != "jail")
-            return nullptr;
-
-        unsigned size;
-        auto error = StringToUint(jailCfg[1], size);
-        if (error)
-            return nullptr;
-
-        if (CheckJail(size, node))
-            return nullptr;
-
-        return std::make_shared<TJailSpec>(size, node);
-    }
-
-    static TError CheckJail(unsigned size, int node) {
-        if (!size)
-            return TError(EError::InvalidValue, "Jail size must be greater than zero");
-
-        if (size > HostCpus.Weight())
-            return TError(EError::InvalidValue, "Jail size exceeds host");
-
-        if (node >= 0 && size > NodeThreads[node].Weight())
-            return TError(EError::InvalidValue, "Jail size exceeds numa node");
-
-        return OK;
-    }
-
     void Dump(rpc::TContainerCpuSet &spec) const override {
         spec.set_policy("jail");
         spec.set_arg(Node);
@@ -499,61 +453,31 @@ std::shared_ptr<TCpuSetSpec> TCpuSetSpec::Empty() {
 }
 
 std::shared_ptr<TCpuSetSpec> TCpuSetSpec::Parse(const TContainer &container, const std::string &text) {
+    rpc::TContainerCpuSet cfg;
     if (text == "" || text == "all" || text == "inherit")
-        return std::make_shared<TInheritSpec>(container);
+        return Load(container, cfg);
 
     auto cfgs = SplitEscapedString(text, ' ', ';');
-
-    switch (cfgs.size()) {
-    case 1: {
-        auto &cfg = cfgs[0];
-
-        switch (cfg.size()) {
-        case 1: {
-            TBitMap affinity;
-            auto error = affinity.Parse(cfg[0]);
-            if (error)
+    if (cfgs.size() == 1 && cfgs[0].size() == 1) {
+        cfg.set_policy("set");
+        cfg.set_list(cfgs[0][0]);
+    } else {
+        for (const auto &part: cfgs) {
+            if (part.size() != 2)
                 return nullptr;
-
-            if (!affinity.IsSubsetOf(HostCpus))
+            int value;
+            if (StringToInt(part[1], value) || value < 0)
                 return nullptr;
-
-            return std::make_shared<TAbsoluteSpec>(affinity);
+            if (part[0] == "node" && !cfg.has_arg())
+                cfg.set_arg(value);
+            else if (part[0] == "jail" && !cfg.has_jail())
+                cfg.set_jail(value);
+            else
+                return nullptr;
         }
-        case 2: {
-            auto &type = cfg[0];
-            if (type == "node") {
-                unsigned node;
-                auto error = StringToUint(cfg[1], node);
-                if (error)
-                    return nullptr;
-
-                if (!NumaNodes.Get(node))
-                    return nullptr;
-
-                return std::make_shared<TNodeSpec>(node);
-            } else if (type == "jail")
-                return TJailSpec::Parse(cfg, {});
-            return nullptr;
-        }
-        default:
-            return nullptr;
-        }
+        cfg.set_policy(cfg.has_jail() ? "jail" : "node");
     }
-    case 2: {
-        if (cfgs[0].size() != 2)
-            return nullptr;
-
-        // canonical form: "jail J; node N"
-        auto cannonical = cfgs[0][0] == "jail";
-        auto &jailCfg = cannonical ? cfgs[0] : cfgs[1];
-        auto &nodeCfg = cannonical ? cfgs[1] : cfgs[0];
-
-        return TJailSpec::Parse(jailCfg, nodeCfg);
-    }
-    default:
-        return nullptr;
-    }
+    return Load(container, cfg);
 }
 
 std::shared_ptr<TCpuSetSpec> TCpuSetSpec::Load(const TContainer &container, const rpc::TContainerCpuSet &cfg) {
@@ -562,29 +486,36 @@ std::shared_ptr<TCpuSetSpec> TCpuSetSpec::Load(const TContainer &container, cons
 
     if (cfg.policy() == "set") {
         TBitMap affinity;
-
         if (cfg.has_list()) {
-            auto error = affinity.Parse(cfg.list());
-            if (error)
+            if (affinity.Parse(cfg.list()))
                 return nullptr;
         } else {
-            for (auto cpu: cfg.cpu())
+            for (auto cpu: cfg.cpu()) {
+                if (!HostCpus.Get(cpu))
+                    return nullptr;
                 affinity.Set(cpu);
+            }
         }
-
+        if (!affinity.Weight() || !affinity.IsSubsetOf(HostCpus))
+            return nullptr;
         return std::make_shared<TAbsoluteSpec>(affinity);
     }
 
-    if (cfg.policy() == "node")
+    if (cfg.policy() == "node") {
+        if (!cfg.has_arg() || !NumaNodes.Get(cfg.arg()))
+            return nullptr;
         return std::make_shared<TNodeSpec>(cfg.arg());
+    }
 
     if (cfg.policy() == "jail") {
         auto size = cfg.jail();
-        auto node = cfg.has_arg() ? cfg.arg() : -1;
-        if (TJailSpec::CheckJail(size, node))
+        auto node = cfg.has_arg() ? cfg.arg() : UINT_MAX;
+        if (size <= 0 || unsigned(size) > HostCpus.Weight())
             return nullptr;
 
-        return std::make_shared<TJailSpec>(size, node);
+        if (node != UINT_MAX && (!NumaNodes.Get(node) || unsigned(size) > NodeThreads[node].Weight()))
+            return nullptr;
+        return std::make_shared<TJailSpec>(size, node == UINT_MAX ? -1 : int(node));
     }
 
     return nullptr;
