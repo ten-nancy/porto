@@ -4259,6 +4259,7 @@ static void KillMaster(Porto::Connection &api, int sig, int times = 10) {
     if (kill(pid, sig))
         Fail("Cannot kill portod-master");
     WaitProcessExit(std::to_string(pid));
+
     WaitPortod(api, times);
 
     expectedRespawns++;

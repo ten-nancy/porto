@@ -9,6 +9,9 @@ class TEventQueue;
 int PortodMaster();
 bool SanityCheck();
 
+// portorun.cpp
+int PortodRun();
+
 extern TPidFile MasterPidFile;
 extern pid_t MasterPid;
 extern bool RespawnPortod;

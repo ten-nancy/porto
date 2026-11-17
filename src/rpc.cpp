@@ -33,7 +33,6 @@ extern "C" {
 #include <unistd.h>
 }
 
-extern __thread char ReqId[9];
 extern uint32_t RequestHandlingDelayMs;
 
 static bool PortodFrozen = false;

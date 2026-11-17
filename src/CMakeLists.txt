@@ -10,6 +10,11 @@ PROTOBUF_GENERATE_CPP(RPC_PROTO_SRCS RPC_PROTO_HDRS rpc.proto error.proto seccom
 add_library(rpc_proto STATIC ${RPC_PROTO_SRCS})
 set_source_files_properties(${RPC_PROTO_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-unused-variable")
 
+PROTOBUF_GENERATE_CPP(TASK_PROTO_SRCS TASK_PROTO_HDRS task.proto mount.proto stream.proto)
+add_library(task_proto STATIC ${TASK_PROTO_SRCS})
+set_source_files_properties(${TASK_PROTO_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-unused-variable")
+add_dependencies(task_proto rpc_proto)
+
 PROTOBUF_GENERATE_CPP(KV_PROTO_SRCS KV_PROTO_HDRS kv.proto)
 add_library(kv_proto STATIC ${KV_PROTO_SRCS})
 set_source_files_properties(${KV_PROTO_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-unused-variable")
@@ -47,7 +52,7 @@ include_directories(${libporto_SOURCE_DIR})
 find_library(LIBSECCOMP NAMES libseccomp.a REQUIRED)
 
 add_library(portocore main.cpp master.cpp server.cpp core.cpp cgroup.cpp rpc.cpp container.cpp
-	    cpuset.cpp event.cpp task.cpp env.cpp device.cpp nbd.cpp
+	    cpuset.cpp event.cpp task.cpp taskwire.cpp portorun.cpp env.cpp device.cpp nbd.cpp
 	    network.cpp netlimitsoft.cpp filesystem.cpp volume.cpp storage.cpp resctrl.cpp
 	    kvalue.cpp config.cpp property.cpp loop.cpp
 	    epoll.cpp client.cpp stream.cpp helpers.cpp waiter.cpp bpf.cpp
@@ -55,9 +60,11 @@ add_library(portocore main.cpp master.cpp server.cpp core.cpp cgroup.cpp rpc.cpp
 
 find_library(LIBTCMALLOC NAMES libtcmalloc_minimal.a REQUIRED)
 target_link_libraries(portocore nlohmann-safe version porto utilbase util config
-		      rpc_proto kv_proto metrics
+		      task_proto rpc_proto kv_proto metrics
 		      rt fmt ${PROTOBUF_STATIC_LIBRARY} ${LIBNL} ${LIBNL_ROUTE} ${LIBNL_IDIAG} ${LIBSSL} ${LIBCRYPTO}
 		      ${LIBBPF} ${LIBELF} ${LIBZ} ${LIBZSTD} ${LIBTCMALLOC} ${LIBNL_GENL} ${LIBSECCOMP} pthread)
+
+add_dependencies(portocore task_proto)
 
 add_executable(portod main.cpp)
 target_link_libraries(portod portocore)
@@ -73,6 +80,7 @@ target_include_directories(portoctl-top PUBLIC ${CURSES_INCLUDE_DIR})
 add_executable(portoinit portoinit.c)
 target_link_libraries(portoinit version)
 set_target_properties(portoinit PROPERTIES LINK_FLAGS "-static")
+add_dependencies(portod portoinit)
 
 install(
 	TARGETS portod portoctl

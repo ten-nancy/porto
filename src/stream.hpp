@@ -5,6 +5,10 @@
 #include "util/cred.hpp"
 #include "util/file.hpp"
 
+namespace runtime {
+class TStreamSpec;
+}
+
 struct TStreamSpec {
     enum class ESource { Null, Host, Container, Redirect };
 
@@ -31,40 +35,22 @@ struct TStreamSpec {
     std::string Save() const;
 };
 
-// A source is used only during acquisition. Its directory FD is borrowed.
-class TStreamSource {
-    const int DirFd;
-    const TPath Path;
-    const uint64_t Resolve;
-
-    TError Open(int flags, TFile &file) const;
-
-public:
-    explicit TStreamSource(const TPath &path);
-    TStreamSource(const TFile &dir, const TPath &path);
-    explicit TStreamSource(const TFile &pin);
-
-    TError OpenInput(TFile &file) const;
-    TError OpenOutput(TFile &file) const;
-    TError OpenOrCreateOutput(TFile &file) const;
-    TError OpenOwnedOutput(const TCred &cred, TFile &file) const;
-};
-
+// Authorization and path pinning belong to portod; I/O opens run in the task's cgroups.
 class TStream {
     int Target;
     TPath Path;
     TFile File;
 
+    TError OpenFile(int dirFd, int flags, uint64_t resolve);
+    TError OpenHost(const TFile &dir, uid_t uid, gid_t gid);
+    TError OpenContainer();
+
 public:
-    TStream(int target, const TPath &path)
-        : Target(target),
-          Path(path)
-    {}
-    TStream(int target, TFile &&file)
-        : Target(target),
-          File(std::move(file))
+    explicit TStream(int target)
+        : Target(target)
     {}
 
+    TError Open(const runtime::TStreamSpec &spec, std::vector<TFile> &fds);
     TError Install();
 };
 

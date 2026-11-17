@@ -1226,18 +1226,13 @@ TError TContainer::GetThreadCount(uint64_t &count) const {
 }
 
 TError TContainer::GetProcessCount(uint64_t &count) const {
-    TError error;
     if (IsRoot()) {
-        struct stat st;
-        error = TPath("/proc").StatStrict(st);
-        if (error)
-            return error;
-        count = st.st_nlink > ProcBaseDirs ? st.st_nlink - ProcBaseDirs : 0;
-    } else {
-        auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
-        return CgroupDriver.GetCgroupProcessCount(*cg, count);
+        count = 0;
+        return OK;
     }
-    return OK;
+
+    auto cg = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.FreezerSubsystem.get());
+    return CgroupDriver.GetCgroupProcessCount(*cg, count);
 }
 
 TError TContainer::GetVmStat(TVmStat &stat) const {
@@ -2463,100 +2458,276 @@ found:
     return OK;
 }
 
-TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
-    TError error;
+void TContainer::DumpMount(runtime::TMountSpec &spec) const {
+    spec.Clear();
+    spec.set_cwd(GetCwd().ToString());
+    spec.set_root(Root);
+    spec.set_host_root(RootPath.ToString());
+    spec.set_root_ro(RootRo);
+    spec.set_bind_porto_sock(AccessLevel != EAccessLevel::None);
+    spec.set_isolate_run(Root == "/" && OsMode && Isolate);
+    spec.set_run_size(GetMemLimit() / 2);
+    spec.set_systemd(OsMode && Isolate && (Controllers & CGROUP_SYSTEMD)
+                         ? CgroupDriver.GetContainerCgroup(*this, CgroupDriver.SystemdSubsystem.get())->GetName()
+                         : "");
 
-    TaskEnv.CT = shared_from_this();
+    const auto &cred = Parent->RootPath.IsRoot() ? CL->TaskCred : TCred(RootUser, RootGroup);
+    spec.set_bind_uid(cred.GetUid());
+    spec.set_bind_gid(cred.GetGid());
+    for (auto group: cred.Groups)
+        spec.add_bind_groups(group);
+    for (const auto &link: Symlink) {
+        auto entry = spec.add_symlink();
+        entry->set_path(link.first.ToString());
+        entry->set_target(link.second.ToString());
+    }
 
-    TaskEnv.Cgroups = CgroupDriver.GetContainerCgroups(*this);
+    spec.set_mount_cgroup_fs(CgroupFs != ECgroupFs::None);
+    spec.set_rw_cgroup_fs(CgroupFs == ECgroupFs::Rw);
+    spec.set_cgroup2(CgroupDriver.UseCgroup2());
+    spec.set_hugetlb(CgroupDriver.HugetlbSubsystem->Supported);
+    spec.set_enable_tracefs(config().container().enable_tracefs());
+    spec.set_rw_net_cgroups(config().container().enable_rw_net_cgroups());
+    spec.set_dev_size(config().container().dev_size());
+    spec.set_devpts_max(config().container().devpts_max());
+}
 
-    /* membw is set at most once per branch, use the group of that container */
-    for (auto ct = this; !ct->IsRoot(); ct = ct->Parent.get()) {
-        if (ct->HasProp(EProperty::MEM_BW)) {
-            TaskEnv.ResctrlGroup = ResctrlGroupName(ct->Name);
+TError TContainer::PrepareBindMount(TBindMount bind, runtime::TMountSpec &spec) {
+    /* Resolve paths in parent namespace and check volume ownership. */
+    if (!bind.Source.IsAbsolute())
+        bind.Source = Parent->GetCwd() / bind.Source;
+    auto src = TVolume::ResolveOrigin(Parent->RootPath / bind.Source);
+    bind.ControlSource = src && !CL->CanControl(src->Volume->VolumeOwner);
+
+    if (!bind.Target.IsAbsolute())
+        bind.Target = GetCwd() / bind.Target;
+    auto dst = TVolume::ResolveOrigin(Parent->RootPath / Root / bind.Target);
+    bind.ControlTarget = dst && !CL->CanControl(dst->Volume->VolumeOwner);
+
+    /* Allow suid inside by default. */
+    if (!(bind.Attr.Set & MOUNT_ATTR_NOSUID))
+        bind.Attr.Clr |= MOUNT_ATTR_NOSUID;
+
+    /* This allows injecting suid binaries into host. */
+    if (Parent->RootPath.IsRoot() && Root != "/" && bind.Source.IsDirectoryFollow()) {
+        TStatFS stat;
+        if (!bind.Source.StatFS(stat) && (stat.MntFlags & MS_ALLOW_SUID)) {
+            L("Bindmount source {} allows suid in host", bind.Source);
+            TaintFlags.BindWithSuid = true;
+        }
+    }
+
+    if (bind.Attr.Clr & MOUNT_ATTR_NODEV) {
+        if (!OwnerCred.IsRootUser())
+            return TError(EError::Permission, "Not enough permissions to allow devices at bind mount");
+    } else
+        bind.Attr.Set |= MOUNT_ATTR_NODEV;
+
+    auto entry = spec.add_bind();
+    entry->set_source(bind.Source.ToString());
+    entry->set_target(bind.Target.ToString());
+    entry->set_attr_set(bind.Attr.Set);
+    entry->set_attr_clr(bind.Attr.Clr);
+    entry->set_propagation(bind.Propagation);
+    entry->set_recursive(bind.Recursive);
+    entry->set_control_source(bind.ControlSource);
+    entry->set_control_target(bind.ControlTarget);
+    return OK;
+}
+
+TError TContainer::PrepareMounts(runtime::TTaskSpec &spec) {
+    auto &mount = *spec.mutable_mount();
+    DumpMount(mount);
+    for (const auto &bind: BindMounts) {
+        auto error = PrepareBindMount(bind, mount);
+        if (error)
+            return error;
+    }
+
+    /* Legacy bind_dns also binds /etc/hosts. */
+    if (BindDns && Root != "/") {
+        TBindMount bind;
+        bind.Source = "/etc/hosts";
+        bind.Target = "/etc/hosts";
+        bind.Attr.Set = MOUNT_ATTR_RDONLY;
+        auto error = PrepareBindMount(bind, mount);
+        if (error)
+            return error;
+    }
+
+    // Create a mount namespace if we have to make any changes.
+    spec.set_new_mount_ns(Isolate || mount.isolate_run() || (Level == 1 && !HostMode) || mount.bind_size() ||
+                          !Hostname.empty() || !ResolvConf.empty() || !EtcHosts.empty() || Root != "/" || RootRo ||
+                          !mount.systemd().empty());
+    if (spec.new_mount_ns() && (HostMode || JobMode))
+        return TError(EError::InvalidValue, "Cannot change mount-namespace in this virt_mode");
+    return OK;
+}
+
+TError TContainer::OpenTaskNamespaces(TNamespaceFd &pidFd) const {
+    auto target = this;
+    while (target && !target->WaitTask.Pid)
+        target = target->Parent.get();
+    if (!target)
+        return OK;
+
+    return pidFd.Open(target->WaitTask.Pid);
+}
+
+void TContainer::DumpTaskCredentials(runtime::TTaskSpec &spec) {
+    spec.set_uid(TaskCred.GetUid());
+    spec.set_gid(TaskCred.GetGid());
+    for (auto group: TaskCred.Groups)
+        spec.add_groups(group);
+    spec.set_login_uid(OsMode ? NoUser : OwnerCred.GetUid());
+    spec.set_cap_ambient(uint64_t(CapAmbient));
+    spec.set_cap_bound(uint64_t(CapBound));
+    spec.set_init_cap_bound(uint64_t(PortoInitCapabilities));
+    spec.set_umask(Umask);
+    spec.set_ulimit(GetUlimit().Format());
+    if (!SessionInfo.IsEmpty())
+        spec.set_session_info(SessionInfo.ToString());
+}
+
+void TContainer::DumpTaskCommand(runtime::TTaskSpec &spec) {
+    spec.set_meta(IsMeta());
+    spec.set_command(Command);
+    spec.set_command_argv(HasProp(EProperty::COMMAND_ARGV));
+    for (const auto &arg: CommandArgv)
+        spec.add_argv(arg);
+    for (auto ct = this; ct; ct = ct->Parent.get()) {
+        if (!ct->Seccomp.Empty()) {
+            ct->Seccomp.Dump(*spec.mutable_seccomp());
             break;
         }
     }
+}
 
-    TaskEnv.Mnt.Cwd = GetCwd();
+void TContainer::DumpTaskDevices(runtime::TTaskSpec &spec) {
+    for (const auto &dev: EffectiveDevices().Devices) {
+        if (!dev.Allowed())
+            continue;
+        auto entry = spec.add_devices();
+        entry->set_path(dev.PathInside.ToString());
+        entry->set_node(dev.Node);
+        entry->set_mode(dev.Mode);
+        entry->set_uid(dev.Uid);
+        entry->set_gid(dev.Gid);
+        entry->set_wildcard(dev.Wildcard);
+        entry->set_may_mknod(dev.MayMknod);
+    }
+}
 
-    TaskEnv.Mnt.Root = Root;
-    TaskEnv.Mnt.HostRoot = RootPath;
+TError TContainer::DumpTaskSysctl(runtime::TTaskSpec &spec) {
+    if (Isolate) {
+        for (const auto &value: config().container().ipc_sysctl()) {
+            auto entry = spec.add_sysctl();
+            entry->set_key(value.key());
+            entry->set_value(value.val());
+        }
+    }
+    for (const auto &value: Sysctl) {
+        if (TNetwork::NetworkSysctl(value.first)) {
+            if (!NetIsolate)
+                return TError(EError::Permission, "Sysctl {} requires net isolation", value.first);
+            continue;
+        }
+        if (std::find(IpcSysctls.begin(), IpcSysctls.end(), value.first) == IpcSysctls.end())
+            return TError(EError::Permission, "Sysctl {} is not allowed", value.first);
+        if (!Isolate)
+            return TError(EError::Permission, "Sysctl {} requires ipc isolation", value.first);
+        auto entry = spec.add_sysctl();
+        entry->set_key(value.first);
+        entry->set_value(value.second);
+    }
+    if (!(HasProp(EProperty::RESOLV_CONF) ? ResolvConf.empty() : Root == "/"))
+        spec.set_resolv_conf(ResolvConf.empty() ? RootContainer->ResolvConf : ResolvConf);
+    spec.set_etc_hosts(EtcHosts);
+    spec.set_hostname(Hostname);
+    return OK;
+}
 
-    TaskEnv.Mnt.RootRo = RootRo;
+TError TContainer::DumpTaskScheduling(runtime::TTaskSpec &spec) {
+    spec.set_oom_score_adj(OomScoreAdj);
+    if (HasProp(EProperty::COREDUMP_FILTER))
+        spec.set_coredump_filter(CoredumpFilter);
+    spec.set_sched_nice(SchedNice);
+    spec.set_sched_policy(SchedPolicy);
+    spec.set_sched_priority(SchedPrio);
+    spec.set_io_priority(IoPrio);
+    if (SchedNoSmt) {
+        TBitMap affinity;
+        auto error = GetCpuAffinity(affinity);
+        if (error)
+            return error;
+        spec.set_cpu_affinity(GetNoSmtCpus(affinity).Format());
+    }
+    for (const auto &cg: CgroupDriver.GetContainerCgroups(*this)) {
+        if (cg->IsSubsystem(CGROUP_NETCLS) && !config().network().enable_netcls_classid())
+            continue;
+        if (cg->IsSecondary())
+            return TError("Cannot attach to secondary cgroup {}", cg->Type());
+        spec.add_cgroup_procs((cg->HasLeaf() ? cg->Leaf()->Knob("cgroup.procs") : cg->Knob("cgroup.procs")).ToString());
+    }
+    /* membw is set at most once per branch, use the group of that container. */
+    for (auto ct = this; !ct->IsRoot(); ct = ct->Parent.get()) {
+        if (ct->HasProp(EProperty::MEM_BW)) {
+            spec.set_resctrl_group(ResctrlGroupName(ct->Name));
+            break;
+        }
+    }
+    return OK;
+}
 
-    TaskEnv.Mnt.RunSize = GetMemLimit() / 2;
-
-    TaskEnv.Mnt.BindCred = Parent->RootPath.IsRoot() ? CL->TaskCred : TCred(RootUser, RootGroup);
-
-    if (OsMode && Isolate && (Controllers & CGROUP_SYSTEMD))
-        TaskEnv.Mnt.Systemd = CgroupDriver.GetContainerCgroup(*this, CgroupDriver.SystemdSubsystem.get())->GetName();
-
-    TaskEnv.Cred = TaskCred;
-
-    TaskEnv.LoginUid = OsMode ? -1 : OwnerCred.GetUid();
-
-    error = GetEnvironment(TaskEnv.Env);
+TError TContainer::PrepareTaskSpec(TTaskEnv &env) {
+    Task.Pid = TaskVPid = WaitTask.Pid = SeizeTask.Pid = 0;
+    env.Sock.SetDeadline(GetCurrentTimeMs() + config().container().start_timeout_ms());
+    auto error = PrepareStreams(env);
     if (error)
         return error;
 
-    /* one more fork for creating nested pid-namespace */
-    TaskEnv.TripleFork =
-        Isolate && TaskEnv.PidFd.GetFd() >= 0 && TaskEnv.PidFd.Inode() != TNamespaceFd::PidInode(getpid(), "ns/pid");
+    auto &spec = env.Spec;
+    spec.set_name(Name);
+    spec.set_id(Id);
+    spec.set_isolate(Isolate);
+    spec.set_operation_id(ReqId);
+    spec.set_verbose(Verbose);
+    spec.set_debug(Debug);
+    spec.set_ptrace_protection(config().daemon().ptrace_protection());
+    spec.set_autoconf_timeout(config().network().autoconf_timeout_s());
+    DumpTaskCredentials(spec);
+    DumpTaskCommand(spec);
+    DumpTaskDevices(spec);
+    error = DumpTaskSysctl(spec);
+    if (error)
+        return error;
+    return DumpTaskScheduling(spec);
+}
 
-    TaskEnv.QuadroFork = !JobMode && !OsMode && !IsMeta();
+TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
+    TError error;
 
-    TaskEnv.Mnt.BindMounts = BindMounts;
-    TaskEnv.Mnt.Symlink = Symlink;
-
-    /* legacy kludge */
-    if (BindDns && !TaskEnv.Mnt.Root.IsRoot()) {
-        TBindMount bm;
-        bm.Source = "/etc/hosts";
-        bm.Target = "/etc/hosts";
-        bm.Attr.Set |= MOUNT_ATTR_RDONLY;
-        TaskEnv.Mnt.BindMounts.push_back(bm);
+    TEnv env;
+    error = GetEnvironment(env);
+    if (error)
+        return error;
+    for (const auto &var: env.Vars) {
+        if (!var.Set)
+            continue;
+        auto entry = TaskEnv.Spec.add_env();
+        entry->set_name(var.Name);
+        entry->set_value(var.Value);
     }
 
-    /* Resolve paths in parent namespace and check volume ownership */
-    for (auto &bm: TaskEnv.Mnt.BindMounts) {
-        if (!bm.Source.IsAbsolute())
-            bm.Source = Parent->GetCwd() / bm.Source;
+    TaskEnv.Spec.set_quadro_fork(Isolate && !JobMode && !OsMode && !IsMeta());
 
-        auto src = TVolume::ResolveOrigin(Parent->RootPath / bm.Source);
-        bm.ControlSource = src && !CL->CanControl(src->Volume->VolumeOwner);
+    error = PrepareMounts(TaskEnv.Spec);
+    if (error)
+        return error;
 
-        if (!bm.Target.IsAbsolute())
-            bm.Target = TaskEnv.Mnt.Cwd / bm.Target;
-
-        auto dst = TVolume::ResolveOrigin(Parent->RootPath / TaskEnv.Mnt.Root / bm.Target);
-        bm.ControlTarget = dst && !CL->CanControl(dst->Volume->VolumeOwner);
-
-        /* allow suid inside by default */
-        if (!(bm.Attr.Set & MOUNT_ATTR_NOSUID))
-            bm.Attr.Clr |= MOUNT_ATTR_NOSUID;
-
-        /* this allows to inject suid binaries into host */
-        if (Parent->RootPath.IsRoot() && !TaskEnv.Mnt.Root.IsRoot() && bm.Source.IsDirectoryFollow()) {
-            TStatFS stat;
-            if (!bm.Source.StatFS(stat) && (stat.MntFlags & MS_ALLOW_SUID)) {
-                L("Bindmount source {} allows suid in host", bm.Source);
-                TaintFlags.BindWithSuid = true;
-            }
-        }
-
-        if (bm.Attr.Clr & MOUNT_ATTR_NODEV) {
-            if (!OwnerCred.IsRootUser())
-                return TError(EError::Permission, "Not enough permissions to allow devices at bind mount");
-        } else
-            bm.Attr.Set |= MOUNT_ATTR_NODEV;
-    }
-
-    TaskEnv.Mnt.BindPortoSock = AccessLevel != EAccessLevel::None;
-
-    if (IsMeta() || TaskEnv.TripleFork || TaskEnv.QuadroFork) {
+    if (IsMeta() || TaskEnv.Spec.quadro_fork()) {
         TPath path = TPath(PORTO_HELPERS_PATH) / "portoinit";
-        TError error = TaskEnv.PortoInit.OpenRead(path);
+        error = TaskEnv.PortoInit.OpenRead(path);
         if (error) {
             TPath exe("/proc/self/exe");
             error = exe.ReadLink(path);
@@ -2568,16 +2739,6 @@ TError TContainer::PrepareTask(TTaskEnv &TaskEnv) {
                 return error;
         }
     }
-
-    TaskEnv.Mnt.IsolateRun = TaskEnv.Mnt.Root.IsRoot() && OsMode && Isolate;
-
-    // Create new mount namespaces if we have to make any changes
-    TaskEnv.NewMountNs = Isolate || TaskEnv.Mnt.IsolateRun || (Level == 1 && !HostMode) ||
-                         TaskEnv.Mnt.BindMounts.size() || Hostname.size() || ResolvConf.size() || EtcHosts.size() ||
-                         !TaskEnv.Mnt.Root.IsRoot() || TaskEnv.Mnt.RootRo || !TaskEnv.Mnt.Systemd.empty();
-
-    if (TaskEnv.NewMountNs && (HostMode || JobMode))
-        return TError(EError::InvalidValue, "Cannot change mount-namespace in this virt_mode");
 
     return OK;
 }
@@ -2658,12 +2819,11 @@ TUlimit TContainer::GetUlimit() const {
     return res;
 }
 
-static TError OpenRedirect(const TStreamSpec &spec, int stream, TFile &file) {
+static TError PinRedirect(const TStreamSpec &spec, int stream, TFile &pin) {
     int fd;
     auto error = StringToInt(spec.Value.substr(8), fd);
     if (error || fd < 0)
         return TError(EError::InvalidValue, "Invalid stream redirect {}", spec.Value);
-    TFile pin;
     error = pin.OpenAt(CL->ProcFd, fmt::format("fd/{}", fd), O_PATH | O_CLOEXEC);
     if (error)
         return TError(EError::InvalidValue, error.Errno, error.Text);
@@ -2680,40 +2840,31 @@ static TError OpenRedirect(const TStreamSpec &spec, int stream, TFile &file) {
     if (spec.Inode != st.st_ino || spec.Device != st.st_dev)
         return TError(EError::Permission, "Stream descriptor changed: {}", spec.Value);
 
-    const TStreamSource source(pin);
-    return stream ? source.OpenOutput(file) : source.OpenInput(file);
+    return OK;
 }
 
-TError TContainer::OpenHostStream(int stream, TFile &file) const {
-    const auto &spec = Streams[stream];
-    if (spec.Source == TStreamSpec::ESource::Redirect)
-        return OpenRedirect(spec, stream, file);
-    if (spec.Source == TStreamSpec::ESource::Null) {
-        const TStreamSource source("/dev/null");
-        return stream ? source.OpenOutput(file) : source.OpenInput(file);
-    }
-
-    TFile dir;
-    auto error = OpenWorkDir(dir);
-    if (error)
-        return error;
-    return TStreamSource(dir, spec.Value).OpenOwnedOutput(TaskCred, file);
-}
-
-TError TContainer::OpenStreams(TStreams &streams) {
+TError TContainer::PrepareStreams(TTaskEnv &env) {
     for (int stream = 0; stream < 3; ++stream) {
         const auto &spec = Streams[stream];
-        if (spec.Source == TStreamSpec::ESource::Container) {
-            streams.emplace_back(stream, spec.Value);
-            continue;
+        TFile pin;
+        TError error;
+        if (spec.Source == TStreamSpec::ESource::Redirect) {
+            error = PinRedirect(spec, stream, pin);
+        } else if (spec.Source == TStreamSpec::ESource::Host) {
+            error = OpenWorkDir(pin);
         }
-
-        TFile file;
-        auto error = OpenHostStream(stream, file);
         if (error)
             return error;
 
-        streams.emplace_back(stream, std::move(file));
+        auto entry = env.Spec.add_streams();
+        entry->set_source(static_cast<runtime::TStreamSpec::ESource>(spec.Source));
+        entry->set_path(spec.Value);
+        entry->set_uid(TaskCred.GetUid());
+        entry->set_gid(TaskCred.GetGid());
+        if (pin) {
+            entry->set_pin(env.StreamPins.size());
+            env.StreamPins.emplace_back(std::move(pin));
+        }
     }
     return OK;
 }
@@ -2835,11 +2986,25 @@ TError TContainer::ReadStream(int stream, std::string &text, const std::string &
     return OK;
 }
 
-TError TContainer::StartTask() {
-    TTaskEnv TaskEnv;
-    TError error;
+void TContainer::UpdateTaskSession() {
+    if (!config().daemon().enable_gideon_sessions())
+        return;
+    TSessionInfo info;
+    auto error = CL->GetClientSession(info);
+    if (error)
+        L_WRN("failed to get session info for client {}: {}", CL->Pid, error);
+    if (info.IsEmpty())
+        return;
 
-    error = TNetwork::StartNetwork(*this, TaskEnv);
+    L_DBG("setting implicit gideon session info for CT \"{}\": {}", Name, info.ToString());
+    if (!SessionInfo.IsEmpty())
+        L_WRN("overriding session info for {} \"{}\" -> \"{}\"", Name, SessionInfo.ToString(), info.ToString());
+    SessionInfo = info;
+}
+
+TError TContainer::StartTask() {
+    TTaskEnv TaskEnv(WaitTask, Task, TaskVPid);
+    auto error = TNetwork::StartNetwork(*this, TaskEnv);
     if (error)
         return error;
 
@@ -2856,7 +3021,7 @@ TError TContainer::StartTask() {
     if (error)
         return error;
 
-    error = TaskEnv.OpenNamespaces(*this);
+    error = OpenTaskNamespaces(TaskEnv.PidFd);
     if (error)
         return error;
 
@@ -2865,26 +3030,14 @@ TError TContainer::StartTask() {
         return error;
 
     /* Meta container without namespaces don't need task */
-    if (IsMeta() && !Isolate && NetInherit && !TaskEnv.NewMountNs)
+    if (IsMeta() && !Isolate && NetInherit && !TaskEnv.Spec.new_mount_ns())
         return OK;
 
-    if (config().daemon().enable_gideon_sessions()) {
-        TSessionInfo info;
-        error = CL->GetClientSession(info);
-        if (error) {
-            L_WRN("failed to get session info for client {}: {}", CL->Pid, error);
-        }
-        if (!info.IsEmpty()) {
-            L_DBG("setting implicit gideon session info for CT \"{}\": {}", this->Name, info.ToString());
-            if (!this->SessionInfo.IsEmpty()) {
-                L_WRN("overriding session info for {} \"{}\" -> \"{}\"", this->Name, this->SessionInfo.ToString(),
-                      info.ToString());
-            }
-            this->SessionInfo = info;
-        }
-    }
+    UpdateTaskSession();
 
-    error = TaskEnv.Start();
+    error = PrepareTaskSpec(TaskEnv);
+    if (!error)
+        error = TaskEnv.SpawnTask();
     DevicesPath = EffectiveDevices().AllowedPaths();
 
     /* Always report OOM situation if any */

@@ -24,7 +24,7 @@ __thread char ReqId[9];
 TStatistics *Statistics = nullptr;
 std::map<std::string, TStatistic> PortoStatMembers;
 
-void InitStatistics() {
+void MapStatistics() {
     TError error;
     TFile file;
 
@@ -36,9 +36,14 @@ void InitStatistics() {
         file.Close();
     }
 
-    Statistics = (TStatistics *)mmap(nullptr, sizeof(TStatistics), PROT_READ | PROT_WRITE,
-                                     MAP_SHARED | (file ? 0 : MAP_ANONYMOUS), file.Fd, 0);
-    PORTO_ASSERT(Statistics != nullptr);
+    void *mapping =
+        mmap(nullptr, sizeof(TStatistics), PROT_READ | PROT_WRITE, MAP_SHARED | (file ? 0 : MAP_ANONYMOUS), file.Fd, 0);
+    PORTO_ASSERT(mapping != MAP_FAILED);
+    Statistics = static_cast<TStatistics *>(mapping);
+}
+
+void InitStatistics() {
+    MapStatistics();
 
     PortoStatMembers.insert(std::make_pair("spawned", TStatistic(&TStatistics::PortoStarts)));
     PortoStatMembers.insert(std::make_pair("errors", TStatistic(&TStatistics::Errors)));

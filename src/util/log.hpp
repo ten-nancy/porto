@@ -14,6 +14,7 @@ extern bool StdLog;
 extern bool Verbose;
 extern bool Debug;
 extern TFile LogFile;
+extern __thread char ReqId[9];
 
 void OpenLog();
 void OpenLog(const TPath &path);
@@ -120,6 +121,7 @@ extern std::map<std::string, TStatistic> PortoStatMembers;
 
 extern TStatistics *Statistics;
 
+void MapStatistics();
 void InitStatistics();
 
 static inline void ResetStatistics() {

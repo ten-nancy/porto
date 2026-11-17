@@ -2738,7 +2738,7 @@ TError TNetwork::StartNetwork(TContainer &ct, TTaskEnv &task) {
 
     for (auto &dev: env.Devices) {
         if (dev.Autoconf)
-            task.Autoconf.push_back(dev.Name);
+            task.Spec.add_autoconf(dev.Name);
         if (dev.Type == "tap") {
             auto lock = env.Net->LockNet();
             error = env.CreateTap(dev);

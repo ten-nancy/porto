@@ -1,0 +1,43 @@
+syntax = "proto2";
+
+package runtime;
+
+message TMountSpec {
+    message TBind {
+        required string source = 1;
+        required string target = 2;
+        required uint64 attr_set = 3;
+        required uint64 attr_clr = 4;
+        required uint64 propagation = 5;
+        required bool recursive = 6;
+        required bool control_source = 7;
+        required bool control_target = 8;
+    }
+
+    message TSymlink {
+        required string path = 1;
+        required string target = 2;
+    }
+
+    required string cwd = 1;
+    required string root = 2;
+    required string host_root = 3;
+    required bool root_ro = 4;
+    required bool bind_porto_sock = 5;
+    required bool isolate_run = 6;
+    required uint64 run_size = 7;
+    required string systemd = 8;
+    required uint32 bind_uid = 9;
+    required uint32 bind_gid = 10;
+    repeated uint32 bind_groups = 11;
+    repeated TBind bind = 12;
+    repeated TSymlink symlink = 13;
+    required bool mount_cgroup_fs = 14;
+    required bool rw_cgroup_fs = 15;
+    required bool cgroup2 = 16;
+    required bool hugetlb = 17;
+    required bool enable_tracefs = 18;
+    required bool rw_net_cgroups = 19;
+    required uint64 dev_size = 20;
+    required uint64 devpts_max = 21;
+}

@@ -1,8 +1,7 @@
 #include "filesystem.hpp"
 
-#include "cgroup.hpp"
-#include "config.hpp"
-#include "container.hpp"
+#include "common.hpp"
+#include "mount.pb.h"
 #include "util/log.hpp"
 #include "util/mount.hpp"
 
@@ -261,6 +260,47 @@ TError TBindMount::Mount(const TCred &cred, const TPath &target_root) const {
     return OK;
 }
 
+static TBindMount LoadBind(const runtime::TMountSpec::TBind &spec) {
+    TBindMount bind;
+    bind.Source = spec.source();
+    bind.Target = spec.target();
+    bind.Attr.Set = spec.attr_set();
+    bind.Attr.Clr = spec.attr_clr();
+    bind.Propagation = spec.propagation();
+    bind.Recursive = spec.recursive();
+    bind.ControlSource = spec.control_source();
+    bind.ControlTarget = spec.control_target();
+    return bind;
+}
+
+void TMountNamespace::Load(const runtime::TMountSpec &spec) {
+    Cwd = spec.cwd();
+    Root = spec.root();
+    HostRoot = spec.host_root();
+    RootRo = spec.root_ro();
+    BindPortoSock = spec.bind_porto_sock();
+    IsolateRun = spec.isolate_run();
+    RunSize = spec.run_size();
+    Systemd = spec.systemd();
+    BindCred.SetUid(spec.bind_uid());
+    BindCred.SetGid(spec.bind_gid());
+    BindCred.Groups.assign(spec.bind_groups().begin(), spec.bind_groups().end());
+    BindMounts.clear();
+    for (const auto &bind: spec.bind())
+        BindMounts.push_back(LoadBind(bind));
+    Symlink.clear();
+    for (const auto &link: spec.symlink())
+        Symlink[link.path()] = link.target();
+    MountCgroupFs = spec.mount_cgroup_fs();
+    RwCgroupFs = spec.rw_cgroup_fs();
+    Cgroup2 = spec.cgroup2();
+    Hugetlb = spec.hugetlb();
+    EnableTracefs = spec.enable_tracefs();
+    RwNetCgroups = spec.rw_net_cgroups();
+    DevSize = spec.dev_size();
+    DevPtsMax = spec.devpts_max();
+}
+
 TError TMountNamespace::MountRun() {
     TPath run = "run";
     std::vector<std::string> run_paths, subdirs;
@@ -422,7 +462,7 @@ TError TMountNamespace::MountTraceFs() {
 
     TPath tracefs = "sys/kernel/tracing";
     TPath parent_tracefs = "/sys/kernel/tracing";
-    if (!config().container().enable_tracefs() || !tracefs.Exists())
+    if (!EnableTracefs || !tracefs.Exists())
         return OK;
 
     struct statfs st;
@@ -480,10 +520,8 @@ TError TMountNamespace::MountSystemd() {
     return error;
 }
 
-TError TMountNamespace::MountCgroups(const TContainer &ct) {
-    bool rwCgroupFs = ct.CgroupFs == ECgroupFs::Rw;
-
-    L_DBG("rwCgroupFs {}", rwCgroupFs);
+TError TMountNamespace::MountCgroups() {
+    L_DBG("rwCgroupFs {}", RwCgroupFs);
     TError error;
     TPath tmpfs = "sys/fs/cgroup";
 
@@ -496,24 +534,19 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         return error;
 
     for (const auto &cg: getCgroupInfos()) {
-        if (CgroupDriver.UseCgroup2()) {
-            if (!cg.Cgroup2)
-                continue;
-        } else {
-            if (!cg.Cgroup1)
-                continue;
-        }
+        if (!(Cgroup2 ? cg.Cgroup2 : cg.Cgroup1))
+            continue;
 
         TPath cgroup = tmpfs / cg.Path;
         error = cgroup.MkdirAll(0755);
         if (error)
             return error;
 
-        bool rw = rwCgroupFs && !(cg.Path == "net_cls,net_prio" && !config().container().enable_rw_net_cgroups());
+        bool rw = RwCgroupFs && (cg.Path != "net_cls,net_prio" || RwNetCgroups);
         uint64_t flags = MS_NOSUID | MS_NOEXEC | MS_NODEV;
         L_DBG("rw: {}", rw);
-        // for cgroup2 event RO is required we mount it for RW and then remount for RO
-        if (rw || (cg.Path == "" && cg.Cgroup2))
+        // The cgroup2 root is remounted read-only after mounting its children.
+        if (rw || (cg.Path.empty() && cg.Cgroup2))
             flags |= MS_ALLOW_WRITE;
         else
             flags |= MS_RDONLY;
@@ -538,8 +571,7 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
         {"sys/fs/cgroup/net_cls", "net_cls,net_prio"},
         {"sys/fs/cgroup/net_prio", "net_cls,net_prio"},
     };
-
-    if (!CgroupDriver.UseCgroup2()) {
+    if (!Cgroup2) {
         for (auto &s: symlinks) {
             error = s.path.Symlink(s.target);
             if (error)
@@ -548,7 +580,7 @@ TError TMountNamespace::MountCgroups(const TContainer &ct) {
     }
 
     /* cgroup2 is mounted at /sys/fs/cgroup itself, keep it writable for rw cgroupfs */
-    if (CgroupDriver.UseCgroup2() && rwCgroupFs && config().container().enable_rw_net_cgroups())
+    if (Cgroup2 && RwCgroupFs && RwNetCgroups)
         return OK;
 
     return SetMountAttr(TFile(), tmpfs, {MOUNT_ATTR_RDONLY, 0, 0}, false);
@@ -595,15 +627,14 @@ TError TMountNamespace::SetupRoot() {
         unsigned long flags;
         std::vector<std::string> opts;
     } mounts[] = {
-        {"dev", "tmpfs", MS_NOSUID | MS_STRICTATIME,
-         {"mode=755", "size=" + std::to_string(config().container().dev_size())}},
-        {"dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, {"newinstance", "ptmxmode=0666", "mode=620", "gid=5",
-                                                      "max=" + std::to_string(config().container().devpts_max())}},
+        {"dev", "tmpfs", MS_NOSUID | MS_STRICTATIME, {"mode=755", "size=" + std::to_string(DevSize)}},
+        {"dev/pts", "devpts", MS_NOSUID | MS_NOEXEC,
+         {"newinstance", "ptmxmode=0666", "mode=620", "gid=5", "max=" + std::to_string(DevPtsMax)}},
         {"sys", "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_RDONLY, {}},
     };
 
     for (auto &m: mounts) {
-        error = m.target.MkdirAll(0755);
+        auto error = m.target.MkdirAll(0755);
         if (!error)
             error = m.target.Mount(m.type, m.type, m.flags, m.opts);
         if (error)
@@ -616,7 +647,6 @@ TError TMountNamespace::SetupRoot() {
 
     if (BindPortoSock) {
         TPath sock(PORTO_SOCKET_PATH);
-        // TPath portoctl(PORTO_PORTOCTL_PATH);
         TPath dest = dot / sock;
 
         error = dest.Mkfile(0);
@@ -657,7 +687,7 @@ TError TMountNamespace::SetupRoot() {
             return error;
     }
 
-    if (CgroupDriver.HugetlbSubsystem->Supported) {
+    if (Hugetlb) {
         TPath path("dev/hugepages");
         error = path.Mkdir(0755);
         if (error)
@@ -720,7 +750,7 @@ TError TMountNamespace::ProtectProc() {
     return OK;
 }
 
-TError TMountNamespace::Setup(const TContainer &ct) {
+TError TMountNamespace::Setup() {
     TPath dot(".");
     TError error;
 
@@ -820,7 +850,7 @@ TError TMountNamespace::Setup(const TContainer &ct) {
             return error;
 
         TPath tracefs = "/sys/kernel/tracing";
-        if (config().container().enable_tracefs() && tracefs.Exists()) {
+        if (EnableTracefs && tracefs.Exists()) {
             error = tracefs.Mount("none", "tracefs", MS_NOEXEC | MS_NOSUID | MS_NODEV, {"mode=755"});
             if (error && error.Errno != EBUSY)
                 L_SYS("Cannot mount tracefs: {}", error);
@@ -846,8 +876,8 @@ TError TMountNamespace::Setup(const TContainer &ct) {
     if (error)
         return error;
 
-    if (ct.CgroupFs != ECgroupFs::None)
-        error = MountCgroups(ct);
+    if (MountCgroupFs)
+        error = MountCgroups();
     else
         error = MountSystemd();
 

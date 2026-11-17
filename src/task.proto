@@ -1,0 +1,71 @@
+syntax = "proto2";
+package runtime;
+import "mount.proto";
+import "stream.proto";
+import "seccomp.proto";
+
+// Private, same-build startup protocol. Descriptors are indices in the SCM_RIGHTS list.
+message TTaskSpec {
+    reserved 4, 9, 21, 22, 25, 26, 27, 28;
+    reserved "triple_fork", "reserve_init_fd", "ipc_fd", "uts_fd", "mnt_fd", "root_fd", "cwd_fd", "cg_fd";
+
+    required string name = 2;
+    required uint32 id = 3;
+    optional bool quadro_fork = 5;
+    optional bool new_mount_ns = 6;
+    optional bool isolate = 7;
+    optional bool meta = 8;
+    required TMountSpec mount = 10;
+    repeated TStreamSpec streams = 11;
+    repeated string cgroup_procs = 12;
+    optional string resctrl_group = 13;
+    optional int32 oom_score_adj = 14;
+    optional uint32 coredump_filter = 15;
+    optional int32 sched_nice = 16;
+    optional int32 sched_policy = 17;
+    optional int32 sched_priority = 18;
+    optional string cpu_affinity = 19;
+    optional int32 io_priority = 20;
+    optional int32 net_fd = 23 [default = -1];
+    // Parent container pidfd: IPC, UTS, PID, mount and cgroup namespaces share this identity.
+    optional int32 pid_fd = 24 [default = -1];
+    optional int32 init_fd = 29 [default = -1];
+    optional int32 log_fd = 30 [default = -1];
+    optional bool verbose = 31;
+    optional bool debug = 32;
+    required uint32 uid = 33;
+    required uint32 gid = 34;
+    repeated uint32 groups = 35;
+    required uint32 login_uid = 36;
+    optional uint64 cap_ambient = 37;
+    optional uint64 cap_bound = 38;
+    optional uint64 init_cap_bound = 39;
+    optional uint32 umask = 40;
+    optional string ulimit = 41;
+    message TEnvVar { required string name = 1; required string value = 2; }
+    repeated TEnvVar env = 42;
+    optional string command = 43;
+    repeated string argv = 44;
+    optional bool command_argv = 45;
+    optional seccomp.TProfile seccomp = 46;
+    optional string session_info = 47;
+    message TSysctl { required string key = 1; required string value = 2; }
+    repeated TSysctl sysctl = 48;
+    optional string resolv_conf = 49;
+    optional string etc_hosts = 50;
+    optional string hostname = 51;
+    repeated string autoconf = 52;
+    optional uint32 autoconf_timeout = 53;
+    message TDevice {
+        required string path = 1;
+        required uint64 node = 2;
+        required uint32 uid = 3;
+        required uint32 gid = 4;
+        required uint32 mode = 5;
+        optional bool wildcard = 6;
+        optional bool may_mknod = 7;
+    }
+    repeated TDevice devices = 54;
+    optional bool ptrace_protection = 55;
+    optional string operation_id = 56;
+}

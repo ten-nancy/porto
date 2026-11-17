@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -9,7 +10,9 @@
 #include "util/mount.hpp"
 #include "util/namespace.hpp"
 
-class TContainer;
+namespace runtime {
+class TMountSpec;
+}
 
 struct TBindMount {
     TPath Source;
@@ -51,6 +54,15 @@ public:
     uint64_t RunSize;
     std::string Systemd;
 
+    bool MountCgroupFs = false;
+    bool RwCgroupFs = false;
+    bool Cgroup2 = false;
+    bool Hugetlb = false;
+    bool EnableTracefs = false;
+    bool RwNetCgroups = false;
+    uint64_t DevSize = 0;
+    uint64_t DevPtsMax = 0;
+
     TNamespaceFd HostNs;
     TNamespaceFd ContainerNs;
 
@@ -60,9 +72,10 @@ public:
     TError ProtectProc();
     TError MountTraceFs();
     TError MountSystemd();
-    TError MountCgroups(const TContainer &ct);
+    TError MountCgroups();
 
-    TError Setup(const TContainer &ct);
+    void Load(const runtime::TMountSpec &spec);
+    TError Setup();
 
     TError Enter(pid_t pid);
     TError Leave();

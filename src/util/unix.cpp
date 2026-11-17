@@ -132,15 +132,12 @@ void SetDieOnParentExit(int sig) {
     (void)prctl(PR_SET_PDEATHSIG, sig, 0, 0, 0);
 }
 
-void SetPtraceProtection(bool enable) {
-    if (!enable)
-        L_SYS("PTrace protection: disabled");
-    else if (prctl(PR_SET_DUMPABLE_INIT_NS, 0, 0, 0, 0))
-        L_SYS("PTrace protection: unsupported");
-    else if (prctl(PR_GET_DUMPABLE, 0, 0, 0, 0) == 3)
-        L_SYS("PTrace protection: enabled");
-    else
-        L_SYS("PTrace protection: broken");
+TError SetPtraceProtection() {
+    if (prctl(PR_SET_DUMPABLE_INIT_NS, 0, 0, 0, 0))
+        return TError::System("PTrace protection: unsupported");
+    if (prctl(PR_GET_DUMPABLE, 0, 0, 0, 0) != 3)
+        return TError("PTrace protection: broken");
+    return OK;
 }
 
 std::string GetTaskName(pid_t pid) {
@@ -423,7 +420,7 @@ TError TUnixSocket::SendFd(int fd) const {
     return OK;
 }
 
-TError TUnixSocket::RecvFd(int &fd) const {
+TError TUnixSocket::RecvFd(int &fd, int flags) const {
     char data[1];
     struct iovec iovec = {
         .iov_base = data,
@@ -448,7 +445,7 @@ TError TUnixSocket::RecvFd(int &fd) const {
     if (error)
         return error;
 
-    int ret = recvmsg(Fd, &msghdr, 0);
+    int ret = recvmsg(Fd, &msghdr, flags);
     if (ret <= 0)
         return TError::System("cannot receive fd");
 
@@ -468,9 +465,9 @@ TError TUnixSocket::SendPidFd(const TPidFd &pidfd) const {
     return SendFd(pidfd.PidFd.Fd);
 }
 
-TError TUnixSocket::RecvPidFd(TPidFd &pidfd) const {
+TError TUnixSocket::RecvPidFd(TPidFd &pidfd, int flags) const {
     int fd;
-    auto error = RecvFd(fd);
+    auto error = RecvFd(fd, flags);
     if (error)
         return error;
     TFile tmp(fd);

@@ -9,6 +9,8 @@
 
 #include "cgroup.hpp"
 #include "device.hpp"
+#include "env.hpp"
+#include "filesystem.hpp"
 #include "metrics/metrics.hpp"
 #include "network.hpp"
 #include "property.hpp"
@@ -27,10 +29,7 @@ class TCpuSetSpec;
 class TVolume;
 class TVolumeLink;
 class TKeyValue;
-struct TBindMount;
 class TVmStat;
-
-struct TEnv;
 
 enum class EContainerState {
     Stopped,
@@ -98,7 +97,18 @@ class TContainer: public std::enable_shared_from_this<TContainer>, public TNonCo
     void ShutdownOom();
     TError PrepareCgroups(bool onRestore = false);
     TError PrepareTask(TTaskEnv &TaskEnv);
-    TError OpenHostStream(int stream, TFile &file) const;
+    TError PrepareTaskSpec(TTaskEnv &env);
+    TError PrepareStreams(TTaskEnv &env);
+    void UpdateTaskSession();
+    TError OpenTaskNamespaces(TNamespaceFd &pidFd) const;
+    void DumpTaskCredentials(runtime::TTaskSpec &spec);
+    void DumpTaskCommand(runtime::TTaskSpec &spec);
+    void DumpTaskDevices(runtime::TTaskSpec &spec);
+    TError DumpTaskSysctl(runtime::TTaskSpec &spec);
+    TError DumpTaskScheduling(runtime::TTaskSpec &spec);
+    void DumpMount(runtime::TMountSpec &spec) const;
+    TError PrepareBindMount(TBindMount bind, runtime::TMountSpec &spec);
+    TError PrepareMounts(runtime::TTaskSpec &spec);
 
     TError PrepareResources();
     TError FreeResources(bool ignore = true);
@@ -334,7 +344,6 @@ public:
 
     uint32_t CoredumpFilter;
 
-    TError OpenStreams(TStreams &streams);
     TError OpenStreamLog(int stream, TFile &file, int flags) const;
     TError ReadStream(int stream, std::string &text, const std::string &range) const;
     void RotateLogs();

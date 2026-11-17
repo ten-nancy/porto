@@ -28,6 +28,12 @@ endmacro()
 
 # interface tests
 
+add_executable(portorun-test portorun.cpp)
+target_link_libraries(portorun-test task_proto rpc_proto ${PROTOBUF_STATIC_LIBRARY} pthread)
+add_dependencies(portorun-test portod portoinit)
+add_test(NAME portorun COMMAND sudo $<TARGET_FILE:portorun-test>
+         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+set_tests_properties(portorun PROPERTIES SKIP_RETURN_CODE 77)
 ADD_PYTHON_TEST(api)
 ADD_PYTHON_TEST(wait)
 ADD_PYTHON_TEST(spec)

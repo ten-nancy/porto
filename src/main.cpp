@@ -320,6 +320,9 @@ static void Usage() {
 }
 
 int main(int argc, char **argv) {
+    if (argc == 2 && std::string(argv[1]) == "run")
+        return PortodRun();
+
     int opt = 0;
 
     while (++opt < argc && argv[opt][0] == '-') {

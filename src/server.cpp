@@ -646,12 +646,16 @@ void PrepareServer() {
     InitPortoGroups();
     InitCapabilities();
     InitIpcSysctl();
-    InitProcBaseDirs();
     TNetwork::InitializeConfig();
 
     L_SYS("Portod config:\n{}", config().DebugString());
 
-    SetPtraceProtection(config().daemon().ptrace_protection());
+    if (config().daemon().ptrace_protection()) {
+        auto error = SetPtraceProtection();
+        L_SYS("{}", error ? error.Text : "PTrace protection: enabled");
+    } else {
+        L_SYS("PTrace protection: disabled");
+    }
 
     error = TuneLimits();
     if (error)

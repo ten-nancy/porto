@@ -1,81 +1,36 @@
 #pragma once
 
-#include <array>
+#include <list>
 #include <string>
 #include <vector>
 
-#include "cgroup.hpp"
-#include "env.hpp"
-#include "filesystem.hpp"
-#include "stream.hpp"
-#include "util/cred.hpp"
+#include "taskwire.hpp"
 #include "util/namespace.hpp"
-#include "util/path.hpp"
-#include "util/unix.hpp"
-
-class TContainer;
-class TPidFd;
+#include "util/task.hpp"
 
 struct TTaskEnv {
-    enum class EMsgCode {
-        Error = 8321,
-        WaitPid = 8322,
-        TaskPid = 8323,
-        WaitAutoconf = 8325,
-    };
+    TTask &WaitTask;
+    TTask &Task;
+    pid_t &TaskVPid;
 
-    std::shared_ptr<TContainer> CT;
+    runtime::TTaskSpec Spec;
+    std::vector<TFile> StreamPins;
     TFile PortoInit;
-    TMountNamespace Mnt;
-
-    TNamespaceFd IpcFd;
-    TNamespaceFd UtsFd;
-    TNamespaceFd NetFd;
     TNamespaceFd PidFd;
-    TNamespaceFd MntFd;
-    TNamespaceFd RootFd;
-    TNamespaceFd CwdFd;
-    TNamespaceFd CgFd;
+    TNamespaceFd NetFd;
+    TUnixSocket Sock;
 
-    TEnv Env;
-    bool TripleFork;
-    bool QuadroFork;
-    std::vector<std::string> Autoconf;
-    bool NewMountNs;
-    std::list<std::unique_ptr<const TCgroup>> Cgroups;
-    /* empty if container has no membw */
-    std::string ResctrlGroup;
-    TCred Cred;
-    uid_t LoginUid;
-    TStreams Streams;
+    TTaskEnv(TTask &waitTask, TTask &task, pid_t &taskVPid)
+        : WaitTask(waitTask),
+          Task(task),
+          TaskVPid(taskVPid)
+    {}
 
-    TUnixSocket Sock, MasterSock;
-
-    TError OpenNamespaces(TContainer &ct);
-
-    TError Start();
-    TError CommunicateChild(TPidFd &waitPidFd, TPidFd &taskPidFd);
-    TError DoFork1();
-    void StartChild();
-
-    TError ConfigureChild();
-    TError WriteResolvConf();
-    TError SetHostname();
-    TError ApplySysctl();
-
-    TError WaitAutoconf();
-    TError ChildExec();
-
-    void ReportPid(EMsgCode type);
-    TError ReportError(const TError &error);
-    void Abort(const TError &error);
-    void AbortOnError(const TError &error);
-
-    void ExecPortoinit(pid_t pid);
+    TError SpawnTask();
+    TError CommunicateTask(TPidFd &waitPidFd, TPidFd &taskPidFd);
+    TError ReceiveTaskPid(TaskMsg code, TPidFd &pidFd);
+    TError Launch(TTask &task);
 };
 
 extern std::list<std::string> IpcSysctls;
 void InitIpcSysctl();
-
-extern unsigned ProcBaseDirs;
-void InitProcBaseDirs();

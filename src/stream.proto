@@ -1,0 +1,18 @@
+syntax = "proto2";
+
+package runtime;
+
+message TStreamSpec {
+    enum ESource {
+        Null = 0;
+        Host = 1;
+        Container = 2;
+        Redirect = 3;
+    }
+
+    required ESource source = 1;
+    optional string path = 2;
+    optional uint32 pin = 3;
+    optional uint32 uid = 4;
+    optional uint32 gid = 5;
+}

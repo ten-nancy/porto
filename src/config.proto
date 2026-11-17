@@ -217,6 +217,8 @@ message TConfig {
 
         repeated string docker_allowed_registry = 39;
         optional bool enable_membw_limit = 40;
+        reserved 41;
+        reserved "portorun_path";
     }
 
     message TContainerCfg {

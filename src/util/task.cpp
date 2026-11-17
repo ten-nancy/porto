@@ -8,6 +8,7 @@
 #include "unix.hpp"
 
 extern "C" {
+#include <spawn.h>
 #include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -95,6 +96,32 @@ TError TTask::Fork(bool detach) {
         PostFork = true;
     else if (!detach)
         Tasks[Pid] = this;
+    Running = true;
+    return OK;
+}
+
+TError TTask::Spawn(const char *const argv[], int sourceFd, int targetFd) {
+    posix_spawn_file_actions_t actions;
+    int ret = posix_spawn_file_actions_init(&actions);
+    if (ret)
+        return TError(EError::Unknown, ret, "posix_spawn_file_actions_init");
+
+    ret = posix_spawn_file_actions_adddup2(&actions, sourceFd, targetFd);
+    if (ret) {
+        posix_spawn_file_actions_destroy(&actions);
+        return TError(EError::Unknown, ret, "posix_spawn {}", argv[0]);
+    }
+
+    const char *envp[] = {nullptr};
+    int pid = -1;
+    auto lock = std::unique_lock<std::mutex>(ForkLock);
+    ret =
+        posix_spawn(&pid, argv[0], &actions, nullptr, const_cast<char *const *>(argv), const_cast<char *const *>(envp));
+    posix_spawn_file_actions_destroy(&actions);
+    if (ret)
+        return TError(EError::Unknown, ret, "posix_spawn {}", argv[0]);
+    Pid = pid;
+    Tasks[Pid] = this;
     Running = true;
     return OK;
 }

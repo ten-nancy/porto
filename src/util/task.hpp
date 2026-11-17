@@ -10,6 +10,7 @@ struct TTask {
     bool Running = false;
 
     TError Fork(bool detach = false);
+    TError Spawn(const char *const argv[], int sourceFd, int targetFd);
     TError Wait(bool interruptible = false, const std::atomic_bool &stop = false,
                 const std::atomic_bool &disconnected = false);
     static bool Deliver(pid_t pid, int code, int status);

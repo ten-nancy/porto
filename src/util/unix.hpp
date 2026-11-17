@@ -36,7 +36,7 @@ uint64_t GetTotalMemory();
 uint64_t GetHugetlbMemory();
 void SetProcessName(const std::string &name);
 void SetDieOnParentExit(int sig);
-void SetPtraceProtection(bool enable);
+TError SetPtraceProtection();
 std::string GetTaskName(pid_t pid = 0);
 uint64_t TaskHandledSignals(pid_t pid);
 TError GetTaskCgroups(const int pid, std::map<std::string, std::string> &cgmap);
@@ -113,11 +113,11 @@ public:
     TError SendPid(pid_t pid) const;
     TError RecvPid(pid_t &pid, pid_t &vpid) const;
     TError SendPidFd(const TPidFd &pidfd) const;
-    TError RecvPidFd(TPidFd &pidfd) const;
+    TError RecvPidFd(TPidFd &pidfd, int flags = MSG_CMSG_CLOEXEC) const;
     TError SendError(const TError &error) const;
     TError RecvError() const;
     TError SendFd(int fd) const;
-    TError RecvFd(int &fd) const;
+    TError RecvFd(int &fd, int flags = MSG_CMSG_CLOEXEC) const;
 };
 
 class TPidFile {

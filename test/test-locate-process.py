@@ -2,6 +2,7 @@
 
 import os
 import porto
+import shlex
 import types
 
 from test_common import *
@@ -22,19 +23,26 @@ def Check(ct, value):
     os.close(ct.fd1)
     os.close(ct.fd2)
     ct.Wait()
+    ExpectEq(ct["stderr"], "")
     ExpectEq(ct["exit_status"], "0")
     ExpectEq(ct.GetProperty("stdout"), value)
     ct.Stop()
 
 
-CMD = "bash -c \'read; python3 -c \"\n"\
-      "import porto; import sys;\n"\
-      "c = porto.Connection(timeout=30);\n"\
-      "try:\n"\
-      "\tname = c.LocateProcess({}).name;\n"\
-      "except:\n"\
-      "\tname=\\\"failed\\\";\n"\
-      "sys.stdout.write(name);\"\'"
+CMD0 = '''
+import porto
+import sys
+import os
+
+c = porto.Connection(timeout=30);
+try:
+        name = c.LocateProcess({}).name;
+except porto.exceptions.InvalidValue as e:
+        name = "failed"
+sys.stdout.write(name)
+'''.strip()
+CMD1 = f'read; python3 -c {shlex.quote(CMD0)}'
+CMD = f'bash -c {shlex.quote(CMD1)}'
 
 conn = porto.Connection(timeout=30)
 
@@ -73,12 +81,14 @@ ct.Check(CT_NAME("a/b"))
 
 ct.Prepare()
 ct2.SetProperty("isolate", False)
+ct.SetProperty("command", CMD.format(3))
 ct2.Start()
 ct.Check(CT_NAME("a/b"))
 
 ct.Prepare()
 ct2.SetProperty("isolate", True)
 ct.SetProperty("enable_porto", "isolate")
+ct.SetProperty("command", CMD.format(4))
 ct2.Start()
 ct.Check("b")
 
@@ -87,8 +97,7 @@ ct2.Destroy()
 ct2 = conn.Create(CT_NAME("c"))
 ct2.SetProperty("command", "sleep 1000")
 ct2.Start()
-pid = ct2.GetProperty("root_pid")
-ct.SetProperty("command", CMD.format(pid))
+ct.SetProperty("command", CMD.format(1024))
 ct.Start()
 ct.Check("failed")
 
@@ -96,7 +105,7 @@ ct.Prepare()
 ct3 = conn.Create(CT_NAME("c/c"))
 ct3.SetProperty("command", "sleep 1000")
 ct3.Start()
-ct.SetProperty("command", CMD.format(4))
+ct.SetProperty("command", CMD.format(1024))
 ct.Start()
 ct.Check("failed")
 
