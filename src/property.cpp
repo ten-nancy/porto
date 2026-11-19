@@ -1566,7 +1566,7 @@ public:
                               "Cgroup namespaces disabled in portod.conf: rw access to cgroupfs denied");
         }
 
-        if (!CT->Parent->IsRoot() && CT->CgroupFs > CT->Parent->CgroupFs)
+        if (!CT->Parent->IsRoot() && CT->CgroupFs == ECgroupFs::Rw && CT->Parent->CgroupFs != ECgroupFs::Rw)
             return TError(EError::Permission, "cgroupfs access cannot exceed that of parent container {}",
                           CT->Parent->Name);
         return OK;

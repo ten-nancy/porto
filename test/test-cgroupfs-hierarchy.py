@@ -12,7 +12,7 @@ def CheckHierarchy():
             for child_mode in modes:
                 with CreateContainer(conn, name + '/child') as child:
                     child['cgroupfs'] = child_mode
-                    if modes.index(child_mode) > modes.index(parent_mode):
+                    if child_mode == 'rw' and parent_mode != 'rw':
                         ExpectException(child.Start, porto.exceptions.PermissionError)
                         ExpectEq(child['state'], 'stopped')
                     else:
