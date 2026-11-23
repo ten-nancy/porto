@@ -554,12 +554,6 @@ TError TMountNamespace::MountCgroups() {
         error = cgroup.Mount(cg.Type, cg.Type, flags, cg.Options);
         if (error)
             return error;
-
-        if (rw) {
-            error = cgroup.Chmod(0750);
-            if (error)
-                return error;
-        }
     }
 
     static const struct {
