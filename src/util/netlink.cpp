@@ -389,6 +389,19 @@ TError TNlLink::Up() {
     return OK;
 }
 
+TError TNlLink::SetAlias(const std::string &alias) {
+    auto change = rtnl_link_alloc();
+    if (!change)
+        return Error(-NLE_NOMEM, "Cannot allocate link");
+    rtnl_link_set_ifalias(change, alias.c_str());
+    Dump("set alias", change);
+    int ret = rtnl_link_change(GetSock(), Link, change, 0);
+    rtnl_link_put(change);
+    if (ret < 0)
+        return Error(ret, "Cannot set alias");
+    return OK;
+}
+
 TError TNlLink::Remove() {
     Dump("remove");
     int ret = rtnl_link_delete(GetSock(), Link);
@@ -575,8 +588,8 @@ static const std::map<std::string, int> macvlanType = {
     {"passthru", MACVLAN_MODE_PASSTHRU},
 };
 
-TError TNlLink::AddXVlan(const std::string &vlantype, const std::string &master, uint32_t type, const std::string &hw,
-                         int mtu) {
+TError TNlLink::AddChildLink(const std::string &kind, const std::string &master, const std::string &hw, int mtu,
+                             int dataAttr, const void *data, int dataLen) {
     TError error = OK;
     int ret;
     uint32_t masterIdx;
@@ -586,8 +599,10 @@ TError TNlLink::AddXVlan(const std::string &vlantype, const std::string &master,
     struct ether_addr ea;
     auto Name = GetName();
 
+    if (hw.length() && kind == "ipoib")
+        return TError(EError::InvalidValue, "An ipoib link has no settable hardware address: " + hw);
     if (hw.length() && !ether_aton_r(hw.c_str(), &ea))
-        return TError("Invalid " + vlantype + " mac address " + hw);
+        return TError("Invalid " + kind + " mac address " + hw);
 
     TNlLink masterLink(Nl, master);
     error = masterLink.Load();
@@ -598,12 +613,12 @@ TError TNlLink::AddXVlan(const std::string &vlantype, const std::string &master,
 
     msg = nlmsg_alloc_simple(RTM_NEWLINK, NLM_F_CREATE);
     if (!msg)
-        return TError("Unable to add " + vlantype + ": no memory");
+        return TError("Unable to add " + kind + ": no memory");
 
     memset(&ifi, 0, sizeof(ifi));
     ret = nlmsg_append(msg, &ifi, sizeof(ifi), NLMSG_ALIGNTO);
     if (ret < 0) {
-        error = TError("Unable to add " + vlantype + ": " + nl_geterror(ret));
+        error = TError("Unable to add " + kind + ": " + nl_geterror(ret));
         goto free_msg;
     }
 
@@ -646,44 +661,35 @@ TError TNlLink::AddXVlan(const std::string &vlantype, const std::string &master,
     /* link type */
     linkinfo = nla_nest_start(msg, IFLA_LINKINFO);
     if (!linkinfo) {
-        error = TError("Unable to add " + vlantype + ": can't nest IFLA_LINKINFO");
+        error = TError("Unable to add " + kind + ": can't nest IFLA_LINKINFO");
         goto free_msg;
     }
-    ret = nla_put(msg, IFLA_INFO_KIND, vlantype.length() + 1, vlantype.c_str());
+    ret = nla_put(msg, IFLA_INFO_KIND, kind.length() + 1, kind.c_str());
     if (ret < 0) {
         error = TError(EError::Unknown, std::string("Unable to put IFLA_INFO_KIND: ") + nl_geterror(ret));
         goto free_msg;
     }
 
-    /* xvlan specific */
+    /* kind specific */
     infodata = nla_nest_start(msg, IFLA_INFO_DATA);
     if (!infodata) {
-        error = TError("Unable to add " + vlantype + ": can't nest IFLA_INFO_DATA");
+        error = TError("Unable to add " + kind + ": can't nest IFLA_INFO_DATA");
         goto free_msg;
     }
 
-    if (vlantype == "macvlan") {
-        ret = nla_put(msg, IFLA_MACVLAN_MODE, sizeof(uint32_t), &type);
-        if (ret < 0) {
-            error = TError(EError::Unknown, std::string("Unable to put IFLA_MACVLAN_MODE: ") + nl_geterror(ret));
-            goto free_msg;
-        }
-    } else if (vlantype == "ipvlan") {
-        uint16_t mode = type;
-        ret = nla_put(msg, IFLA_IPVLAN_MODE, sizeof(uint16_t), &mode);
-        if (ret < 0) {
-            error = TError(EError::Unknown, std::string("Unable to put IFLA_IPVLAN_MODE: ") + nl_geterror(ret));
-            goto free_msg;
-        }
+    ret = data ? nla_put(msg, dataAttr, dataLen, data) : 0;
+    if (ret < 0) {
+        error = TError(EError::Unknown, "Unable to put the attributes of " + kind + ": " + nl_geterror(ret));
+        goto free_msg;
     }
     nla_nest_end(msg, infodata);
     nla_nest_end(msg, linkinfo);
 
-    L_NL("add {} {} master {} type {} hw {} mtu {}", vlantype, Name, master, type, hw, mtu);
+    L_NL("add {} {} master {} hw {} mtu {}", kind, Name, master, hw, mtu);
 
     ret = nl_send_sync(GetSock(), msg);
     if (ret)
-        return Error(ret, "Cannot add " + vlantype);
+        return Error(ret, "Cannot add " + kind);
 
     return Load();
 
@@ -693,11 +699,23 @@ free_msg:
 }
 
 TError TNlLink::AddIpVlan(const std::string &master, const std::string &mode, int mtu) {
-    return AddXVlan("ipvlan", master, ipvlanMode.at(mode), "", mtu);
+    uint16_t ipvlanModeValue = ipvlanMode.at(mode);
+    return AddChildLink("ipvlan", master, "", mtu, IFLA_IPVLAN_MODE, &ipvlanModeValue, sizeof(ipvlanModeValue));
 }
 
 TError TNlLink::AddMacVlan(const std::string &master, const std::string &type, const std::string &hw, int mtu) {
-    return AddXVlan("macvlan", master, macvlanType.at(type), hw, mtu);
+    uint32_t macvlanMode = macvlanType.at(type);
+    return AddChildLink("macvlan", master, hw, mtu, IFLA_MACVLAN_MODE, &macvlanMode, sizeof(macvlanMode));
+}
+
+TError TNlLink::AddIpoib(const std::string &master, uint16_t pkey, int mtu) {
+#ifdef IFLA_IPOIB_MAX
+    /* Without IFLA_IPOIB_PKEY the kernel gives the child the pkey of its parent. */
+    return AddChildLink("ipoib", master, "", mtu, IFLA_IPOIB_PKEY, pkey ? &pkey : nullptr, sizeof(pkey));
+#else
+    (void)master, (void)pkey, (void)mtu;
+    return TError(EError::NotSupported, "Porto is not compiled with IPoIB support");
+#endif
 }
 
 TError TNlLink::Enslave(const std::string &name) {

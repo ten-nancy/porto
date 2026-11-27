@@ -779,6 +779,68 @@ TError TNetwork::OpenWithParentNs(const TPath &path, TNamespaceFd &netns, std::s
     return error;
 }
 
+static const std::string IpoibAlias = "porto-ipoib";
+
+static TError IpoibPkeyByIndex(const std::string &master, int index, uint16_t &pkey) {
+    TPath dev = TPath("/sys/class/net") / master;
+    std::vector<std::string> ibdevs;
+    std::string text;
+    unsigned value = 0;
+    int devPort = 0;
+
+    TError error = (dev / "device/infiniband").ListSubdirs(ibdevs);
+    if (error)
+        return error;
+    if (ibdevs.size() != 1)
+        return TError(EError::InvalidValue, "Cannot find the InfiniBand device of " + master);
+
+    error = (dev / "dev_port").ReadAll(text);
+    if (!error)
+        error = StringToInt(StringTrim(text), devPort);
+    if (error)
+        return error;
+
+    /* netdev dev_port is zero-based, while InfiniBand sysfs ports are one-based. */
+    TPath path = TPath("/sys/class/infiniband") / ibdevs[0] / "ports" / std::to_string(devPort + 1) / "pkeys" /
+                 std::to_string(index);
+    error = path.ReadAll(text);
+    if (!error)
+        error = StringToHex(StringTrim(text), value);
+    if (error)
+        return TError(error, "Cannot read pkey index {} of {}", index, master);
+    if (!(value & 0x7fff) || value > 0xffff)
+        return TError(EError::InvalidValue, "No pkey at index " + std::to_string(index) + " of " + master);
+
+    pkey = value;
+    return OK;
+}
+
+static void RemoveIpoibChildren(std::shared_ptr<TNl> nl, bool onlyMarked) {
+    struct nl_cache *cache;
+
+    int ret = rtnl_link_alloc_cache(nl->GetSock(), AF_UNSPEC, &cache);
+    if (ret < 0) {
+        L_WRN("Cannot look for ipoib devices to remove: {}", TNl::Error(ret, "Cannot allocate link cache"));
+        return;
+    }
+
+    for (auto obj = nl_cache_get_first(cache); obj; obj = nl_cache_get_next(obj)) {
+        auto rtnl = (struct rtnl_link *)obj;
+        std::string type = rtnl_link_get_type(rtnl) ?: "";
+        std::string alias = rtnl_link_get_ifalias(rtnl) ?: "";
+
+        if (type != "ipoib" || (onlyMarked && alias != IpoibAlias))
+            continue;
+
+        TNlLink link(nl, rtnl);
+        TError error = link.Remove();
+        if (error)
+            L_WRN("Cannot remove ipoib device {}: {}", link.GetDesc(), error);
+    }
+
+    nl_cache_free(cache);
+}
+
 void TNetwork::Destroy() {
     TError error;
 
@@ -809,6 +871,12 @@ void TNetwork::Destroy() {
         if (error)
             L_NET("Cannot remove root qdisc: {}", error);
     }
+
+    /* Only in a namespace of porto's own: the host one keeps its ports, and the namespace of
+     * net=netns or net=container belongs to somebody else. Not limited to the marked children,
+     * so that those made before the marking existed do not come back to the host either. */
+    if (ManagedNamespace)
+        RemoveIpoibChildren(Nl, false);
 
     // TODO: destroy mac/ip-vlan here
 
@@ -1329,7 +1397,7 @@ TError TNetwork::SyncDevicesLocked() {
 
             if (ManagedNamespace)
                 dev.Uplink = true;
-        } else if (dev.Type == "macvlan" || dev.Type == "ipvlan") {
+        } else if (dev.Type == "macvlan" || dev.Type == "ipvlan" || dev.Type == "ipoib") {
             if (ManagedNamespace)
                 dev.Uplink = true;
         } else if (dev.Type == "tun") {
@@ -3016,6 +3084,37 @@ TError TNetEnv::ParseIpvlan(const TTuple &settings, TNetDeviceConfig &dev) {
     return OK;
 }
 
+/* ipoib <name> <master> [pkey] [mtu] */
+TError TNetEnv::ParseIpoib(const TTuple &settings, TNetDeviceConfig &dev) {
+    dev.Type = "ipoib";
+    dev.Name = StringTrim(settings[1]);
+    dev.Master = StringTrim(settings[2]);
+
+    if (settings.size() > 3) {
+        std::string value = StringTrim(settings[3]);
+        if (StringStartsWith(value, "idx:")) {
+            TError error = StringToInt(value.substr(4), dev.PkeyIndex);
+            if (error || dev.PkeyIndex < 0)
+                return TError(EError::InvalidValue, "Invalid pkey index in ipoib " + dev.Name);
+        } else {
+            unsigned pkey;
+            TError error = StringToHex(value, pkey);
+            /* The kernel ignores the membership bit and refuses a pkey of zero. */
+            if (error || pkey > 0xffff || !(pkey & 0x7fff))
+                return TError(EError::InvalidValue, "Invalid pkey in ipoib " + dev.Name);
+            dev.Pkey = pkey;
+        }
+    }
+
+    if (settings.size() > 4) {
+        TError error = StringToInt(settings[4], dev.Mtu);
+        if (error)
+            return error;
+    }
+
+    return OK;
+}
+
 TError TNetEnv::ParseMTU(const TTuple &settings) {
     int mtu;
     TError error = StringToInt(settings[2], mtu);
@@ -3082,6 +3181,8 @@ TError TNetEnv::InheritXVlan(const TMultiTuple &parentXVlan, TMultiTuple &childX
             error = ParseMacvlan(xvlan, dev);
         else if (type == "ipvlan")
             error = ParseIpvlan(xvlan, dev);
+        else if (type == "ipoib")
+            error = ParseIpoib(xvlan, dev);
         else
             error = TError(EError::InvalidValue, "Unknown XVlan inheritance: " + type);
 
@@ -3206,6 +3307,15 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
                 return error;
 
             netXVlanSettings.push_back(settings);
+        } else if (type == "ipoib") {
+            if (settings.size() < 3 || settings.size() > 5)
+                return TError(EError::InvalidValue, "Invalid " + line);
+
+            error = ParseIpoib(settings, dev);
+            if (error)
+                return error;
+
+            netXVlanSettings.push_back(settings);
         } else if (type == "veth") {
             if (settings.size() < 3)
                 return TError(EError::InvalidValue, "Invalid " + line);
@@ -3311,6 +3421,8 @@ TError TNetEnv::ParseNet(const TMultiTuple &net_settings, TMultiTuple &netXVlanS
             bool found = false;
             for (auto &dev: Devices) {
                 if (dev.Name == settings[1]) {
+                    if (dev.Type == "ipoib")
+                        return TError(EError::InvalidValue, "An ipoib link has no settable MAC: " + line);
                     dev.Mac = settings[2];
                     found = true;
                     break;
@@ -3670,6 +3782,40 @@ TError TNetEnv::SetupInterfaces() {
             error = link.AddIpVlan(master, dev.Mode, dev.Mtu);
             if (error)
                 return error;
+
+            error = link.ChangeNs(dev.Name, NetNs.GetFd());
+            if (error) {
+                (void)link.Remove();
+                return error;
+            }
+        } else if (dev.Type == "ipoib") {
+            if (!HostNetwork)
+                return TError(EError::Unknown, "No host network to take an ipoib device from");
+
+            auto host_lock = HostNetwork->LockNet();
+            auto source_nl = HostNetwork->GetNl();
+
+            std::string master = HostNetwork->MatchDevice(dev.Master);
+
+            uint16_t pkey = dev.Pkey;
+            if (dev.PkeyIndex >= 0) {
+                error = IpoibPkeyByIndex(master, dev.PkeyIndex, pkey);
+                if (error)
+                    return error;
+            }
+
+            RemoveIpoibChildren(source_nl, true);
+
+            TNlLink link(source_nl, "pib" + std::to_string(GetTid()));
+            error = link.AddIpoib(master, pkey, dev.Mtu);
+            if (error)
+                return error;
+
+            error = link.SetAlias(IpoibAlias);
+            if (error) {
+                (void)link.Remove();
+                return error;
+            }
 
             error = link.ChangeNs(dev.Name, NetNs.GetFd());
             if (error) {
@@ -4081,6 +4227,8 @@ TError TNetEnv::OpenNetwork(TContainer &ct) {
             error = RunNetworkIfUpScript(ct);
 
         if (error) {
+            /* SetupInterfaces may fail after moving an IPoIB child into this namespace. */
+            Net->ManagedNamespace = true;
             lock.unlock();
             Net->Destroy();
             return error;

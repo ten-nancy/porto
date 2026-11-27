@@ -112,6 +112,7 @@ ADD_PYTHON_TEST(coredump)
 ADD_PYTHON_TEST(net-ifup)
 ADD_PYTHON_TEST(net-props)
 ADD_PYTHON_TEST(net-xvlan)
+ADD_PYTHON_TEST(net-ipoib)
 # race detection, run manually
 # ADD_PYTHON_TEST(net-autoconf)
 

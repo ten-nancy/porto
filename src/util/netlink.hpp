@@ -114,8 +114,8 @@ class TNlLink: public TNonCopyable {
     std::shared_ptr<TNl> Nl;
     struct rtnl_link *Link = nullptr;
 
-    TError AddXVlan(const std::string &vlantype, const std::string &master, uint32_t type, const std::string &hw,
-                    int mtu);
+    TError AddChildLink(const std::string &kind, const std::string &master, const std::string &hw, int mtu,
+                        int dataAttr, const void *data, int dataLen);
 
 public:
     TNlLink(std::shared_ptr<TNl> sock, const std::string &name, int index = 0);
@@ -133,9 +133,11 @@ public:
 
     TError Remove();
     TError Up();
+    TError SetAlias(const std::string &alias);
     TError Enslave(const std::string &name);
     TError ChangeNs(const std::string &newName, int nsFd);
     TError AddIpVlan(const std::string &master, const std::string &mode, int mtu);
+    TError AddIpoib(const std::string &master, uint16_t pkey, int mtu);
     TError AddMacVlan(const std::string &master, const std::string &type, const std::string &hw, int mtu);
     TError AddVeth(const std::string &name, const std::string &hw, int mtu, int group, int nsFd);
     TError AddIp6Tnl(const std::string &name, const TNlAddr &remote, const TNlAddr &local, int type, int mtu,

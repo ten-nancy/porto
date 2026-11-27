@@ -325,6 +325,8 @@ struct TNetDeviceConfig {
     std::string Master;
     int Mtu = -1;
     int Group = 0;
+    uint16_t Pkey = 0;  /* 0: the pkey of the master */
+    int PkeyIndex = -1; /* >= 0: the pkey at this index of the master's port */
     bool Autoconf = false;
     bool EnableECN = false;
     bool EnableExtraRoutes = false;
@@ -404,6 +406,7 @@ private:
 
     TError ParseMacvlan(const TTuple &settings, TNetDeviceConfig &dev);
     TError ParseIpvlan(const TTuple &settings, TNetDeviceConfig &dev);
+    TError ParseIpoib(const TTuple &settings, TNetDeviceConfig &dev);
     TError ParseMTU(const TTuple &settings);
     TError ParseECN(const TTuple &settings);
     TError ParseAutoconf(const TTuple &settings);
